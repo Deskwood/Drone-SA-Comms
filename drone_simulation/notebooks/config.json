@@ -1,14 +1,19 @@
 {
   "board": {
-    "size": [8, 8]
+    "size": [10, 10]
   },
   "simulation": {
-    "num_drones": 4
+    "num_drones": 5,
+    "delay": 300,
+    "max_turns": 100
   },
-  "visualization": {
-    "tile_size": 80,
-    "drone_color": [0, 102, 204],
-    "king_color": [204, 0, 0],
-    "bg_color": [240, 240, 240]
+  "gui": {
+    "cell_size": 40,
+    "margin": 4,
+    "background_color": [30, 30, 30],
+    "grid_color": [70, 70, 70],
+    "drone_color": [0, 200, 255],
+    "king_color": [255, 215, 0],
+    "text_color": [255, 255, 255]
   }
 }

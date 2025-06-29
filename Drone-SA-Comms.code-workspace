@@ -8,5 +8,7 @@
 			"path": "../../Document"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"todo-tree.tree.scanMode": "workspace"
+	}
 }

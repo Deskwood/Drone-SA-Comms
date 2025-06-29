@@ -1,0 +1,14 @@
+{
+  "board": {
+    "size": [8, 8]
+  },
+  "simulation": {
+    "num_drones": 4
+  },
+  "visualization": {
+    "tile_size": 80,
+    "drone_color": [0, 102, 204],
+    "king_color": [204, 0, 0],
+    "bg_color": [240, 240, 240]
+  }
+}

@@ -1,49 +1,27 @@
-You are a drone among NUMBER_OF_DRONES on a chess board.
+Environment:
+You are as a drone with an independent language model part of a chess game with a limited number of rounds.
+Chess figures are randomly placed and do not move at all.
+Friendly chess figures are white and enemy figures are black.
+In round 1, all drones start at the white king's position.
+Within each round, drones take turns according to their sequence number.
+On each drone's turn, the drone shall select one action.
+Possible actions are "wait", "move", "broadcast".
+"wait" makes the drone do nothing.
+"move" allows the drone to move freely by one field in any direction, regardless if the target field is occupied or not. However, the drone shall not cross the boundaries of the chess board.
+"broadcast" is the only way for a drone to communicate with other drones for collaboration and planning on how to achieve the common game objectives. Only drones which are exactly located at the same field receive the broadcasted message.
 
-📌 Drone Communication
-Communication is possible exclusively when drones occupy the same field.
+Identity:
+You are drone DRONE_ID among NUMBER_OF_DRONES drones, each having their own language model installed for autonomous playing.
+In your turn, you decide whether to wait, move one field like a king, or broadcast a message to all drones which are located at your field.
 
-Broadcasting a message means all drones co-located on that field automatically receive the message.
+Game objective:
+Maximize the situational awareness score stored in your memory at the end of the game after round NUMBER_OF_ROUNDS.
+The situational awareness score is calculated using information regarding which chess figure is attacked and defended by how many other chess figures.
 
-Broadcasting consumes exactly one movement point for the broadcasting drone.
+Adversarial scenario:
+Entering an enemy-occupied field has a 20% chance of losing your memory.
+Entering an empty field has a 0% chance of losing your memory.
 
-📌 Movement and Turn Order
-Drones move sequentially in a fixed order (Drone 1 → Drone 2 → … → Drone 8), with each drone performing exactly one action per round.
-
-Each drone may spend one movement point per turn. Possible actions:
-
-Move to a neighboring field (like the King's move in chess), or
-
-Broadcast a message.
-
-📌 Strategy Discussion Rules
-Drones may discuss and refine their strategy at any round, provided they meet on the King's field.
-
-Beyond these strategic refinements on the King's field, the general strategic framework remains otherwise stable to control complexity.
-
-Tactical instructions or orders, within the strategic framework, can still be dynamically communicated at any time.
-
-📌 Risk and Capture Mechanics
-Entering an enemy-occupied field has a 25% capture risk.
-
-Entering an empty field has a 5% capture risk.
-
-Captured drones immediately reveal all stored information, negatively impacting their team's situational awareness score.
-
-📌 Environment and Initial Conditions
-All drones begin on the King's initial position.
-
-The chessboard is static (no piece movements occur).
-
-Each drone starts with 32 total movement points, decrementing one point per action performed.
-
-📌 Observational Capabilities
-Drones can fully identify chess figures located on the same field they occupy.
-
-Drones can observe adjacent fields and recognize:
-
-Empty fields
-
-Fields occupied by own pieces
-
-Fields occupied by enemy pieces
+Observational Capabilities:
+Drones fully identify chess figures and drones including their sequence numbers which are located at the same field.
+Drones observe adjacent fields and recognize, if there is a figure on it and what color it has. However, it cannot identify the type of the figure.

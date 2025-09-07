@@ -4,48 +4,53 @@
     "height": 8
   },
   "simulation": {
-    "use_gui": false,
+    "use_gui": true,
+    "model_index": 1,
+    "models": [
+      "manual",
+      "qwen3:30b",
+      "deepseek-r1:14b",
+      "llama3.1:8b",
+      "gpt-4"
+    ],
     "num_drones": 2,
     "delay": 0,
     "max_rounds": 3,
-    "use_manual_model": false,
-    "use_gpt4_model": true,
-    "use_qwen3_model": false,
-    "qwen3_model": "qwen-lm/qwen-3/gguf/4b",
-    "qwen3_model_name": "Qwen3-4B-Q8_0.gguf",
     "rules_path": "rules.txt",
-    "max_tokens_for_rationale": 32,
+    "max_tokens_for_rationale": 16,
     "max_tokens_for_action": 2,
     "max_tokens_for_action_move": 2,
-    "max_tokens_for_action_broadcast": 32,
-    "max_tokens_for_memory": 32
+    "max_tokens_for_action_broadcast": 16,
+    "max_tokens_for_memory": 16,
+    "temperature": 0.2
   },
   "gui": {
-    "cell_size": 40,
+    "cell_size": 80,
     "margin": 4,
     "background_color": [30, 30, 30],
     "grid_color": [70, 70, 70],
     "drone_color": [0, 200, 255],
     "king_color": [255, 215, 0],
-    "text_color": [255, 255, 255]
+    "text_color": [255, 255, 255],
+    "figure_image_dir": "../img"
   },
   "rules_path": "rules.txt",
   "figures": {
     "white": {
-      "king": [[4, 0]],
-      "queen": [[3, 0]],
-      "rook": [[0, 0]],
-      "bishop": [[2, 0], [5, 0]],
-      "knight": [[1, 0], [6, 0]],
-      "pawn": [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1]]
+      "king": [[6, 2]],
+      "queen": [[1, 4]],
+      "rook": [[0, 0], [7, 5]],
+      "bishop": [[3, 3], [5, 7]],
+      "knight": [[2, 1], [4, 6]],
+      "pawn": [[0, 3], [1, 0], [2, 5], [3, 0], [4, 2], [5, 1], [6, 7], [7, 3]]
     },
     "black": {
-      "king": [[4, 7]],
-      "queen": [[3, 7]],
-      "rook": [[0, 7]],
-      "bishop": [[2, 7], [5, 7]],
-      "knight": [[1, 7], [6, 7]],
-      "pawn": [[0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6]]
+      "king": [[4, 4]],
+      "queen": [[0, 7]],
+      "rook": [[1, 7], [7, 1]],
+      "bishop": [[5, 4], [2, 6]],
+      "knight": [[3, 6], [6, 0]],
+      "pawn": [[0, 6], [1, 6], [2, 7], [3, 7], [4, 7], [5, 6], [6, 6], [7, 7]]
     }
   },
   "prompt_requests": {
@@ -53,6 +58,6 @@
     "action": "Now start your response sentence based on the Rationale on what you want to do. For this chose one of the following terms: 'move', 'wait', 'broadcast'.",
     "action_move": "Now start your response sentence based on the Rationale on where you want to move. For this chose one of the following terms: 'north', 'south', 'west', 'east', 'northeast', 'southeast', 'northwest', 'southwest'.",
     "action_broadcast": "Now create the message you want to broadcast to all drones at the same spot.",
-    "memory": "Now update your memory with information which complies with your strategy for achieving the best possible situational awareness."
+    "memory_update": "Now update your memory with information which complies with your strategy for achieving the best possible situational awareness."
   }
 }

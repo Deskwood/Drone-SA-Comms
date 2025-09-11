@@ -14,25 +14,24 @@
       "gpt-4"
     ],
     "num_drones": 2,
-    "delay": 0,
-    "max_rounds": 3,
+    "max_rounds": 32,
     "rules_path": "rules.txt",
     "max_tokens_for_rationale": 16,
     "max_tokens_for_action": 2,
     "max_tokens_for_action_move": 2,
     "max_tokens_for_action_broadcast": 16,
     "max_tokens_for_memory": 16,
-    "temperature": 0.2
+    "temperature": 0.7
   },
   "gui": {
     "cell_size": 80,
-    "margin": 4,
+    "margin": 8,
     "background_color": [30, 30, 30],
     "grid_color": [70, 70, 70],
     "drone_color": [0, 200, 255],
-    "king_color": [255, 215, 0],
     "text_color": [255, 255, 255],
-    "figure_image_dir": "../img"
+    "figure_image_dir": "../img",
+    "sidebar_width": 1600
   },
   "rules_path": "rules.txt",
   "figures": {
@@ -54,10 +53,10 @@
     }
   },
   "prompt_requests": {
-    "rationale": "Now provide a rationale on how you want to use your turn and why you chose this strategy.",
-    "action": "Now start your response sentence based on the Rationale on what you want to do. For this chose one of the following terms: 'move', 'wait', 'broadcast'.",
-    "action_move": "Now start your response sentence based on the Rationale on where you want to move. For this chose one of the following terms: 'north', 'south', 'west', 'east', 'northeast', 'southeast', 'northwest', 'southwest'.",
-    "action_broadcast": "Now create the message you want to broadcast to all drones at the same spot.",
-    "memory_update": "Now update your memory with information which complies with your strategy for achieving the best possible situational awareness."
+    "rationale": "Rationale: Provide a rationale on how you want to use your turn and why you chose this strategy.",
+    "action": "Action: What you want to do in one word: 'move', 'wait', 'broadcast'. Answer with exactly one token from the allowed list. Do not add punctuation or explanations.",
+    "action_move": "Direction: Where you want to move in one word: 'north', 'south', 'west', 'east', 'northeast', 'southeast', 'northwest', 'southwest'. Answer with exactly one token from the allowed list. Do not add punctuation or explanations.",
+    "action_broadcast": "Message: What you want to broadcast?",
+    "memory_update": "Memory: Summarize everything worth remembering."
   }
 }

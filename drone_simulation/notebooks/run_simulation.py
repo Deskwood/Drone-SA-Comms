@@ -1,31 +1,41 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[29]:
+# In[ ]:
 
 
-# Cell 1: Setup environment, imports, and global constants
+#!/usr/bin/env python
+# coding: utf-8
 
 import logging
 import os
 import pprint
 import time
+import random
+import re
 from datetime import datetime
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Literal, Dict, Any, Set
+
 import json
 import pygame
-import requests
 import pyperclip
-import re
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, Future
 import nbformat
 from nbconvert import PythonExporter
+from pydantic import BaseModel
 
-# --- Constants ------------------------------------------------
+# Optional: local model via Ollama
+try:
+    from ollama import chat as ollama_chat
+    _OLLAMA_AVAILABLE = True
+except Exception:
+    _OLLAMA_AVAILABLE = False
+
+# ---------------- Constants ----------------
 COLORS = ["white", "black"]
 FIGURE_TYPES = ["king", "queen", "rook", "bishop", "knight", "pawn"]
-DIRECTION_MAP = {
+DIRECTION_MAP: Dict[str, Tuple[int, int]] = {
     "north": (0, 1),
     "south": (0, -1),
     "east": (1, 0),
@@ -35,81 +45,115 @@ DIRECTION_MAP = {
     "southeast": (1, -1),
     "southwest": (-1, -1)
 }
+VALID_DIRECTIONS = set(DIRECTION_MAP.keys())
+PLAN_PREFIX = "PLAN:"
 
-# --- Convert Jupyter Notebook to Python Script ----------------
+# -------------- Optional: export notebook --------------
 try:
     nb = nbformat.read("run_simulation.ipynb", as_version=4)
     body, _ = PythonExporter().from_notebook_node(nb)
     with open("run_simulation.py", "w", encoding="utf-8") as f:
         f.write(body)
-except Exception as e:
-    pass  # Ignore because this should only run in Jupyter
+except Exception:
+    pass
 
-
-# In[30]:
-
-
-# Cell 2: Logging and config
-
+# ---------------- Clean logger ----------------
 class TimestampedLogger:
     def __init__(self, log_dir='logs', log_file='simulation.log'):
         os.makedirs(log_dir, exist_ok=True)
         self.log_path = os.path.join(log_dir, log_file)
-        logging.basicConfig(filename=self.log_path, level=logging.INFO, filemode='w', encoding='utf-8')
+
+        # Reset handlers
+        root = logging.getLogger()
+        for h in list(root.handlers):
+            try: h.close()
+            except Exception: pass
+            root.removeHandler(h)
+
+        # Fresh file
+        try:
+            if os.path.exists(self.log_path):
+                os.remove(self.log_path)
+        except Exception:
+            pass
+
+        fh = logging.FileHandler(self.log_path, mode='w', encoding='utf-8', delay=False)
+        ch = logging.StreamHandler()
+
+        fmt = logging.Formatter(fmt='%(levelname)s:%(name)s:%(message)s')
+        fh.setFormatter(fmt); ch.setFormatter(fmt)
+        root.setLevel(logging.INFO)
+        root.addHandler(fh); root.addHandler(ch)
+
+        logging.getLogger('httpx').setLevel(logging.INFO)
+
         self.start_time = time.time()
         self.last_time = self.start_time
         self.log("Logger initialized.")
 
-    def _now(self):
-        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    def _now(self): return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     def _duration(self):
         current_time = time.time()
-        duration = current_time - self.last_time
+        d = current_time - self.last_time
         self.last_time = current_time
-        return f"{duration:.3f}s"
+        return f"{d:.3f}s"
 
     def log(self, message):
-        timestamp = self._now()
-        duration = self._duration()
-        log_message = f"[{timestamp}] (+{duration}) {message}"
-        logging.info(log_message)
+        logging.info(f"[{self._now()}] (+{self._duration()}) {message}")
 
 LOGGER = TimestampedLogger()
 
-
+# ---------------- Config ----------------
 def load_config(config_path: str = "config.json") -> dict:
-    """Load configuration with safe defaults for missing keys."""
     LOGGER.log(f"Load Config: {config_path}")
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
     except FileNotFoundError:
         raise FileNotFoundError(f"Missing config file: {config_path}")
-
-    # minimal defaults
     cfg.setdefault("prompt_requests", {})
     cfg.setdefault("simulation", {})
     cfg.setdefault("board", {"width": 8, "height": 8})
-    cfg.setdefault("gui", {"cell_size": 64, "margin": 2, "background_color": (30,30,30),
-                           "grid_color": (80,80,80), "drone_color": (200,200,50), "text_color": (20,20,20),
-                           "figure_image_dir": "figures"})
+    cfg.setdefault("gui", {
+        "cell_size": 64,
+        "margin": 2,
+        "background_color": (30,30,30),
+        "grid_color": (80,80,80),
+        "drone_color": (200,200,50),
+        "text_color": (20,20,20),
+        "figure_image_dir": "figures",
+        "sidebar_width": 480
+    })
+    sim = cfg["simulation"]
+    sim.setdefault("max_rounds", 10)
+    sim.setdefault("num_drones", 4)
+    sim.setdefault("models", ["manual"])
+    sim.setdefault("model_index", 0)
+    sim.setdefault("temperature", 0.7)
+    sim.setdefault("use_gui", True)
+    sim.setdefault("headless", False)
+    sim.setdefault("rules_path", cfg.get("rules_path", "rules.txt"))
+    # token budgets
+    sim.setdefault("max_tokens_for_rationale", 16)
+    sim.setdefault("max_tokens_for_action", 2)
+    sim.setdefault("max_tokens_for_action_move", 2)
+    sim.setdefault("max_tokens_for_action_broadcast", 16)
+    sim.setdefault("max_tokens_for_memory", 16)
+    # planning + enforcement
+    sim.setdefault("planning_rounds", 3)
+    sim.setdefault("enforce_plan", True)
+    # figure randomization knobs
+    sim.setdefault("randomize_figures", False)
+    sim.setdefault("random_seed", None)  # int or null; if null + randomize_figures=True -> nondeterministic
+
+    cfg.setdefault("figures", {c: {t: [] for t in FIGURE_TYPES} for c in COLORS})
     return cfg
 
 CONFIG = load_config("config.json")
 
-
-# In[31]:
-
-
-# Cell 3: Image loading (with robust filename casings)
-
+# ---------------- Images ----------------
 def load_figure_images() -> dict:
-    """
-    Loads figure images from disk and returns {(color, type): Surface}.
-    We don't convert here because display may not be initialized yet.
-    We'll convert surfaces after creating the display for maximal blit speed.
-    """
     images = {}
     base_path = CONFIG["gui"]["figure_image_dir"]
 
@@ -119,60 +163,127 @@ def load_figure_images() -> dict:
     for color in COLORS:
         for figure_type in FIGURE_TYPES:
             candidates = [
-                f"{color}{figure_type}.png",                          # whiteking.png
-                f"{color.capitalize()}{figure_type}.png",             # Whiteking.png
-                f"{color}{figure_type.capitalize()}.png",             # whiteKing.png
-                f"{color.capitalize()}{figure_type.capitalize()}.png" # WhiteKing.png
+                f"{color}{figure_type}.png",
+                f"{color.capitalize()}{figure_type}.png",
+                f"{color}{figure_type.capitalize()}.png",
+                f"{color.capitalize()}{figure_type.capitalize()}.png"
             ]
             img = None
             for name in candidates:
                 p = os.path.join(base_path, name)
                 img = try_load(p)
-                if img: break
+                if img:
+                    LOGGER.log(f"Loaded image: {p}")
+                    break
             if img:
                 images[(color, figure_type)] = img
             else:
                 LOGGER.log(f"Warning: Image not found for {color} {figure_type} in {base_path}")
     return images
 
-FIGURE_IMAGES = load_figure_images()
-
+FIGURE_IMAGES = {}
 
 def direction_from_vector(vector: Tuple[int, int]) -> str:
-    """Return direction string from vector; otherwise return the tuple as str."""
     for direction, vec in DIRECTION_MAP.items():
         if vec == vector:
             return direction
     return str(vector)
 
+# ---------------- TurnResult + JSON helpers ----------------
+class TurnResult(BaseModel):
+    rationale: str
+    action: Literal["wait", "move", "broadcast"]
+    direction: Optional[str] = None
+    message: Optional[str] = None
+    memory: str
 
-# In[32]:
+def _extract_first_json_block(text: str) -> str:
+    start = text.find('{')
+    if start == -1: return text
+    stack = 0
+    for i in range(start, len(text)):
+        if text[i] == '{': stack += 1
+        elif text[i] == '}':
+            stack -= 1
+            if stack == 0:
+                return text[start:i+1]
+    return text
 
+def safe_parse_turnresult(payload: str) -> dict:
+    try:
+        candidate = _extract_first_json_block(payload)
+        data = json.loads(candidate)
+        return TurnResult.model_validate(data).model_dump()
+    except Exception as e:
+        return {"rationale": f"Parse/validate error: {e}", "action": "wait", "direction": None, "message": None, "memory": ""}
 
-# Cell 4: Board Entities: Figure, Drone, Tile
+# ---------------- Plan parsing ----------------
+def parse_plan_from_text(text: str) -> List[str]:
+    """
+    Extract path list from strings containing 'PLAN:' and 'path=...'.
+    Example: 'PLAN: role=Scout path=NE,E,SE; rendezvous=(5,3)'
+    Returns normalized direction keys (lowercase) present in DIRECTION_MAP.
+    """
+    if not text or PLAN_PREFIX.lower() not in text.lower():
+        return []
+    m = re.search(r'path\s*=\s*([A-Za-z,\s\-]+)', text)
+    if not m:
+        return []
+    raw = m.group(1)
+    steps = [s.strip().lower() for s in raw.split(',') if s.strip()]
+    alias = {
+        "n": "north", "s": "south", "e": "east", "w": "west",
+        "ne": "northeast", "nw": "northwest", "se": "southeast", "sw": "southwest"
+    }
+    norm = []
+    for s in steps:
+        s2 = alias.get(s, s)
+        if s2 in DIRECTION_MAP:
+            norm.append(s2)
+    return norm
 
+# ---------------- Randomize figures ----------------
+def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, seed: Optional[int] = None) -> dict:
+    """
+    Produce a randomized figure layout preserving counts per color/type.
+    Returns a new dict shaped like config["figures"].
+    """
+    requests = []
+    for color, types in figures_cfg.items():
+        for ftype, positions in types.items():
+            cnt = len(positions)
+            if cnt > 0:
+                requests.append((color, ftype, cnt))
+
+    all_tiles = [(x, y) for x in range(board_w) for y in range(board_h)]
+    rng = random.Random(seed)
+    rng.shuffle(all_tiles)
+
+    cursor = 0
+    out = {c: {t: [] for t in FIGURE_TYPES} for c in COLORS}
+    for color, ftype, cnt in requests:
+        if cursor + cnt > len(all_tiles):
+            raise ValueError("Not enough tiles to place all requested figures.")
+        picks = all_tiles[cursor:cursor+cnt]
+        cursor += cnt
+        out[color][ftype] = [list(p) for p in picks]
+    return out
+
+# ---------------- Board & edges ----------------
 class _Figure:
-    """Represents a chess figure on the board and its threat counters."""
     def __init__(self, position: Tuple[int, int], color: str, figure_type: str):
         self.position = position
         self.color = color
         self.figure_type = figure_type
-        self.defended_by = 0   # friendly pieces targeting this piece's square
-        self.attacked_by = 0   # hostile pieces targeting this piece's square
-        self.target_positions = []  # squares this piece attacks/defends
+        self.defended_by = 0
+        self.attacked_by = 0
+        self.target_positions: List[Tuple[int, int]] = []
 
     def calculate_figure_targets(self, board: List[List['_Tile']]):
-        """
-        Populate self.target_positions with squares this figure attacks/defends.
-
-        Sliders (Q/R/B) ray-cast and stop after the first occupied square (included).
-        Knight/King/Pawn are discrete targets only (no ray-cast).
-        """
         self.target_positions = []
         W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
 
-        def on_board(x, y):
-            return 0 <= x < W and 0 <= y < H
+        def on_board(x, y): return 0 <= x < W and 0 <= y < H
 
         if self.figure_type in ("queen", "rook", "bishop"):
             if self.figure_type == "rook":
@@ -189,7 +300,6 @@ class _Figure:
                     if not on_board(x, y): break
                     self.target_positions.append((x, y))
                     if board[x][y].figure is not None:
-                        # include the first hit, then stop this ray
                         break
 
         elif self.figure_type == "knight":
@@ -216,229 +326,179 @@ class _Figure:
                 if on_board(x, y):
                     self.target_positions.append((x, y))
 
+class _Tile:
+    def __init__(self, x: int, y: int):
+        self.x = x; self.y = y
+        self.targeted_by = {"white": 0, "black": 0}
+        self.figure: Optional[_Figure] = None
+        self.drones: List['_Drone'] = []
+
+    def set_figure(self, figure: _Figure): self.figure = figure
+    def add_drone(self, drone: '_Drone'):
+        if drone not in self.drones:
+            self.drones.append(drone)
+    def remove_drone(self, drone: '_Drone'):
+        if drone in self.drones:
+            self.drones.remove(drone)
+    def reset_targeted_by_amounts(self): self.targeted_by = {"white": 0, "black": 0}
+    def add_targeted_by_amount(self, color: str, amount: int = 1): self.targeted_by[color] += amount
+
+def _compute_edges_for(figures: List[_Figure], board: List[List[_Tile]]) -> Set[Tuple[Tuple[int,int], Tuple[int,int]]]:
+    edges: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+    for f in figures:
+        for (tx, ty) in f.target_positions:
+            if board[tx][ty].figure is not None:
+                edges.add((f.position, board[tx][ty].figure.position))
+    return edges
+
+# ---------------- Drone ----------------
 class _Drone:
-    """Represents a drone (LLM-controlled agent) in the simulation."""
     def __init__(self, id: int, position: Tuple[int, int], model: str, rules: str, sim, color: str = "white"):
         self.id = id
         self.position = position
         self.color = color
         self.model = model
-        self.rules = rules\
-            .replace("DRONE_ID", str(self.id))\
-            .replace("NUMBER_OF_DRONES", str(CONFIG["simulation"]["num_drones"]))\
-            .replace("NUMBER_OF_ROUNDS", str(CONFIG["simulation"]["max_rounds"]))
-        self.memory = ""   # Memory of past actions or observations
-        self.rx_buffer = ""  # Buffer for received broadcasts
         self.sim = sim
+        self.rules = rules.replace("DRONE_ID", str(self.id))\
+                          .replace("NUMBER_OF_DRONES", str(CONFIG["simulation"]["num_drones"]))\
+                          .replace("NUMBER_OF_ROUNDS", str(CONFIG["simulation"]["max_rounds"]))
+        self.memory = ""
+        self.rx_buffer = ""
 
-    # ---------------- Movement ----------------
-    def _move(self, direction: str):
-        """Moves the drone in the specified direction if in bounds."""
+    def _move(self, direction: str) -> bool:
+        direction = (direction or "").lower()
         if direction in DIRECTION_MAP:
             dx, dy = DIRECTION_MAP[direction]
-            new_position = (self.position[0] + dx, self.position[1] + dy)
-            if 0 <= new_position[0] < CONFIG["board"]["width"] and 0 <= new_position[1] < CONFIG["board"]["height"]:
-                # Remove drone from old tile
-                old_tile = self.sim.board[self.position[0]][self.position[1]]
-                old_tile.remove_drone(self)
-                # Move
-                self.position = new_position
-                # Add to new tile
-                new_tile = self.sim.board[self.position[0]][self.position[1]]
-                new_tile.add_drone(self)
+            nx, ny = self.position[0] + dx, self.position[1] + dy
+            if 0 <= nx < CONFIG["board"]["width"] and 0 <= ny < CONFIG["board"]["height"]:
+                self.sim.board[self.position[0]][self.position[1]].remove_drone(self)
+                self.position = (nx, ny)
+                self.sim.board[nx][ny].add_drone(self)
                 LOGGER.log(f"Drone {self.id} moved to {self.position}.")
+                return True
             else:
-                LOGGER.log(f"Drone {self.id} attempted to move out of bounds to {new_position}. Action ignored.")
+                LOGGER.log(f"Drone {self.id} attempted OOB move to {(nx,ny)}.")
         else:
-            LOGGER.log(f"Drone {self.id} attempted invalid direction '{direction}'. Action ignored.")
+            LOGGER.log(f"Drone {self.id} attempted invalid direction '{direction}'.")
+        return False
 
-    # ---------------- Situation description ----------------
+    def _allowed_directions(self) -> List[str]:
+        x, y = self.position
+        W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
+        allowed = []
+        for name, (dx, dy) in DIRECTION_MAP.items():
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < W and 0 <= ny < H:
+                allowed.append(name)
+        return allowed
+
+    def _phase(self) -> str:
+        return "Planning" if self.sim.round <= self.sim.planning_rounds else "Execution"
+
     def _determine_situation_description(self) -> str:
-        """Creates a compact state summary for prompting the LLM."""
-        # Identify co-located drones
-        other_drones_at_position = ""
-        for drone in self.sim.board[self.position[0]][self.position[1]].drones:
-            if drone.id != self.id:
-                other_drones_at_position += f"Drone {drone.id}, "
-        other_drones_at_position = other_drones_at_position.strip(", ")
-
-        # Identify co-located figure
-        figure_at_position = "None"
+        others = ", ".join(
+            f"Drone {d.id}" for d in self.sim.board[self.position[0]][self.position[1]].drones if d.id != self.id
+        )
+        fig_here = "None"
         if self.sim.board[self.position[0]][self.position[1]].figure:
-            f0 = self.sim.board[self.position[0]][self.position[1]].figure
-            figure_at_position = f0.figure_type
+            fig_here = self.sim.board[self.position[0]][self.position[1]].figure.figure_type
 
-        # Identify neighboring figures with direction and type
-        neighboring_figure_colors = ""
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx == 0 and dy == 0:
-                    continue
-                nx = self.position[0] + dx
-                ny = self.position[1] + dy
+        neigh = ""
+        for dx in [-1,0,1]:
+            for dy in [-1,0,1]:
+                if dx==0 and dy==0: continue
+                nx, ny = self.position[0]+dx, self.position[1]+dy
                 if 0 <= nx < CONFIG["board"]["width"] and 0 <= ny < CONFIG["board"]["height"]:
-                    neighbor_tile = self.sim.board[nx][ny]
-                    if neighbor_tile.figure:
-                        f = neighbor_tile.figure
-                        neighboring_figure_colors += f"{direction_from_vector((dx, dy))}: {f.color}, "
-        neighboring_figure_colors = neighboring_figure_colors.strip(", ")
+                    t = self.sim.board[nx][ny]
+                    if t.figure:
+                        neigh += f"{direction_from_vector((dx,dy))}: {t.figure.color}, "
+        neigh = neigh.strip(", ")
 
-        # Generate a rationale
-        situation = f"Current round number: {self.sim.round}\n"
-        situation += f"Current position: {self.position}\n"
-        situation += f"Visible drones at position: {other_drones_at_position}\n"
-        situation += f"Visible figure at position: {figure_at_position}\n"
-        situation += f"Visible neighboring figures: {neighboring_figure_colors}\n"
-        situation += f"Memory: {self.memory}\n"
-        situation += f"Broadcast Rx Buffer: {self.rx_buffer}"
-        self.rx_buffer = ""  # Clear the buffer after reading
-        return situation
+        allowed = self._allowed_directions()
+        s = []
+        s.append(f"Phase: {self._phase()}")
+        s.append(f"Current round number: {self.sim.round}")
+        s.append(f"Board size: {CONFIG['board']['width']}x{CONFIG['board']['height']} (x=0..{CONFIG['board']['width']-1}, y=0..{CONFIG['board']['height']-1})")
+        s.append(f"My grid coords: x={self.position[0]}, y={self.position[1]}")
+        s.append(f"Current position: {self.position}")
+        s.append(f"AllowedDirections: {allowed}")
+        s.append(f"Visible drones at position: {others or 'None'}")
+        s.append(f"Visible figure at position: {fig_here}")
+        s.append(f"Visible neighboring figures: {neigh or 'None'}")
+        s.append(f"Memory: {self.memory}")
+        s.append(f"Broadcast Rx Buffer: {self.rx_buffer}")
+        self.rx_buffer = ""
+        return "\n".join(s)
 
-    # ---------------- LLM interface ----------------
-    def _generate_single_model_response(self, messages:List, model: str = "qwen3:30b", temperature: float = 0.7, remove_thinking: bool = True) -> List[dict]:
-        """Generate a response from the selected model and append to messages."""
-        if model == "manual":  # Manual input mode
-            pyperclip.copy(messages[-1]["content"])
-            llm_response = input("Model prompt is on clipboard, paste model's response: ")
-        elif "gpt" in model:   # OpenAI GPT models
-            client = OpenAI()
-            llm_response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-            ).choices[0].message.content
-        else:  # Ollama (local)
-            url = "http://localhost:11434/api/chat"
-            payload = {"model": model, "messages": messages, "temperature": temperature, "stream": False}
-            try:
-                response = requests.post(url, json=payload, timeout=120)
-                response.raise_for_status()
-                data = response.json()
-                llm_response = data.get("message", {}).get("content", "")
-            except Exception as e:
-                llm_response = f"ERROR contacting local model '{model}': {e}"
-            if remove_thinking:
-                # Remove think sections for models that emit them
-                llm_response = re.sub(r"<think>.*?</think>", "", llm_response, flags=re.DOTALL|re.IGNORECASE)
-                llm_response = re.sub(r"\[thinking\].*?\[/thinking\]", "", llm_response, flags=re.DOTALL|re.IGNORECASE)
-                llm_response = llm_response.strip()
+    # LLM interface
+    def _token_budget_total(self) -> int:
+        sim = CONFIG["simulation"]
+        est = (int(sim.get("max_tokens_for_rationale",16)) +
+               int(sim.get("max_tokens_for_action",2)) +
+               max(int(sim.get("max_tokens_for_action_move",2)),
+                   int(sim.get("max_tokens_for_action_broadcast",16))) +
+               int(sim.get("max_tokens_for_memory",16)) + 64)
+        return max(128, min(est, 4096))  # allow large budgets if configured
 
-        messages.append({"role": "assistant", "content": llm_response})
-        return messages
+    def _generate_single_model_response(self, messages: List[dict], model: str, temperature: float) -> List[dict]:
+        def _store(text: str) -> List[dict]:
+            validated = safe_parse_turnresult(text)
+            messages.append({"role": "assistant", "content": validated})
+            return messages
 
-    def _generate_full_model_response(self) -> dict:
-        """Blocking call that drives a full turn decision (rationale -> action -> specifics -> memory)."""
+        max_tokens_total = self._token_budget_total()
+        num_predict = max(128, max_tokens_total)
+
+        if model == "manual":
+            try: pyperclip.copy(messages[-1]["content"])
+            except Exception: pass
+            return _store(input("Paste pure JSON TurnResult: "))
+
+        # Ollama
+        if not _OLLAMA_AVAILABLE:
+            return _store(json.dumps({"rationale": "Ollama not installed; wait.", "action": "wait", "direction": None, "message": None, "memory": ""}))
+
+        def _ollama(extra_hint: Optional[str] = None, np: int = num_predict):
+            mm = messages if not extra_hint else messages + [{"role": "user", "content": extra_hint}]
+            resp = ollama_chat(model=model, messages=mm, stream=False, format="json",
+                               options={"temperature": float(temperature), "num_predict": int(np)})
+            content = getattr(resp, "message", None)
+            if content and hasattr(content, "content"):
+                return content.content or ""
+            if isinstance(resp, dict):
+                return resp.get("message", {}).get("content", "")
+            return str(resp)
+
+        raw = _ollama()
+        parsed = safe_parse_turnresult(raw)
+        if parsed["action"] == "wait" and parsed["rationale"].startswith("Parse/validate error"):
+            raw2 = _ollama("REMINDER: Output ONLY a single valid JSON object exactly matching the schema. No prose.",
+                           np=int(num_predict * 2))
+            return _store(raw2)
+        return _store(raw)
+
+    def generate_full_model_response(self) -> List[dict]:
         temperature = CONFIG["simulation"].get("temperature", 0.7)
-
-        # 1) Rationale
         situation = self._determine_situation_description()
         messages = [
             {"role": "system", "content": self.rules},
-            {"role": "user", "content": situation},
-            {"role": "assistant", "content": "Situation clear, what do you want me to do?"},
-            {"role": "user", "content": CONFIG["prompt_requests"]["rationale"]}
+            {"role": "user", "content": situation}
         ]
-        messages = self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
+        return self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
 
-        # 2) Action (move, wait, broadcast)
-        messages.append({"role": "user", "content": CONFIG["prompt_requests"]["action"]})
-        messages = self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
-
-        raw = messages[-1]["content"]
-
-        def pick_action(text: str) -> str:
-            t = text.lower()
-            best = None
-            best_pos = 10**9
-            for tok in ("move", "wait", "broadcast"):
-                m = re.search(r'\b' + re.escape(tok) + r'\b', t)
-                if m and m.start() < best_pos:
-                    best, best_pos = tok, m.start()
-            return best or "wait"
-
-        action = pick_action(raw)
-        messages[-1]["content"] = f'{action}: "{raw}"'
-
-        # 3) Action-specific details
-        content = ""
-        if action == "move":
-            # Ask for direction explicitly (2nd prompt)
-            messages.append({"role": "user", "content": CONFIG["prompt_requests"]["action_move"]})
-            messages = self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
-            dir_match = re.search(r'\b(north|south|east|west|northeast|northwest|southeast|southwest)\b', messages[-1]["content"].lower())
-            if dir_match:
-                content = dir_match.group(1)
-                messages[-1]["content"] = f'{content}: "{messages[-1]["content"]}"'
-            else:
-                action, content = "wait", ""
-                messages[-1]["content"] = f'Invalid direction, action reverted to wait: "{messages[-1]["content"]}"'
-
-        if action == "broadcast":
-            messages.append({"role": "user", "content": CONFIG["prompt_requests"]["action_broadcast"]})
-            messages = self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
-            content = messages[-1]["content"]
-
-        # 4) Memory update
-        messages.append({"role": "user", "content": CONFIG["prompt_requests"]["memory_update"]})
-        messages = self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
-        self.memory = messages[-1]["content"]
-
-        # 5) Compile
-        response = {
-            "action": action,
-            "content": content,
-            "messages": messages[1:]  # exclude system prompt for logging brevity
-        }
-        return response
-
-class _Tile:
-    """Represents one board square (tile)."""
-    def __init__(self, x: int, y: int):
-        self.x = x
-        self.y = y
-        self.targeted_by = {"white": 0, "black": 0}  # number of rays hitting this tile per color
-        self.figure: Optional[_Figure] = None
-        self.drones: List[_Drone] = []
-
-    def set_figure(self, figure: _Figure):
-        self.figure = figure
-
-    def add_drone(self, drone: _Drone):
-        assert drone not in self.drones
-        self.drones.append(drone)
-
-    def remove_drone(self, drone: _Drone):
-        if drone in self.drones:
-            self.drones.remove(drone)
-
-    def reset_targeted_by_amounts(self):
-        self.targeted_by = {"white": 0, "black": 0}
-
-    def add_targeted_by_amount(self, color: str, amount: int = 1):
-        self.targeted_by[color] += amount
-
-
-# In[33]:
-
-
-# Cell 5: GUI (responsive, double-buffered, cached)
-
+# ---------------- GUI (with scoring & plan preview) ----------------
 class _SimulationGUI:
     def __init__(self, sim):
-        """Initialize the GUI. We accept `sim` to avoid global coupling."""
         self.sim = sim
         self.grid_size = (CONFIG["board"]["width"], CONFIG["board"]["height"])
 
         pygame.init()
-        gui_config = CONFIG["gui"]
-
-        self.sidebar_width = gui_config.get("sidebar_width", 1600)
-
-        # Double-buffer for smoothness (and hardware surface when available).
+        gui = CONFIG["gui"]
+        self.sidebar_width = gui.get("sidebar_width", 480)
         flags = pygame.HWSURFACE | pygame.DOUBLEBUF
 
-        board_w = self.grid_size[0] * (gui_config["cell_size"] + gui_config["margin"]) + gui_config["margin"]
-        board_h = self.grid_size[1] * (gui_config["cell_size"] + gui_config["margin"]) + gui_config["margin"]
+        board_w = self.grid_size[0]*(gui["cell_size"]+gui["margin"]) + gui["margin"]
+        board_h = self.grid_size[1]*(gui["cell_size"]+gui["margin"]) + gui["margin"]
         total_w = board_w + self.sidebar_width
         total_h = board_h
 
@@ -448,20 +508,24 @@ class _SimulationGUI:
         )
         self.clock = pygame.time.Clock()
 
-        # Speed up blits by converting images to display format.
         global FIGURE_IMAGES
+        if not FIGURE_IMAGES:
+            FIGURE_IMAGES = load_figure_images()
         for k, surf in list(FIGURE_IMAGES.items()):
-            try:
-                FIGURE_IMAGES[k] = surf.convert_alpha()
-            except pygame.error:
-                pass
+            try: FIGURE_IMAGES[k] = surf.convert_alpha()
+            except pygame.error: pass
 
-        self._image_cache = {}  # cache scaled images by (id, cell_size)
-        self._font = pygame.font.SysFont(None, 18)
-        self._font_small = pygame.font.SysFont(None, 16)
+        self._image_cache = {}
+        try:
+            self._font = pygame.font.SysFont(None, 18)
+            self._font_small = pygame.font.SysFont(None, 16)
+        except Exception:
+            pygame.font.init()
+            self._font = pygame.font.Font(None, 18)
+            self._font_small = pygame.font.Font(None, 16)
 
-        self.info_lines = []
-        self.info_max_lines = 200
+        self.info_lines: List[str] = []
+        self.info_max_lines = 400
         self.info_scroll = 0
 
     def _get_scaled(self, img):
@@ -470,45 +534,67 @@ class _SimulationGUI:
             self._image_cache[key] = pygame.transform.scale(img, (CONFIG["gui"]["cell_size"], CONFIG["gui"]["cell_size"]))
         return self._image_cache[key]
 
+    def _draw_score_panel(self, x0: int, y0: int, w: int):
+        s = self.screen
+        pad = 12
+        y = y0
+
+        s.blit(self._font.render("Score", True, (220, 220, 220)), (x0 + pad, y)); y += 24
+        stats = self.sim.score_stats()
+        items = [
+            ("Phase", self.sim.phase_label()),
+            ("Identified nodes", stats["identified_nodes"]),
+            ("Discovered edges", stats["discovered_edges"]),
+            ("GT edges", stats["gt_edges"]),
+            ("Correct edges", stats["correct_edges"]),
+            ("False edges", stats["false_edges"]),
+            ("Score", stats["score"]),
+            ("Precision", f'{stats["precision"]:.2f}'),
+            ("Recall", f'{stats["recall"]:.2f}')
+        ]
+        for lbl, val in items:
+            s.blit(self._font_small.render(f"{lbl}: {val}", True, (200, 200, 200)), (x0 + pad, y))
+            y += 18
+
+        # Plans preview
+        y += 6
+        s.blit(self._font.render("Plans", True, (220, 220, 220)), (x0 + pad, y)); y += 20
+        for d in self.sim.drones:
+            nxt = self.sim._next_planned_step(d.id)
+            q = self.sim.plans.get(d.id, [])
+            preview = f"next={nxt or '-'} | queue={q}" if q else "next=- | queue=[]"
+            s.blit(self._font_small.render(f"Drone {d.id}: {preview}", True, (200, 200, 200)), (x0 + pad, y))
+            y += 18
+
+        y += 8
+        s.blit(self._font_small.render("Latest at bottom", True, (160, 160, 160)), (x0 + w - 150, y0 + 2))
+        pygame.draw.line(s, (60,60,60), (x0, y), (x0 + w, y), 1)
+
+        return y + 10
+
     def _draw_sidebar(self):
         gui = CONFIG["gui"]
         s = self.screen
 
-        # Geometry
-        board_w = self.grid_size[0] * (gui["cell_size"] + gui["margin"]) + gui["margin"]
+        board_w = self.grid_size[0]*(gui["cell_size"]+gui["margin"]) + gui["margin"]
         x0 = board_w
         y0 = 0
         w = self.sidebar_width
         h = s.get_height()
 
-        # Background + border
-        sidebar_bg = (25, 25, 25)
-        border = (60, 60, 60)
-        pygame.draw.rect(s, sidebar_bg, pygame.Rect(x0, y0, w, h))
-        pygame.draw.line(s, border, (x0, 0), (x0, h), 1)
+        pygame.draw.rect(s, (25,25,25), pygame.Rect(x0, y0, w, h))
+        pygame.draw.line(s, (60,60,60), (x0, 0), (x0, h), 1)
 
-        # Title
-        title = "Simulation Info"
-        title_surf = self._font.render(title, True, (220, 220, 220))
-        s.blit(title_surf, (x0 + 12, 12))
+        y_log_top = self._draw_score_panel(x0, y0 + 8, w)
 
-        # Scroll hint (optional)
-        hint = "Latest at bottom"
-        hint_surf = self._font_small.render(hint, True, (160, 160, 160))
-        s.blit(hint_surf, (x0 + w - hint_surf.get_width() - 12, 14))
-
-        # Text area
         pad = 12
         tx = x0 + pad
-        ty = 40
+        ty = y_log_top + 8
         tw = w - 2 * pad
         th = h - ty - pad
 
-        # Text background
-        text_bg = (32, 32, 32)
-        pygame.draw.rect(s, text_bg, pygame.Rect(tx - 4, ty - 4, tw + 8, th + 8))
+        pygame.draw.rect(s, (32,32,32), pygame.Rect(tx-4, ty-4, tw+8, th+8))
 
-        # Render last N lines to fit
         line_h = self._font_small.get_height() + 4
         max_lines_fit = th // line_h
         start_idx = max(0, len(self.info_lines) - max_lines_fit - self.info_scroll)
@@ -516,125 +602,85 @@ class _SimulationGUI:
 
         y = ty
         for line in self.info_lines[start_idx:end_idx]:
-            # simple clipping
             if y > ty + th - line_h:
                 break
-            surf = self._font_small.render(line, True, (230, 230, 230))
-            s.blit(surf, (tx, y))
+            s.blit(self._font_small.render(line, True, (230,230,230)), (tx, y))
             y += line_h
 
     def post_info(self, text: str):
-        # Split on \n so callers can post multiline
         for line in text.splitlines():
             self.info_lines.append(line)
-        # Trim history
         if len(self.info_lines) > self.info_max_lines:
             self.info_lines = self.info_lines[-self.info_max_lines:]
-        # Auto-scroll to bottom when new text arrives
         self.info_scroll = 0
 
     def draw_field(self):
-        """Draw the entire board, pieces, threat overlays, and drones."""
-        gui_config = CONFIG["gui"]
-        cell_size = gui_config["cell_size"]
-        margin = gui_config["margin"]
-        grid_width, grid_height = self.grid_size
+        gui = CONFIG["gui"]
+        cell = gui["cell_size"]
+        m = gui["margin"]
+        gw, gh = self.grid_size
 
-        self.screen.fill(gui_config["background_color"])
+        self.screen.fill(gui["background_color"])
 
-        for x in range(grid_width):
-            for y in range(grid_height):
-                y_flip = grid_height - 1 - y  # flip Y so (0,0) is bottom-left like chess
-                rect = pygame.Rect(
-                    x * (cell_size + margin) + margin,
-                    y_flip * (cell_size + margin) + margin,
-                    cell_size,
-                    cell_size
-                )
-                pygame.draw.rect(self.screen, gui_config["grid_color"], rect)
+        for x in range(gw):
+            for y in range(gh):
+                y_flip = gh - 1 - y
+                rect = pygame.Rect(x*(cell+m)+m, y_flip*(cell+m)+m, cell, cell)
+                pygame.draw.rect(self.screen, gui["grid_color"], rect)
 
                 tile = self.sim.board[x][y]
 
-                # Draw figure, if present
                 if tile.figure:
-                    figure_image = FIGURE_IMAGES.get((tile.figure.color, tile.figure.figure_type))
-                    if figure_image:
-                        self.screen.blit(self._get_scaled(figure_image), rect.topleft)
+                    img = FIGURE_IMAGES.get((tile.figure.color, tile.figure.figure_type))
+                    if img:
+                        self.screen.blit(self._get_scaled(img), rect.topleft)
                     else:
-                        pygame.draw.circle(self.screen, (200, 200, 200), rect.center, cell_size // 3)
+                        pygame.draw.circle(self.screen, (200,200,200), rect.center, cell//3)
 
-                # Overlay "D# A#" (defended/attacked) with a dark background, bottom-left
                 if tile.figure:
                     fig = tile.figure
                     overlay = f"D{fig.defended_by} A{fig.attacked_by}"
-                    text_surf = self._font.render(overlay, True, gui_config["text_color"])
-
-                    # Position: bottom-left with padding
+                    surf = self._font.render(overlay, True, gui["text_color"])
                     pad = 3
                     tx = rect.left + pad
-                    ty = rect.bottom - text_surf.get_height() - pad
+                    ty = rect.bottom - surf.get_height() - pad
+                    pygame.draw.rect(self.screen, (40,40,40), pygame.Rect(tx-2, ty-1, surf.get_width()+4, surf.get_height()+2))
+                    self.screen.blit(surf, (tx, ty))
 
-                    # Background rectangle (dark grey) for contrast
-                    bg_color = (40, 40, 40)  # tweak if needed
-                    bg_rect = pygame.Rect(
-                        tx - 2,                      # tiny margin around text
-                        ty - 1,
-                        text_surf.get_width() + 4,
-                        text_surf.get_height() + 2
-                    )
-                    pygame.draw.rect(self.screen, bg_color, bg_rect)
-
-                    # Blit text on top
-                    self.screen.blit(text_surf, (tx, ty))
-
-                # Draw drones (multiple per tile supported)
                 total = len(tile.drones)
                 if total > 0:
-                    angle_step = 360 / total if total > 1 else 0
-                    radius = cell_size // 6
+                    angle_step = 360/total if total > 1 else 0
+                    radius = cell//6
                     for d_idx, drone in enumerate(tile.drones):
-                        angle = angle_step * d_idx
-                        offset = pygame.math.Vector2(0, 0)
+                        offset = pygame.math.Vector2(0,0)
                         if total > 1:
-                            offset = pygame.math.Vector2(1, 0).rotate(angle) * (cell_size // 4)
+                            offset = pygame.math.Vector2(1,0).rotate(angle_step*d_idx) * (cell//4)
                         center = (rect.centerx + int(offset.x), rect.centery + int(offset.y))
+                        pygame.draw.circle(self.screen, gui["drone_color"], center, radius)
+                        t = self._font.render(str(drone.id), True, gui["text_color"])
+                        self.screen.blit(t, t.get_rect(center=center))
 
-                        pygame.draw.circle(self.screen, gui_config["drone_color"], center, radius)
-                        text = self._font.render(str(drone.id), True, gui_config["text_color"])
-                        text_rect = text.get_rect(center=center)
-                        self.screen.blit(text, text_rect)
-
-        # Optional: if current drone is thinking, draw a highlight over its cell and a small indicator
         if self.sim._thinking:
-            current = self.sim.current_drone()
-            if current:
-                x, y = current.position
-                y_flip = grid_height - 1 - y
-                rect = pygame.Rect(
-                    x * (cell_size + margin) + margin,
-                    y_flip * (cell_size + margin) + margin,
-                    cell_size,
-                    cell_size
-                )
-                pygame.draw.rect(self.screen, (255, 215, 0), rect, 2)  # gold outline
+            cur = self.sim.current_drone()
+            if cur:
+                x, y = cur.position
+                y_flip = gh - 1 - y
+                rect = pygame.Rect(x*(cell+m)+m, y_flip*(cell+m)+m, cell, cell)
+                pygame.draw.rect(self.screen, (255,215,0), rect, 2)
 
         self._draw_sidebar()
         pygame.display.flip()
 
-
-# In[34]:
-
-
-# Cell 6: Simulation core
-
+# ---------------- Simulation (planning, enforcement, scoring, randomization) ----------------
 class Simulation:
-    """Holds game state, figures, tiles, drones, and runs the main loop."""
     def __init__(self):
-        # Game state
-        self.turn = 1   # Which drone's turn it is (1-based)
-        self.round = 1  # Which round we are in (1-based)
-        self.rules = ""
-        with open(CONFIG["simulation"]["rules_path"], "r") as f:
+        if CONFIG["simulation"].get("headless", False):
+            os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+        self.turn = 1
+        self.round = 1
+        rules_path = CONFIG["simulation"].get("rules_path", CONFIG.get("rules_path", "rules.txt"))
+        with open(rules_path, "r", encoding="utf-8") as f:
             self.rules = f.read().replace("NUMBER_OF_DRONES", str(CONFIG["simulation"]["num_drones"]))
 
         self.grid_size = (CONFIG["board"]["width"], CONFIG["board"]["height"])
@@ -645,77 +691,117 @@ class Simulation:
         self.model = self.models[self.model_index]
         LOGGER.log(f"Using model: {self.model}")
 
-        # Board and entity lists
+        # Phase & plan enforcement
+        self.planning_rounds = int(CONFIG["simulation"].get("planning_rounds", 3))
+        self.enforce_plan = bool(CONFIG["simulation"].get("enforce_plan", True))
+        self.plans: Dict[int, List[str]] = {}  # drone_id -> queue of directions
+
+        # Entities
         self.board = [[_Tile(x, y) for y in range(self.grid_size[1])] for x in range(self.grid_size[0])]
         self.figures: List[_Figure] = []
         self.drones: List[_Drone] = []
 
-        # Figures
-        self._create_figures()
+        # Scoring state
+        self.gt_edges: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+        self.identified_positions: Set[Tuple[int,int]] = set()
 
-        # Threat map and per-figure attack/defense
+        # Edge logging state
+        self._edge_log_seen: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+
+        # Setup
+        self._create_figures()
         self._rebuild_threat_map()
         self._compute_attack_defense_per_figure()
+        self._compute_gt_edges()
 
-        # Drones start at white king pos (first figure assumed white king)
-        self.drone_base = self.figures[0].position
+        if self.figures:
+            wk = next((f for f in self.figures if f.color == "white" and f.figure_type == "king"), self.figures[0])
+            self.drone_base = wk.position
+        else:
+            self.drone_base = (0, 0)
         self._create_drones()
 
-        # GUI
         if CONFIG["simulation"]["use_gui"]:
             self.gui = _SimulationGUI(self)
 
-        # Async inference control
-        self.executor = ThreadPoolExecutor(max_workers=1)  # run one LLM turn at a time
+        self.executor = ThreadPoolExecutor(max_workers=1)
         self._current_future: Optional[Future] = None
         self._thinking = False
 
-    # ------------- Setup helpers -------------
+    # ---- Phase helpers
+    def phase_label(self) -> str:
+        return "Planning" if self.round <= self.planning_rounds else "Execution"
+
+    # ---- Figures & edges
     def _create_figures(self):
-        """Generate all figures from CONFIG and place them on the board."""
         LOGGER.log("Creating figures based on configuration.")
         self.figures = []
+
+        figures_cfg = CONFIG.get("figures", {})
+        sim_cfg = CONFIG.get("simulation", {})
+        board_w, board_h = CONFIG["board"]["width"], CONFIG["board"]["height"]
+
+        # Decide whether to randomize
+        rand_flag = bool(sim_cfg.get("randomize_figures", False))
+        seed_val = sim_cfg.get("random_seed", None)
+        should_randomize = rand_flag or (seed_val is not None)
+
+        if should_randomize:
+            try:
+                # Coerce seed if stringified int; else None
+                seed = None
+                if seed_val is not None:
+                    s = str(seed_val).strip()
+                    if s.lstrip("-").isdigit():
+                        seed = int(s)
+                randomized = _randomize_figures_layout(figures_cfg, board_w, board_h, seed)
+                figures_cfg = randomized
+                seed_info = f"seed={seed}" if seed is not None else "seed=<none>"
+                LOGGER.log(f"Figure positions RANDOMIZED ({seed_info}).")
+                # sample log
+                sample_lines = []
+                for color in ("white", "black"):
+                    for ftype in ("king", "queen", "rook", "bishop", "knight", "pawn"):
+                        pos_list = randomized.get(color, {}).get(ftype, [])
+                        if pos_list:
+                            sample_lines.append(f"{color} {ftype}: {pos_list[:3]}{'...' if len(pos_list)>3 else ''}")
+                if sample_lines:
+                    LOGGER.log("Randomized sample: " + " | ".join(sample_lines))
+            except Exception as e:
+                LOGGER.log(f"Randomization failed ({e}); FALLING BACK to configured positions.")
+
+        # Build figure objects from (possibly randomized) layout
         for color in COLORS:
+            types = figures_cfg.get(color, {})
             for figure_type in FIGURE_TYPES:
-                for position in CONFIG["figures"][color][figure_type]:
-                    self.figures.append(_Figure(position, color, figure_type))
+                for position in types.get(figure_type, []):
+                    self.figures.append(_Figure(tuple(position), color, figure_type))
 
         # Place figures on the board
-        for figure in self.figures:
-            self.board[figure.position[0]][figure.position[1]].set_figure(figure)
+        for f in self.figures:
+            self.board[f.position[0]][f.position[1]].set_figure(f)
 
     def _create_drones(self):
-        """Create drones and place them at the base."""
         LOGGER.log(f"Creating {self.num_drones} drones.")
         for i in range(self.num_drones):
-            drone = _Drone(id=i+1, position=self.drone_base, model=self.model, rules=self.rules, sim=self)
-            self.drones.append(drone)
-        for drone in self.drones:
-            tile = self.board[drone.position[0]][drone.position[1]]
-            tile.add_drone(drone)
+            self.drones.append(_Drone(id=i+1, position=self.drone_base, model=self.model, rules=self.rules, sim=self))
+        base = self.board[self.drone_base[0]][self.drone_base[1]]
+        for d in self.drones:
+            base.add_drone(d)
 
-    # ------------- Threat map computation -------------
     def _rebuild_threat_map(self):
-        """Recompute tile-level targeted_by counts from scratch."""
-        # Reset
         for x in range(self.grid_size[0]):
             for y in range(self.grid_size[1]):
                 self.board[x][y].reset_targeted_by_amounts()
-
-        # Rebuild targets for each figure
         for f in self.figures:
             f.calculate_figure_targets(self.board)
-
-        # Accumulate targeted_by on tiles
         for f in self.figures:
             for (tx, ty) in f.target_positions:
                 self.board[tx][ty].add_targeted_by_amount(f.color, 1)
 
     def _compute_attack_defense_per_figure(self):
-        """Set each figure's defended_by and attacked_by counters from its tile."""
         for f in self.figures:
-            x, y = f.position
-            tile = self.board[x][y]
+            tile = self.board[f.position[0]][f.position[1]]
             if f.color == "white":
                 f.defended_by = tile.targeted_by["white"]
                 f.attacked_by = tile.targeted_by["black"]
@@ -723,41 +809,180 @@ class Simulation:
                 f.defended_by = tile.targeted_by["black"]
                 f.attacked_by = tile.targeted_by["white"]
 
+    def _compute_gt_edges(self):
+        self._rebuild_threat_map()
+        self.gt_edges = _compute_edges_for(self.figures, self.board)
+        LOGGER.log(f"GT Edges computed: {len(self.gt_edges)}")
+
+    # ---- Identifications / discovered edges
+    def _update_identifications_from_drone_tile(self, drone: _Drone):
+        tile = self.board[drone.position[0]][drone.position[1]]
+        if tile.figure:
+            self.identified_positions.add(tile.figure.position)
+
+    def discovered_edges(self) -> Set[Tuple[Tuple[int,int], Tuple[int,int]]]:
+        identified_figs = [f for f in self.figures if f.position in self.identified_positions]
+        edges = _compute_edges_for(identified_figs, self.board)
+        idpos = self.identified_positions
+        return {(src, dst) for (src, dst) in edges if dst in idpos}
+
+    def score_stats(self) -> Dict[str, Any]:
+        disc = self.discovered_edges()
+        gt = self.gt_edges
+        correct = disc & gt
+        false = disc - gt
+        prec = (len(correct) / len(disc)) if disc else 0.0
+        rec = (len(correct) / len(gt)) if gt else 0.0
+        return {
+            "identified_nodes": len(self.identified_positions),
+            "discovered_edges": len(disc),
+            "gt_edges": len(gt),
+            "correct_edges": len(correct),
+            "false_edges": len(false),
+            "score": len(correct) - len(false),
+            "precision": prec,
+            "recall": rec
+        }
+
+    # ---- Plans: set/next/advance
+    def _maybe_update_plan_from_text(self, drone_id: int, text: str):
+        steps = parse_plan_from_text(text or "")
+        if steps:
+            self.plans[drone_id] = steps
+            self.post_info(f"[Plan] Drone {drone_id} plan set: {steps}")
+
+    def _next_planned_step(self, drone_id: int) -> Optional[str]:
+        q = self.plans.get(drone_id, [])
+        return q[0] if q else None
+
+    def _advance_plan(self, drone_id: int):
+        q = self.plans.get(drone_id, [])
+        if q:
+            q.pop(0)
+
+    # ---- Edge logging (incremental + final)
+    def _log_edge_line(self, edge: Tuple[Tuple[int,int], Tuple[int,int]]):
+        src, dst = edge
+        is_correct = edge in self.gt_edges
+        tag = "CORRECT" if is_correct else "FALSE"
+        msg = f"Discovered edge: {src} -> {dst} [{tag}]"
+        LOGGER.log(msg)
+        self.post_info(msg)
+
+    def _log_discovered_edges_incremental(self):
+        current = self.discovered_edges()
+        new_edges = current - self._edge_log_seen
+        if not new_edges:
+            return
+        for e in sorted(new_edges):
+            self._log_edge_line(e)
+        self._edge_log_seen |= new_edges
+
+    def _log_final_summary(self):
+        disc = self.discovered_edges()
+        correct = disc & self.gt_edges
+        false = disc - self.gt_edges
+        prec = (len(correct) / len(disc)) if disc else 0.0
+        rec = (len(correct) / len(self.gt_edges)) if self.gt_edges else 0.0
+
+        LOGGER.log("#" * 60)
+        LOGGER.log("FINAL EDGE SUMMARY")
+        LOGGER.log(f"Identified nodes: {len(self.identified_positions)}")
+        LOGGER.log(f"GT edges:         {len(self.gt_edges)}")
+        LOGGER.log(f"Discovered edges: {len(disc)}")
+        LOGGER.log(f"  - Correct:      {len(correct)}")
+        LOGGER.log(f"  - False:        {len(false)}")
+        LOGGER.log(f"Score (correct - false): {len(correct) - len(false)}")
+        LOGGER.log(f"Precision: {prec:.3f}  |  Recall: {rec:.3f}")
+        if false:
+            LOGGER.log(f"False edges list ({len(false)}):")
+            for e in sorted(false):
+                LOGGER.log(f"  {e[0]} -> {e[1]}")
+
+        self.post_info("=== FINAL EDGE SUMMARY ===")
+        self.post_info(f"Disc:{len(disc)}  Corr:{len(correct)}  False:{len(false)}  "
+                       f"Score:{len(correct)-len(false)}  P:{prec:.2f} R:{rec:.2f}")
+
+    # ---- GUI/log helper
     def post_info(self, msg: str):
-        """Convenient relay to the GUI sidebar."""
         if hasattr(self, "gui"):
             self.gui.post_info(msg)
 
-    def threat_summary(self):
-        """Log a compact summary of attack/defense per figure."""
-        for f in self.figures:
-            LOGGER.log(f"{f.color} {f.figure_type} at {f.position} — defended_by: {f.defended_by}, attacked_by: {f.attacked_by}")
+    def current_drone(self) -> Optional[_Drone]:
+        return self.drones[self.turn - 1] if 1 <= self.turn <= len(self.drones) else None
 
-    # ------------- Turn orchestration (async) -------------
+    # ---- Turn orchestration
     def _start_drone_turn(self, drone: _Drone):
-        """Kick off LLM inference for this drone without blocking the GUI."""
         self._thinking = True
-        self._current_future = self.executor.submit(drone._generate_full_model_response)
+        self._current_future = self.executor.submit(drone.generate_full_model_response)
 
     def _try_finish_drone_turn(self, drone: _Drone) -> bool:
-        """If the LLM finished, apply its action and advance. Return True when applied."""
         if self._current_future is None or not self._current_future.done():
             return False
 
         try:
-            response = self._current_future.result()
-            LOGGER.log(f"Drone {drone.id} response:\n{pprint.pformat(response, indent=4, width=200)}")
+            messages = self._current_future.result()
+            result = messages[-1]["content"]
+            LOGGER.log(f"Drone {drone.id} response:\n{pprint.pformat(result, indent=4, width=200)}")
+
+            # Accept plan updates from memory or message
+            self._maybe_update_plan_from_text(drone.id, result.get("memory", ""))
+            self._maybe_update_plan_from_text(drone.id, result.get("message", ""))
+
             self.post_info(f"Drone {drone.id}:")
-            if response["action"] == "move":
-                drone._move(response["content"])
-                self.post_info(f"Move {response['content']} to {drone.position}")
-            elif response["action"] == "broadcast":
-                self.post_info(f"Broadcast")
-                self.post_info(f"{pprint.pformat(response['content'], indent=4, width=250)}")
+            self.post_info(f"Rationale: {result.get('rationale','')}")
+            action = result.get("action", "wait")
+            phase = self.phase_label()
+
+            # Planning phase: no moves
+            if phase == "Planning" and action == "move":
+                self.post_info("Planning phase: movement disabled. Waiting.")
+                action = "wait"
+
+            if action == "move":
+                direction = (result.get("direction") or "").lower()
+                allowed = drone._allowed_directions()
+                if direction not in allowed:
+                    self.post_info(f"Invalid/OOB direction '{direction}' (allowed={allowed}). Waiting.")
+                else:
+                    if phase == "Execution" and self.enforce_plan:
+                        expected = self._next_planned_step(drone.id)
+                        if expected and direction != expected:
+                            self.post_info(f"Deviation from plan: expected '{expected}', got '{direction}'. Waiting; broadcast to re-plan if needed.")
+                        else:
+                            ok = drone._move(direction)
+                            if ok:
+                                self.post_info(f"Move {direction} to {drone.position}")
+                                if expected == direction:
+                                    self._advance_plan(drone.id)
+                            else:
+                                self.post_info(f"Move {direction} failed. Waiting.")
+                    else:
+                        ok = drone._move(direction)
+                        if ok:
+                            self.post_info(f"Move {direction} to {drone.position}")
+                        else:
+                            self.post_info(f"Move {direction} failed. Waiting.")
+
+            elif action == "broadcast":
+                msg = result.get("message") or ""
+                self.post_info("Broadcast")
+                self.post_info(msg)
                 tile = self.board[drone.position[0]][drone.position[1]]
                 for d in tile.drones:
                     if d.id != drone.id:
-                        d.rx_buffer += f"Drone {drone.id} broadcasted: {response['content']}\n"
+                        d.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
+
+            else:
+                self.post_info("Wait")
+
+            # Persist memory and update identifications
+            drone.memory = result.get("memory", drone.memory or "")
+            self._update_identifications_from_drone_tile(drone)
+
+            # Log any newly discovered edges this turn
+            self._log_discovered_edges_incremental()
+
             self.post_info("\n")
         except Exception as e:
             LOGGER.log(f"Error finishing Drone {drone.id}'s turn: {e}")
@@ -766,111 +991,89 @@ class Simulation:
         self._current_future = None
         return True
 
-    def current_drone(self) -> Optional[_Drone]:
-        """Return the drone whose turn it is (for GUI highlighting)."""
-        return self.drones[self.turn - 1] if 1 <= self.turn <= len(self.drones) else None
-
-    # ------------- Responsive main loop -------------
+    # ---- Main loop
     def run_simulation(self):
-        """Main loop that keeps GUI responsive while turns compute in the background."""
         max_rounds = CONFIG["simulation"].get("max_rounds", 10)
         use_gui = CONFIG["simulation"].get("use_gui", True)
 
         running = True
         clock = pygame.time.Clock()
 
-        if use_gui:
+        if use_gui and hasattr(self, "gui"):
             pygame.display.set_caption(f"Simulation - Round {1}.1/{max_rounds}.{self.num_drones}")
             self.gui.draw_field()
 
         current_round = 1
-        drone_index = 0  # 0..num_drones-1
-        pending_turn = False
+        drone_index = 0
+        pending = False
 
         try:
             while running:
-                # 1) Handle events every frame (never block)
-                if use_gui:
+                if use_gui and hasattr(self, "gui"):
                     for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            running = False
-                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                            running = False
+                        if event.type == pygame.QUIT: running = False
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE: running = False
 
-                # 2) Start a new turn if none pending
-                if not pending_turn:
+                if not pending:
                     if current_round > max_rounds:
                         break
                     self.round = current_round
                     self.turn = drone_index + 1
                     caption = f"Simulation - Round {current_round}.{self.turn}/{max_rounds}.{self.num_drones}"
-                    LOGGER.log('#' * 50); LOGGER.log(caption)
-                    if use_gui:
+                    LOGGER.log('#'*50); LOGGER.log(caption + f" | Phase: {self.phase_label()}")
+                    if use_gui and hasattr(self, "gui"):
                         pygame.display.set_caption(caption)
 
-                    drone = self.drones[drone_index]
-                    self._start_drone_turn(drone)
-                    pending_turn = True
+                    self._start_drone_turn(self.drones[drone_index])
+                    pending = True
 
-                # 3) If current LLM finished, apply result and advance indices
-                if pending_turn:
-                    drone = self.drones[drone_index]
-                    if self._try_finish_drone_turn(drone):
+                if pending:
+                    d = self.drones[drone_index]
+                    if self._try_finish_drone_turn(d):
                         LOGGER.log(f"Round {self.round}.{self.turn} completed.")
                         drone_index += 1
                         if drone_index >= self.num_drones:
                             drone_index = 0
                             current_round += 1
-                        pending_turn = False
+                        pending = False
 
-                # 4) Redraw every frame
-                if use_gui:
+                if use_gui and hasattr(self, "gui"):
                     self.gui.draw_field()
 
-                # 5) Limit FPS
                 clock.tick(60)
 
         except KeyboardInterrupt:
             LOGGER.log("KeyboardInterrupt received — shutting down gracefully.")
             running = False
         finally:
-            # Ensure resources are always released
+            # Final edge summary (always)
+            try:
+                self._log_final_summary()
+            except Exception:
+                pass
             self.shutdown()
 
-
     def shutdown(self):
-        """Cleanly stop background work and close the GUI."""
-        # Cancel any running LLM future (best-effort)
         try:
             if getattr(self, "_current_future", None) and not self._current_future.done():
                 self._current_future.cancel()
         except Exception:
             pass
-
-        # Stop the executor
         try:
             if getattr(self, "executor", None):
-                # don't wait on long model calls; cancel if supported
                 self.executor.shutdown(wait=False, cancel_futures=True)
+                self.executor = None
         except Exception:
             pass
-
-        # Close Pygame cleanly
         try:
             if hasattr(self, "gui"):
                 pygame.display.quit()
             pygame.quit()
         except Exception:
             pass
-
         LOGGER.log("Clean shutdown complete.")
 
-
-# In[35]:
-
-
-# Cell 7: Entry point
-
+# ---------------- Entry ----------------
 if __name__ == "__main__":
     try:
         LOGGER.log("Launching simulation.")
@@ -878,9 +1081,6 @@ if __name__ == "__main__":
         SIM.run_simulation()
     except KeyboardInterrupt:
         LOGGER.log("Interrupted by user (Ctrl+C).")
-        try:
-            SIM.shutdown()
-        except Exception:
-            pass
-
+        try: SIM.shutdown()
+        except Exception: pass
 

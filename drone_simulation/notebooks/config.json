@@ -8,20 +8,24 @@
     "model_index": 1,
     "models": [
       "manual",
+      "gpt-oss:120b",
       "qwen3:30b",
       "deepseek-r1:14b",
-      "llama3.1:8b",
-      "gpt-4"
+      "llama3.1:8b"
     ],
-    "num_drones": 2,
+    "num_drones": 6,
     "max_rounds": 32,
     "rules_path": "rules.txt",
-    "max_tokens_for_rationale": 16,
-    "max_tokens_for_action": 2,
-    "max_tokens_for_action_move": 2,
-    "max_tokens_for_action_broadcast": 16,
-    "max_tokens_for_memory": 16,
-    "temperature": 0.7
+    "max_tokens_for_rationale": 1024,
+    "max_tokens_for_action": 1024,
+    "max_tokens_for_action_move": 1024,
+    "max_tokens_for_action_broadcast": 1024,
+    "max_tokens_for_memory": 1024,
+    "temperature": 0.7,
+    "planning_rounds": 3,
+    "enforce_plan": true,
+    "randomize_figures": true,
+    "random_seed": 456
   },
   "gui": {
     "cell_size": 80,
@@ -53,10 +57,10 @@
     }
   },
   "prompt_requests": {
-    "rationale": "Rationale: Provide a rationale on how you want to use your turn and why you chose this strategy.",
-    "action": "Action: What you want to do in one word: 'move', 'wait', 'broadcast'. Answer with exactly one token from the allowed list. Do not add punctuation or explanations.",
-    "action_move": "Direction: Where you want to move in one word: 'north', 'south', 'west', 'east', 'northeast', 'southeast', 'northwest', 'southwest'. Answer with exactly one token from the allowed list. Do not add punctuation or explanations.",
-    "action_broadcast": "Message: What you want to broadcast?",
-    "memory_update": "Memory: Summarize everything worth remembering."
+    "rationale": "Rationale: Provide a rationale on how you want to use your turn to reach the game objective.",
+    "action": "Action: What you want to do?",
+    "action_move": "Direction: If your action is to move, where you want to move?",
+    "action_broadcast": "Message: If your action is broadcast, what you want to broadcast?",
+    "memory_update": "Memory: Summarize everything worth remembering. Pretend that you lose all your previous memory and only have this memory after your turn."
   }
 }

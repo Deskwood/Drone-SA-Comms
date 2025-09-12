@@ -19,13 +19,10 @@ from typing import Tuple, List, Optional, Literal, Dict, Any, Set
 import json
 import pygame
 import pyperclip
-from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, Future
 import nbformat
 from nbconvert import PythonExporter
 from pydantic import BaseModel
-
-# Optional: local model via Ollama
 try:
     from ollama import chat as ollama_chat
     _OLLAMA_AVAILABLE = True
@@ -269,6 +266,11 @@ def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, see
         out[color][ftype] = [list(p) for p in picks]
     return out
 
+
+
+# In[ ]:
+
+
 # ---------------- Board & edges ----------------
 class _Figure:
     def __init__(self, position: Tuple[int, int], color: str, figure_type: str):
@@ -350,6 +352,11 @@ def _compute_edges_for(figures: List[_Figure], board: List[List[_Tile]]) -> Set[
             if board[tx][ty].figure is not None:
                 edges.add((f.position, board[tx][ty].figure.position))
     return edges
+
+
+
+# In[ ]:
+
 
 # ---------------- Drone ----------------
 class _Drone:
@@ -485,6 +492,11 @@ class _Drone:
             {"role": "user", "content": situation}
         ]
         return self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
+
+
+
+# In[ ]:
+
 
 # ---------------- GUI (with scoring & plan preview) ----------------
 class _SimulationGUI:
@@ -670,6 +682,11 @@ class _SimulationGUI:
 
         self._draw_sidebar()
         pygame.display.flip()
+
+
+
+# In[ ]:
+
 
 # ---------------- Simulation (planning, enforcement, scoring, randomization) ----------------
 class Simulation:
@@ -1072,6 +1089,11 @@ class Simulation:
         except Exception:
             pass
         LOGGER.log("Clean shutdown complete.")
+
+
+
+# In[ ]:
+
 
 # ---------------- Entry ----------------
 if __name__ == "__main__":

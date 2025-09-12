@@ -8,7 +8,6 @@
     "model_index": 1,
     "models": [
       "manual",
-      "gpt-oss:120b",
       "qwen3:30b",
       "deepseek-r1:14b",
       "llama3.1:8b"
@@ -35,7 +34,7 @@
     "drone_color": [0, 200, 255],
     "text_color": [255, 255, 255],
     "figure_image_dir": "../img",
-    "sidebar_width": 1600
+    "sidebar_width": 1200
   },
   "rules_path": "rules.txt",
   "figures": {

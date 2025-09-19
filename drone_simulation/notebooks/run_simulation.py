@@ -15,7 +15,6 @@ import random
 import re
 from datetime import datetime
 from typing import Tuple, List, Optional, Literal, Dict, Any, Set
-
 import json
 import pygame
 import pyperclip
@@ -60,14 +59,12 @@ class TimestampedLogger:
         os.makedirs(log_dir, exist_ok=True)
         self.log_path = os.path.join(log_dir, log_file)
 
-        # Reset handlers
         root = logging.getLogger()
         for h in list(root.handlers):
             try: h.close()
             except Exception: pass
             root.removeHandler(h)
 
-        # Fresh file
         try:
             if os.path.exists(self.log_path):
                 os.remove(self.log_path)
@@ -131,18 +128,19 @@ def load_config(config_path: str = "config.json") -> dict:
     sim.setdefault("use_gui", True)
     sim.setdefault("headless", False)
     sim.setdefault("rules_path", cfg.get("rules_path", "rules.txt"))
-    # token budgets
-    sim.setdefault("max_tokens_for_rationale", 16)
-    sim.setdefault("max_tokens_for_action", 2)
-    sim.setdefault("max_tokens_for_action_move", 2)
-    sim.setdefault("max_tokens_for_action_broadcast", 16)
-    sim.setdefault("max_tokens_for_memory", 16)
+    # generous budgets with cap
+    sim.setdefault("max_tokens_for_rationale", 1024)
+    sim.setdefault("max_tokens_for_action", 1024)
+    sim.setdefault("max_tokens_for_action_move", 1024)
+    sim.setdefault("max_tokens_for_action_broadcast", 1024)
+    sim.setdefault("max_tokens_for_memory", 1024)
+    sim.setdefault("max_tokens_total_cap", 4096)
     # planning + enforcement
     sim.setdefault("planning_rounds", 3)
     sim.setdefault("enforce_plan", True)
-    # figure randomization knobs
+    # figure randomization
     sim.setdefault("randomize_figures", False)
-    sim.setdefault("random_seed", None)  # int or null; if null + randomize_figures=True -> nondeterministic
+    sim.setdefault("random_seed", None)
 
     cfg.setdefault("figures", {c: {t: [] for t in FIGURE_TYPES} for c in COLORS})
     return cfg
@@ -215,36 +213,32 @@ def safe_parse_turnresult(payload: str) -> dict:
         return {"rationale": f"Parse/validate error: {e}", "action": "wait", "direction": None, "message": None, "memory": ""}
 
 # ---------------- Plan parsing ----------------
+PLAN_RE = re.compile(r'(?i)\bplan\s*:\s*.*?\bpath\s*=\s*([^;|.\n\r]+)')
+
 def parse_plan_from_text(text: str) -> List[str]:
-    """
-    Extract path list from strings containing 'PLAN:' and 'path=...'.
-    Example: 'PLAN: role=Scout path=NE,E,SE; rendezvous=(5,3)'
-    Returns normalized direction keys (lowercase) present in DIRECTION_MAP.
-    """
-    if not text or PLAN_PREFIX.lower() not in text.lower():
+    if not text:
         return []
-    m = re.search(r'path\s*=\s*([A-Za-z,\s\-]+)', text)
+    m = PLAN_RE.search(text)
     if not m:
         return []
     raw = m.group(1)
-    steps = [s.strip().lower() for s in raw.split(',') if s.strip()]
     alias = {
         "n": "north", "s": "south", "e": "east", "w": "west",
         "ne": "northeast", "nw": "northwest", "se": "southeast", "sw": "southwest"
     }
-    norm = []
-    for s in steps:
-        s2 = alias.get(s, s)
-        if s2 in DIRECTION_MAP:
-            norm.append(s2)
-    return norm
+    kept, dropped = [], []
+    for tok in [t.strip().lower() for t in raw.split(",") if t.strip()]:
+        tok = alias.get(tok, tok)
+        if tok in DIRECTION_MAP:
+            kept.append(tok)
+        else:
+            dropped.append(tok)
+    if dropped:
+        LOGGER.log(f"Plan parser dropped tokens: {dropped}")
+    return kept
 
 # ---------------- Randomize figures ----------------
 def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, seed: Optional[int] = None) -> dict:
-    """
-    Produce a randomized figure layout preserving counts per color/type.
-    Returns a new dict shaped like config["figures"].
-    """
     requests = []
     for color, types in figures_cfg.items():
         for ftype, positions in types.items():
@@ -265,11 +259,6 @@ def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, see
         cursor += cnt
         out[color][ftype] = [list(p) for p in picks]
     return out
-
-
-
-# In[ ]:
-
 
 # ---------------- Board & edges ----------------
 class _Figure:
@@ -353,11 +342,6 @@ def _compute_edges_for(figures: List[_Figure], board: List[List[_Tile]]) -> Set[
                 edges.add((f.position, board[tx][ty].figure.position))
     return edges
 
-
-
-# In[ ]:
-
-
 # ---------------- Drone ----------------
 class _Drone:
     def __init__(self, id: int, position: Tuple[int, int], model: str, rules: str, sim, color: str = "white"):
@@ -404,7 +388,7 @@ class _Drone:
 
     def _determine_situation_description(self) -> str:
         others = ", ".join(
-            f"Drone {d.id}" for d in self.sim.board[self.position[0]][self.position[1]].drones if d.id != self.id
+            f"Drone {d.id} at {d.position}" for d in self.sim.board[self.position[0]][self.position[1]].drones if d.id != self.id
         )
         fig_here = "None"
         if self.sim.board[self.position[0]][self.position[1]].figure:
@@ -413,7 +397,8 @@ class _Drone:
         neigh = ""
         for dx in [-1,0,1]:
             for dy in [-1,0,1]:
-                if dx==0 and dy==0: continue
+                if dx==0 and dy==0: 
+                    continue
                 nx, ny = self.position[0]+dx, self.position[1]+dy
                 if 0 <= nx < CONFIG["board"]["width"] and 0 <= ny < CONFIG["board"]["height"]:
                     t = self.sim.board[nx][ny]
@@ -422,6 +407,15 @@ class _Drone:
         neigh = neigh.strip(", ")
 
         allowed = self._allowed_directions()
+        nxt = self.sim._next_planned_step(self.id)
+        queue = self.sim.plans.get(self.id, [])
+        adj_unknown = self.sim._adjacent_unknown(self.position)
+
+        team_summary = self.sim._team_plan_summary(self.id) if hasattr(self.sim, "_team_plan_summary") else "None"
+        hotspots = []
+        if hasattr(self.sim, "_coverage_hotspots"):
+            hotspots = self.sim._coverage_hotspots(top_k=5)
+
         s = []
         s.append(f"Phase: {self._phase()}")
         s.append(f"Current round number: {self.sim.round}")
@@ -429,9 +423,15 @@ class _Drone:
         s.append(f"My grid coords: x={self.position[0]}, y={self.position[1]}")
         s.append(f"Current position: {self.position}")
         s.append(f"AllowedDirections: {allowed}")
+        s.append("Reminder: You MUST pick 'direction' only from AllowedDirections when action=='move'.")
+        s.append(f"PlanNext: {nxt or '-'}")
+        s.append(f"PlanQueue: {queue}")
+        s.append(f"AdjacentUnknownFigures: {adj_unknown or 'None'}")
         s.append(f"Visible drones at position: {others or 'None'}")
         s.append(f"Visible figure at position: {fig_here}")
         s.append(f"Visible neighboring figures: {neigh or 'None'}")
+        s.append(f"TeamPlansSummary: {team_summary}")
+        s.append(f"CoverageHotspots(top5): {hotspots or 'None'}")
         s.append(f"Memory: {self.memory}")
         s.append(f"Broadcast Rx Buffer: {self.rx_buffer}")
         self.rx_buffer = ""
@@ -440,12 +440,13 @@ class _Drone:
     # LLM interface
     def _token_budget_total(self) -> int:
         sim = CONFIG["simulation"]
-        est = (int(sim.get("max_tokens_for_rationale",16)) +
-               int(sim.get("max_tokens_for_action",2)) +
-               max(int(sim.get("max_tokens_for_action_move",2)),
-                   int(sim.get("max_tokens_for_action_broadcast",16))) +
-               int(sim.get("max_tokens_for_memory",16)) + 64)
-        return max(128, min(est, 4096))  # allow large budgets if configured
+        est = (int(sim.get("max_tokens_for_rationale",2048)) +
+               int(sim.get("max_tokens_for_action",2048)) +
+               max(int(sim.get("max_tokens_for_action_move",2048)),
+                   int(sim.get("max_tokens_for_action_broadcast",2048))) +
+               int(sim.get("max_tokens_for_memory",2048)))
+        cap = int(sim.get("max_tokens_total_cap", 4096))
+        return max(512, min(est, cap))
 
     def _generate_single_model_response(self, messages: List[dict], model: str, temperature: float) -> List[dict]:
         def _store(text: str) -> List[dict]:
@@ -461,7 +462,6 @@ class _Drone:
             except Exception: pass
             return _store(input("Paste pure JSON TurnResult: "))
 
-        # Ollama
         if not _OLLAMA_AVAILABLE:
             return _store(json.dumps({"rationale": "Ollama not installed; wait.", "action": "wait", "direction": None, "message": None, "memory": ""}))
 
@@ -487,16 +487,20 @@ class _Drone:
     def generate_full_model_response(self) -> List[dict]:
         temperature = CONFIG["simulation"].get("temperature", 0.7)
         situation = self._determine_situation_description()
+        pr = CONFIG.get("prompt_requests", {})
+        cues = "\n".join([
+            pr.get("rationale",""),
+            pr.get("action",""),
+            pr.get("action_move",""),
+            pr.get("action_broadcast",""),
+            pr.get("memory_update","")
+        ]).strip()
+        user_content = situation if not cues else situation + "\n\n" + cues
         messages = [
             {"role": "system", "content": self.rules},
-            {"role": "user", "content": situation}
+            {"role": "user", "content": user_content}
         ]
         return self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
-
-
-
-# In[ ]:
-
 
 # ---------------- GUI (with scoring & plan preview) ----------------
 class _SimulationGUI:
@@ -568,7 +572,6 @@ class _SimulationGUI:
             s.blit(self._font_small.render(f"{lbl}: {val}", True, (200, 200, 200)), (x0 + pad, y))
             y += 18
 
-        # Plans preview
         y += 6
         s.blit(self._font.render("Plans", True, (220, 220, 220)), (x0 + pad, y)); y += 20
         for d in self.sim.drones:
@@ -581,7 +584,6 @@ class _SimulationGUI:
         y += 8
         s.blit(self._font_small.render("Latest at bottom", True, (160, 160, 160)), (x0 + w - 150, y0 + 2))
         pygame.draw.line(s, (60,60,60), (x0, y), (x0 + w, y), 1)
-
         return y + 10
 
     def _draw_sidebar(self):
@@ -683,12 +685,7 @@ class _SimulationGUI:
         self._draw_sidebar()
         pygame.display.flip()
 
-
-
-# In[ ]:
-
-
-# ---------------- Simulation (planning, enforcement, scoring, randomization) ----------------
+# ---------------- Simulation (planning coach, coordination, targeting, enforcement, scoring, metrics) ----------------
 class Simulation:
     def __init__(self):
         if CONFIG["simulation"].get("headless", False):
@@ -711,7 +708,7 @@ class Simulation:
         # Phase & plan enforcement
         self.planning_rounds = int(CONFIG["simulation"].get("planning_rounds", 3))
         self.enforce_plan = bool(CONFIG["simulation"].get("enforce_plan", True))
-        self.plans: Dict[int, List[str]] = {}  # drone_id -> queue of directions
+        self.plans: Dict[int, List[str]] = {}
 
         # Entities
         self.board = [[_Tile(x, y) for y in range(self.grid_size[1])] for x in range(self.grid_size[0])]
@@ -724,6 +721,15 @@ class Simulation:
 
         # Edge logging state
         self._edge_log_seen: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+
+        # Team planning caches
+        self.team_plans: Dict[int, Dict[str, Any]] = {}
+        self.cov_heat: Optional[List[List[float]]] = None
+
+        # Optional metrics
+        self.overlap_events: int = 0           # times two+ drones shared a tile after a move
+        self.hotspot_hits: int = 0             # moves into current hotspot set
+        self.total_moves: int = 0
 
         # Setup
         self._create_figures()
@@ -758,14 +764,12 @@ class Simulation:
         sim_cfg = CONFIG.get("simulation", {})
         board_w, board_h = CONFIG["board"]["width"], CONFIG["board"]["height"]
 
-        # Decide whether to randomize
         rand_flag = bool(sim_cfg.get("randomize_figures", False))
         seed_val = sim_cfg.get("random_seed", None)
         should_randomize = rand_flag or (seed_val is not None)
 
         if should_randomize:
             try:
-                # Coerce seed if stringified int; else None
                 seed = None
                 if seed_val is not None:
                     s = str(seed_val).strip()
@@ -775,7 +779,6 @@ class Simulation:
                 figures_cfg = randomized
                 seed_info = f"seed={seed}" if seed is not None else "seed=<none>"
                 LOGGER.log(f"Figure positions RANDOMIZED ({seed_info}).")
-                # sample log
                 sample_lines = []
                 for color in ("white", "black"):
                     for ftype in ("king", "queen", "rook", "bishop", "knight", "pawn"):
@@ -787,14 +790,12 @@ class Simulation:
             except Exception as e:
                 LOGGER.log(f"Randomization failed ({e}); FALLING BACK to configured positions.")
 
-        # Build figure objects from (possibly randomized) layout
         for color in COLORS:
             types = figures_cfg.get(color, {})
             for figure_type in FIGURE_TYPES:
                 for position in types.get(figure_type, []):
                     self.figures.append(_Figure(tuple(position), color, figure_type))
 
-        # Place figures on the board
         for f in self.figures:
             self.board[f.position[0]][f.position[1]].set_figure(f)
 
@@ -861,12 +862,92 @@ class Simulation:
             "recall": rec
         }
 
+    # ---- Team planning and coaching
+    def _register_team_plan(self, drone_id: int, text: str):
+        if not text:
+            return
+        plan = {"raw": (text or "").strip(), "ts_round": self.round}
+        m_path = re.search(r'(?i)\bpath\s*=\s*([^;\n\r]+)', text or "")
+        m_role = re.search(r'(?i)\brole\s*=\s*([A-Za-z0-9_\-]+)', text or "")
+        m_rend = re.search(r'(?i)\brendezvous\s*=\s*\(?\s*([0-7])\s*,\s*([0-7])\s*\)?', text or "")
+        if m_path: plan["path"] = [p.strip().lower() for p in m_path.group(1).split(",") if p.strip()]
+        if m_role: plan["role"] = m_role.group(1)
+        if m_rend: plan["rendezvous"] = (int(m_rend.group(1)), int(m_rend.group(2)))
+        self.team_plans[drone_id] = plan
+
+    def _team_plan_summary(self, requester_id: int) -> str:
+        if not self.team_plans:
+            return "None"
+        lines = []
+        for did, info in sorted(self.team_plans.items()):
+            if did == requester_id:
+                continue
+            role = info.get("role", "Scout")
+            path = info.get("path", [])
+            path_preview = ",".join(path[:6]) + ("..." if len(path) > 6 else "")
+            rv = info.get("rendezvous", None)
+            rv_txt = f" rendezvous={rv}" if rv else ""
+            lines.append(f"D{did}: role={role} path={path_preview}{rv_txt} (r{info.get('ts_round','-')})")
+        return " | ".join(lines) if lines else "None"
+
+    def _update_coverage(self, drone: _Drone):
+        if self.cov_heat is None:
+            W,H = self.grid_size
+            self.cov_heat = [[0.0 for _ in range(H)] for _ in range(W)]
+        decay = 0.88  # slower decay to keep hotspot memory
+        for x in range(self.grid_size[0]):
+            row = self.cov_heat[x]
+            for y in range(self.grid_size[1]):
+                row[y] *= decay
+        x,y = drone.position
+        self.cov_heat[x][y] += 1.0
+
+        # optional metric: hotspot hit
+        hotspots = set(pos for pos,_v in self._coverage_hotspots(top_k=5))
+        if (x,y) in hotspots:
+            self.hotspot_hits += 1
+
+        # optional metric: same-tile overlap now?
+        tile = self.board[x][y]
+        if len(tile.drones) > 1:
+            self.overlap_events += 1
+
+    def _coverage_hotspots(self, top_k: int = 5) -> List[Tuple[Tuple[int,int], float]]:
+        if self.cov_heat is None:
+            return []
+        W,H = self.grid_size
+        vals = [((x,y), self.cov_heat[x][y]) for x in range(W) for y in range(H)]
+        vals.sort(key=lambda t: t[1], reverse=True)
+        return [(pos, v) for (pos,v) in vals[:top_k] if v > 0.0]
+
+    def _planning_coach_for(self, drone_id: int) -> str:
+        peers = self._team_plan_summary(drone_id)
+        tips = [
+            "Claim a disjoint row/column band; avoid hotspots shown below.",
+            "Give a concrete 6–12 step path using long directions.",
+            "Rendezvous near center around 70% of execution rounds.",
+            "Step onto an adjacent unknown, then resume your sweep.",
+            "Keep memory PLAN durable; pop one step per executed move."
+        ]
+        hspots = self._coverage_hotspots(top_k=5)
+        return (f"TeamPlans: {peers}\n"
+                f"CoverageHotspots: {hspots}\n"
+                f"CoordinationHints: " + " ".join(f"[{i+1}] {t}" for i,t in enumerate(tips)))
+
+    def _inject_planning_coach(self, drone: _Drone):
+        if self.phase_label() != "Planning":
+            return
+        coach = self._planning_coach_for(drone.id)
+        drone.rx_buffer += f"SystemCoach: {coach}\n"
+
     # ---- Plans: set/next/advance
     def _maybe_update_plan_from_text(self, drone_id: int, text: str):
         steps = parse_plan_from_text(text or "")
         if steps:
             self.plans[drone_id] = steps
             self.post_info(f"[Plan] Drone {drone_id} plan set: {steps}")
+            d = self.drones[drone_id - 1]
+            d.memory = f"PLAN: role=Scout path={','.join(steps)}"
 
     def _next_planned_step(self, drone_id: int) -> Optional[str]:
         q = self.plans.get(drone_id, [])
@@ -876,6 +957,109 @@ class Simulation:
         q = self.plans.get(drone_id, [])
         if q:
             q.pop(0)
+
+    # ---- Adjacent-unknowns, unknown set, paths
+    def _adjacent_unknown(self, pos: Tuple[int,int]) -> List[Tuple[str, Tuple[int,int]]]:
+        x, y = pos
+        out: List[Tuple[str, Tuple[int,int]]] = []
+        for dx in (-1,0,1):
+            for dy in (-1,0,1):
+                if dx == 0 and dy == 0: continue
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < self.grid_size[0] and 0 <= ny < self.grid_size[1]:
+                    t = self.board[nx][ny]
+                    if t.figure and t.figure.position not in self.identified_positions:
+                        out.append((direction_from_vector((dx,dy)), (nx,ny)))
+        return out
+
+    def _unknown_figure_positions(self) -> List[Tuple[int,int]]:
+        return [f.position for f in self.figures if f.position not in self.identified_positions]
+
+    def _shortest_path8(self, start: Tuple[int,int], goal: Tuple[int,int]) -> List[str]:
+        if start == goal: return []
+        W, H = self.grid_size
+        dirs = [("north",(0,1)),("south",(0,-1)),("east",(1,0)),("west",(-1,0)),
+                ("northeast",(1,1)),("northwest",(-1,1)),("southeast",(1,-1)),("southwest",(-1,-1))]
+        from collections import deque
+        q = deque([start])
+        prev: Dict[Tuple[int,int], Tuple[Tuple[int,int], str]] = {start: (start, "")}
+        while q:
+            x,y = q.popleft()
+            for name,(dx,dy) in dirs:
+                nx,ny = x+dx,y+dy
+                if 0<=nx<W and 0<=ny<H and (nx,ny) not in prev:
+                    prev[(nx,ny)] = ((x,y), name)
+                    if (nx,ny) == goal:
+                        seq=[]; cur=(nx,ny)
+                        while prev[cur][0]!=cur:
+                            seq.append(prev[cur][1]); cur=prev[cur][0]
+                        return list(reversed(seq))
+                    q.append((nx,ny))
+        return []
+
+    def _retarget_nearest_unknown(self, drone: _Drone, min_queue: int = 12):
+        q = self.plans.get(drone.id, [])
+        if len(q) >= min_queue:
+            return
+        unknowns = self._unknown_figure_positions()
+        if not unknowns:
+            return
+        sx,sy = drone.position
+        target = min(unknowns, key=lambda p: max(abs(p[0]-sx), abs(p[1]-sy)))
+        seg = self._shortest_path8(drone.position, target)
+        if not seg:
+            return
+        self.plans.setdefault(drone.id, []).extend(seg)
+        drone.memory = f"PLAN: role=Scout path={','.join(self.plans[drone.id])}"
+        self.post_info(f"[Target] Drone {drone.id} queued path to nearest unknown {target}: {seg}")
+
+    # ---- Serpentine fallback
+    def _synthesize_serpentine_suffix(self, pos: Tuple[int,int], max_len: int = 64) -> List[str]:
+        W, H = self.grid_size
+        x, y = pos
+        plan: List[str] = []
+
+        up_dist = (H-1) - y
+        down_dist = y
+        if up_dist <= down_dist:
+            plan.extend(["north"] * up_dist)
+            target_y = H-1
+        else:
+            plan.extend(["south"] * down_dist)
+            target_y = 0
+
+        to_left = x
+        to_right = (W-1) - x
+        if to_left <= to_right:
+            plan.extend(["west"] * to_left)
+            sweep = ["east"] * (W-1) + (["south"] if target_y > 0 else ["north"]) + ["west"] * (W-1)
+        else:
+            plan.extend(["east"] * to_right)
+            sweep = ["west"] * (W-1) + (["south"] if target_y > 0 else ["north"]) + ["east"] * (W-1)
+
+        plan.extend(sweep)
+        return plan[:max_len]
+
+    def _ensure_plan(self, drone_id: int):
+        if not self.plans.get(drone_id):
+            d = self.drones[drone_id - 1]
+            synthesized = self._synthesize_serpentine_suffix(d.position)
+            self.plans[drone_id] = synthesized
+            d.memory = f"PLAN: role=Scout path={','.join(synthesized)}"
+            self.post_info(f"[Plan] Drone {drone_id} synthesized plan: {synthesized}")
+
+    def _maybe_prepend_detour(self, drone: _Drone):
+        if self.phase_label() != "Execution":
+            return
+        allowed = set(drone._allowed_directions())
+        # only one detour per turn to avoid churn
+        for dir_name, (nx, ny) in self._adjacent_unknown(drone.position):
+            if dir_name in allowed:
+                q = self.plans.get(drone.id, [])
+                self.plans[drone.id] = [dir_name] + q
+                drone.memory = f"PLAN: role=Scout path={','.join(self.plans[drone.id])}"
+                self.post_info(f"[Detour] Drone {drone.id} -> {dir_name} to identify {nx,ny}")
+                break
 
     # ---- Edge logging (incremental + final)
     def _log_edge_line(self, edge: Tuple[Tuple[int,int], Tuple[int,int]]):
@@ -911,6 +1095,12 @@ class Simulation:
         LOGGER.log(f"  - False:        {len(false)}")
         LOGGER.log(f"Score (correct - false): {len(correct) - len(false)}")
         LOGGER.log(f"Precision: {prec:.3f}  |  Recall: {rec:.3f}")
+
+        # Optional team efficiency metrics
+        LOGGER.log(f"Team overlap events (same-tile after a move): {self.overlap_events}")
+        LOGGER.log(f"Hotspot hits (moves into top-5 recent hotspots): {self.hotspot_hits}")
+        LOGGER.log(f"Total moves executed: {self.total_moves}")
+
         if false:
             LOGGER.log(f"False edges list ({len(false)}):")
             for e in sorted(false):
@@ -919,6 +1109,7 @@ class Simulation:
         self.post_info("=== FINAL EDGE SUMMARY ===")
         self.post_info(f"Disc:{len(disc)}  Corr:{len(correct)}  False:{len(false)}  "
                        f"Score:{len(correct)-len(false)}  P:{prec:.2f} R:{rec:.2f}")
+        self.post_info(f"OverlapEvents:{self.overlap_events}  HotspotHits:{self.hotspot_hits}  Moves:{self.total_moves}")
 
     # ---- GUI/log helper
     def post_info(self, msg: str):
@@ -942,7 +1133,11 @@ class Simulation:
             result = messages[-1]["content"]
             LOGGER.log(f"Drone {drone.id} response:\n{pprint.pformat(result, indent=4, width=200)}")
 
-            # Accept plan updates from memory or message
+            # Register team planning info (from memory and message)
+            self._register_team_plan(drone.id, result.get("memory", ""))
+            self._register_team_plan(drone.id, result.get("message", ""))
+
+            # Accept plan updates
             self._maybe_update_plan_from_text(drone.id, result.get("memory", ""))
             self._maybe_update_plan_from_text(drone.id, result.get("message", ""))
 
@@ -951,53 +1146,105 @@ class Simulation:
             action = result.get("action", "wait")
             phase = self.phase_label()
 
-            # Planning phase: no moves
-            if phase == "Planning" and action == "move":
-                self.post_info("Planning phase: movement disabled. Waiting.")
-                action = "wait"
+            # Planning: never move; inject a soft coach
+            if phase == "Planning":
+                self._inject_planning_coach(drone)
+                if action == "move":
+                    self.post_info("Planning phase: movement disabled. Waiting.")
+                    hint = "REMINDER: During Planning, choose 'broadcast' with a PLAN (include 'path=...') or 'wait'. Do not 'move'."
+                    drone.rx_buffer += f"System: {hint}\n"
+                    action = "wait"
 
             if action == "move":
                 direction = (result.get("direction") or "").lower()
                 allowed = drone._allowed_directions()
-                if direction not in allowed:
-                    self.post_info(f"Invalid/OOB direction '{direction}' (allowed={allowed}). Waiting.")
-                else:
-                    if phase == "Execution" and self.enforce_plan:
-                        expected = self._next_planned_step(drone.id)
-                        if expected and direction != expected:
-                            self.post_info(f"Deviation from plan: expected '{expected}', got '{direction}'. Waiting; broadcast to re-plan if needed.")
+
+                # Proactive head removal if planned step is impossible
+                if phase == "Execution" and self.enforce_plan:
+                    self._ensure_plan(drone.id)
+                    expected = self._next_planned_step(drone.id)
+                    if expected and expected not in allowed:
+                        self.post_info(f"Planned step '{expected}' not allowed here; removing head and requesting re-plan.")
+                        self._advance_plan(drone.id)
+                        rem = self.plans.get(drone.id, [])
+                        if rem:
+                            drone.memory = f"PLAN: role=Scout path={','.join(rem)}"
+                        drone.rx_buffer += (f"System: Planned step '{expected}' was not in AllowedDirections. "
+                                            f"Removed it. Use current PLAN or broadcast a corrected one.\n")
+
+                if phase == "Execution" and self.enforce_plan:
+                    expected = self._next_planned_step(drone.id)
+                    if expected and direction != expected:
+                        # enforce plan: override deviation
+                        self.post_info(f"Deviation: expected '{expected}', got '{direction}'. Overriding to '{expected}'.")
+                        if expected in allowed and drone._move(expected):
+                            self.post_info(f"Move {expected} to {drone.position}")
+                            self._advance_plan(drone.id)
+                            rem = self.plans.get(drone.id, [])
+                            if rem:
+                                drone.memory = f"PLAN: role=Scout path={','.join(rem)}"
+                            else:
+                                self._ensure_plan(drone.id)
+                            self._update_coverage(drone)
+                            self.total_moves += 1
                         else:
+                            self.post_info(f"Expected step '{expected}' not allowed. Will replan next turn.")
+                        action = "wait"  # skip executing model's original move
+                    else:
+                        if direction in allowed and direction:
                             ok = drone._move(direction)
                             if ok:
                                 self.post_info(f"Move {direction} to {drone.position}")
                                 if expected == direction:
                                     self._advance_plan(drone.id)
-                            else:
-                                self.post_info(f"Move {direction} failed. Waiting.")
-                    else:
+                                rem = self.plans.get(drone.id, [])
+                                if rem:
+                                    drone.memory = f"PLAN: role=Scout path={','.join(rem)}"
+                                else:
+                                    self._ensure_plan(drone.id)
+                                self._update_coverage(drone)
+                                self.total_moves += 1
+                        else:
+                            self.post_info(f"Invalid/OOB direction '{direction}' (allowed={allowed}). Waiting.")
+                else:
+                    # non-enforced mode
+                    if direction in allowed and direction:
                         ok = drone._move(direction)
                         if ok:
                             self.post_info(f"Move {direction} to {drone.position}")
-                        else:
-                            self.post_info(f"Move {direction} failed. Waiting.")
+                            self._update_coverage(drone)
+                            self.total_moves += 1
+                    else:
+                        self.post_info(f"Invalid/OOB direction '{direction}' (allowed={allowed}). Waiting.")
 
             elif action == "broadcast":
-                msg = result.get("message") or ""
-                self.post_info("Broadcast")
-                self.post_info(msg)
-                tile = self.board[drone.position[0]][drone.position[1]]
-                for d in tile.drones:
-                    if d.id != drone.id:
-                        d.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
+                msg = (result.get("message") or "").strip()
+                if not msg:
+                    self.post_info("Invalid broadcast with empty message. Waiting.")
+                else:
+                    self.post_info("Broadcast")
+                    self.post_info(msg)
+                    tile = self.board[drone.position[0]][drone.position[1]]
+                    for d in tile.drones:
+                        if d.id != drone.id:
+                            d.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
 
             else:
                 self.post_info("Wait")
 
-            # Persist memory and update identifications
-            drone.memory = result.get("memory", drone.memory or "")
-            self._update_identifications_from_drone_tile(drone)
+            # Persist memory cautiously (accept PLAN-bearing updates, never clobber with empty)
+            mem_txt = (result.get("memory") or "").strip()
+            if mem_txt and PLAN_PREFIX.lower() in mem_txt.lower():
+                drone.memory = mem_txt
 
-            # Log any newly discovered edges this turn
+            # Execution: keep plan healthy and consider detours/targets
+            if phase == "Execution":
+                self._ensure_plan(drone.id)
+                self._maybe_prepend_detour(drone)
+                self._retarget_nearest_unknown(drone, min_queue=12)
+
+            # Update identifications and log new edges
+            self._update_identifications_from_drone_tile(drone)
             self._log_discovered_edges_incremental()
 
             self.post_info("\n")
@@ -1041,6 +1288,15 @@ class Simulation:
                     if use_gui and hasattr(self, "gui"):
                         pygame.display.set_caption(caption)
 
+                    if self.phase_label() == "Planning":
+                        self._inject_planning_coach(self.drones[drone_index])
+
+                    if self.phase_label() == "Execution":
+                        d = self.drones[drone_index]
+                        self._ensure_plan(d.id)
+                        self._maybe_prepend_detour(d)
+                        self._retarget_nearest_unknown(d, min_queue=12)
+
                     self._start_drone_turn(self.drones[drone_index])
                     pending = True
 
@@ -1063,7 +1319,6 @@ class Simulation:
             LOGGER.log("KeyboardInterrupt received — shutting down gracefully.")
             running = False
         finally:
-            # Final edge summary (always)
             try:
                 self._log_final_summary()
             except Exception:
@@ -1089,11 +1344,6 @@ class Simulation:
         except Exception:
             pass
         LOGGER.log("Clean shutdown complete.")
-
-
-
-# In[ ]:
-
 
 # ---------------- Entry ----------------
 if __name__ == "__main__":

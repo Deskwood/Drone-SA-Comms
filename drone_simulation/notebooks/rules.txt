@@ -91,8 +91,8 @@ Examples (valid):
   "rationale": "Establishing roles and sweep path during Planning.",
   "action": "broadcast",
   "direction": null,
-  "message": "PLAN: role=Scout path=NE,E,SE; rendezvous=(5,3). Drone 2 please guard king.",
-  "memory": "PLAN: role=Scout path=ne,e,se; rendezvous=(5,3)"
+  "message": "PLAN: role=Scout path=NE,S,W; rendezvous=(5,3) in round 12. Drone 2, maximize coverage by going somewhere else.",
+  "memory": "PLAN: role=Scout path=ne,s,w; rendezvous=(5,3) in round 12"
 }
 
 2) Execution move following the plan:
@@ -112,3 +112,17 @@ Examples (valid):
   "message": "Blocked on NE. Adjusting: PLAN: role=Scout path=E,SE,SE; rendezvous=(5,3).",
   "memory": "PLAN: role=Scout path=e,se,se; rendezvous=(5,3)"
 }
+
+Negotiation Protocol (Planning only):
+- If DRONE_ID==1: propose a board split and a concrete PLAN in one broadcast.
+- If DRONE_ID>1: accept or counter once, then converge in ≤3 Planning rounds.
+- Use this exact template in broadcasts/memory:
+
+PLAN: role=<Scout|Mapper>
+REGION: type=row, y=[YMIN..YMAX]
+PATH: <comma-separated directions>
+RENDEZVOUS: (x,y) at round R
+
+Non-overlap rule:
+- Stay inside your REGION during Execution while unknown figures remain inside it.
+- Cross regions only after your REGION has no unknowns or to resolve a block (then broadcast an update).

@@ -1,11 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[13]:
 
 
-#!/usr/bin/env python
-# coding: utf-8
+# Sim Support
 
 import logging
 import os
@@ -107,6 +106,14 @@ def load_config(config_path: str = "config.json") -> dict:
     except FileNotFoundError:
         raise FileNotFoundError(f"Missing config file: {config_path}")
     cfg.setdefault("prompt_requests", {})
+    # Default, safe, model-agnostic schema cue
+    pr = cfg["prompt_requests"]
+    pr.setdefault("schema",
+        ("OUTPUT FORMAT: Return a SINGLE JSON object with keys "
+         "rationale, action, direction, message, memory, found_edges. "
+         "found_edges MUST be a JSON array (can be empty) of edges formatted as "
+         "[[ [x1,y1],[x2,y2] ], ...]. Never omit found_edges. No extra text.")
+    )
     cfg.setdefault("simulation", {})
     cfg.setdefault("board", {"width": 8, "height": 8})
     cfg.setdefault("gui", {
@@ -168,7 +175,6 @@ def load_figure_images() -> dict:
                 p = os.path.join(base_path, name)
                 img = try_load(p)
                 if img:
-                    LOGGER.log(f"Loaded image: {p}")
                     break
             if img:
                 images[(color, figure_type)] = img
@@ -191,6 +197,8 @@ class TurnResult(BaseModel):
     direction: Optional[str] = None
     message: Optional[str] = None
     memory: str
+    # Each edge is [[x1,y1],[x2,y2]] in board coords
+    found_edges: Optional[List[List[List[int]]]] = None
 
 def _extract_first_json_block(text: str) -> str:
     start = text.find('{')
@@ -211,6 +219,31 @@ def safe_parse_turnresult(payload: str) -> dict:
         return TurnResult.model_validate(data).model_dump()
     except Exception as e:
         return {"rationale": f"Parse/validate error: {e}", "action": "wait", "direction": None, "message": None, "memory": ""}
+
+def _normalize_edges(raw: Any) -> Set[Tuple[Tuple[int,int], Tuple[int,int]]]:
+    """
+    Accepts:
+      - [[ [x1,y1], [x2,y2] ], ...]
+      - or [{'src':[x1,y1], 'dst':[x2,y2]}, ...]
+    Returns set({((x1,y1),(x2,y2)), ...}) with ints, drops invalid.
+    """
+    out: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+    if raw is None:
+        return set()
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        try:
+            if isinstance(item, dict) and "src" in item and "dst" in item:
+                a, b = item["src"], item["dst"]
+            else:
+                a, b = item
+            x1, y1 = int(a[0]), int(a[1])
+            x2, y2 = int(b[0]), int(b[1])
+            out.add(((x1, y1), (x2, y2)))
+        except Exception:
+            continue
+    return out
 
 # ---------------- Plan parsing ----------------
 PLAN_RE = re.compile(r'(?i)\bplan\s*:\s*.*?\bpath\s*=\s*([^;|.\n\r]+)')
@@ -260,7 +293,12 @@ def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, see
         out[color][ftype] = [list(p) for p in picks]
     return out
 
-# ---------------- Board & edges ----------------
+
+# In[14]:
+
+
+# Figures and Tiles
+
 class _Figure:
     def __init__(self, position: Tuple[int, int], color: str, figure_type: str):
         self.position = position
@@ -342,7 +380,12 @@ def _compute_edges_for(figures: List[_Figure], board: List[List[_Tile]]) -> Set[
                 edges.add((f.position, board[tx][ty].figure.position))
     return edges
 
-# ---------------- Drone ----------------
+
+# In[15]:
+
+
+# Drones
+
 class _Drone:
     def __init__(self, id: int, position: Tuple[int, int], model: str, rules: str, sim, color: str = "white"):
         self.id = id
@@ -355,6 +398,7 @@ class _Drone:
                           .replace("NUMBER_OF_ROUNDS", str(CONFIG["simulation"]["max_rounds"]))
         self.memory = ""     # per-drone memory (LLM-owned string)
         self.rx_buffer = ""  # per-drone inbox; only filled by co-located broadcasts
+        # self.planned_path: List[str] = []  # parsed from plan broadcast during planning phase
 
     def _move(self, direction: str) -> bool:
         direction = (direction or "").lower()
@@ -394,19 +438,17 @@ class _Drone:
 
         fig_here = "None"
         if self.sim.board[self.position[0]][self.position[1]].figure:
-            # Co-located tile reveals full (per rules), but we only name the type here as an observation
             fig_here = self.sim.board[self.position[0]][self.position[1]].figure.figure_type
 
         neigh = ""
         for dx in [-1,0,1]:
             for dy in [-1,0,1]:
-                if dx==0 and dy==0: 
+                if dx==0 and dy==0:
                     continue
                 nx, ny = self.position[0]+dx, self.position[1]+dy
                 if 0 <= nx < CONFIG["board"]["width"] and 0 <= ny < CONFIG["board"]["height"]:
                     t = self.sim.board[nx][ny]
                     if t.figure:
-                        # Adjacent tiles: visible color only (per rules)
                         neigh += f"{direction_from_vector((dx,dy))}: {t.figure.color}, "
         neigh = neigh.strip(", ")
 
@@ -446,7 +488,7 @@ class _Drone:
             return messages
 
         max_tokens_total = self._token_budget_total()
-        num_predict = max(128, max_tokens_total)
+        num_predict = max(1024, max_tokens_total)
 
         if model == "manual":
             try: pyperclip.copy(messages[-1]["content"])
@@ -469,9 +511,21 @@ class _Drone:
 
         raw = _ollama()
         parsed = safe_parse_turnresult(raw)
-        if parsed["action"] == "wait" and parsed["rationale"].startswith("Parse/validate error"):
+        # Retry if parse failed OR found_edges is missing
+        if (parsed.get("action") == "wait" and str(parsed.get("rationale","")).startswith("Parse/validate error")) \
+            or ("found_edges" not in parsed):
             raw2 = _ollama("REMINDER: Output ONLY a single valid JSON object exactly matching the schema. No prose.",
-                           np=int(num_predict * 2))
+                            np=int(num_predict * 2))
+            # final attempt
+            parsed2 = safe_parse_turnresult(raw2)
+            if "found_edges" not in parsed2:
+                # force an empty list to keep scoring consistent
+                try:
+                    d = json.loads(_extract_first_json_block(raw2))
+                    d["found_edges"] = []
+                    return _store(json.dumps(d))
+                except Exception:
+                    return _store(json.dumps({"rationale": "Schema still missing; waiting.", "action": "wait", "direction": None, "message": None, "memory": "", "found_edges": []}))
             return _store(raw2)
         return _store(raw)
 
@@ -480,20 +534,27 @@ class _Drone:
         situation = self._determine_situation_description()
         pr = CONFIG.get("prompt_requests", {})
         cues = "\n".join([
+            pr.get("schema",""),
             pr.get("rationale",""),
             pr.get("action",""),
             pr.get("action_move",""),
             pr.get("action_broadcast",""),
             pr.get("memory_update","")
-        ]).strip()
+         ]).strip()
         user_content = situation if not cues else situation + "\n\n" + cues
         messages = [
             {"role": "system", "content": self.rules},
             {"role": "user", "content": user_content}
         ]
+        print(f"Context length: {len(user_content)+len(self.rules)} chars")
         return self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
 
-# ---------------- GUI (with scoring & plan preview) ----------------
+
+# In[16]:
+
+
+# GUI
+
 class _SimulationGUI:
     def __init__(self, sim):
         self.sim = sim
@@ -676,7 +737,12 @@ class _SimulationGUI:
         self._draw_sidebar()
         pygame.display.flip()
 
-# ---------------- Simulation (planning coach, coordination, targeting, enforcement, scoring, metrics) ----------------
+
+# In[17]:
+
+
+# Simulation
+
 class Simulation:
     def __init__(self):
         if CONFIG["simulation"].get("headless", False):
@@ -707,7 +773,8 @@ class Simulation:
 
         # Scoring (team-level truth; does not leak to drones)
         self.gt_edges: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
-        self.identified_positions: Set[Tuple[int,int]] = set()
+        # Drones report edges they believe exist; we aggregate
+        self.drone_edges: Dict[int, Set[Tuple[Tuple[int,int], Tuple[int,int]]]] = {}
 
         self._edge_log_seen: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
 
@@ -809,17 +876,13 @@ class Simulation:
         self.gt_edges = _compute_edges_for(self.figures, self.board)
         LOGGER.log(f"GT Edges computed: {len(self.gt_edges)}")
 
-    # ---- Identification & scoring (team-level, not exposed)
-    def _update_identifications_from_drone_tile(self, drone: _Drone):
-        tile = self.board[drone.position[0]][drone.position[1]]
-        if tile.figure:
-            self.identified_positions.add(tile.figure.position)
-
+    # ---- Union of reported edges
     def discovered_edges(self) -> Set[Tuple[Tuple[int,int], Tuple[int,int]]]:
-        identified_figs = [f for f in self.figures if f.position in self.identified_positions]
-        edges = _compute_edges_for(identified_figs, self.board)
-        idpos = self.identified_positions
-        return {(src, dst) for (src, dst) in edges if dst in idpos}
+        all_sets = self.drone_edges.values()
+        out: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+        for s in all_sets:
+            out |= s
+        return out
 
     def score_stats(self) -> Dict[str, Any]:
         disc = self.discovered_edges()
@@ -828,8 +891,11 @@ class Simulation:
         false = disc - gt
         prec = (len(correct) / len(disc)) if disc else 0.0
         rec = (len(correct) / len(gt)) if gt else 0.0
+        nodes = set()
+        for (a,b) in disc:
+            nodes.add(a); nodes.add(b)
         return {
-            "identified_nodes": len(self.identified_positions),
+            "identified_nodes": len(nodes),
             "discovered_edges": len(disc),
             "gt_edges": len(gt),
             "correct_edges": len(correct),
@@ -882,7 +948,7 @@ class Simulation:
 
         LOGGER.log("#" * 60)
         LOGGER.log("FINAL EDGE SUMMARY")
-        LOGGER.log(f"Identified nodes: {len(self.identified_positions)}")
+        LOGGER.log(f"Identified nodes: {len({n for e in disc for n in e})}")
         LOGGER.log(f"GT edges:         {len(self.gt_edges)}")
         LOGGER.log(f"Discovered edges: {len(disc)}")
         LOGGER.log(f"  - Correct:      {len(correct)}")
@@ -924,12 +990,23 @@ class Simulation:
             self._maybe_update_plan_from_text(drone.id, result.get("memory", ""))
             self._maybe_update_plan_from_text(drone.id, result.get("message", ""))
 
+            # Edge intake: drones report edges; aggregate per drone
+            fedges = _normalize_edges(result.get("found_edges"))
+            if fedges:
+                cur = self.drone_edges.get(drone.id, set())
+                before = len(cur)
+                cur |= fedges
+                self.drone_edges[drone.id] = cur
+                added = len(cur) - before
+                if added > 0:
+                    self.post_info(f"Drone {drone.id} submitted {added} edge(s).")
+
             self.post_info(f"Drone {drone.id}:")
             self.post_info(f"Rationale: {result.get('rationale','')}")
             action = result.get("action", "wait")
             phase = self.phase_label()
 
-            # Planning: enforce no movement, but do not inject hints
+            # Planning: enforce no movement
             if phase == "Planning" and action == "move":
                 self.post_info("Planning phase: movement disabled. Waiting.")
                 action = "wait"
@@ -940,7 +1017,6 @@ class Simulation:
                 if direction not in allowed:
                     self.post_info(f"Invalid/OOB direction '{direction}' (allowed={allowed}). Waiting.")
                 else:
-                    # Optional plan enforcement: if drone published a PLAN, we can require matching head
                     if phase == "Execution" and self.enforce_plan:
                         expected = self._next_planned_step(drone.id)
                         if expected and direction != expected:
@@ -961,7 +1037,7 @@ class Simulation:
                 else:
                     self.post_info("Broadcast")
                     self.post_info(msg)
-                    # Only co-located drones receive (already enforced)
+                    # Only co-located drones receive
                     tile = self.board[drone.position[0]][drone.position[1]]
                     for d in tile.drones:
                         if d.id != drone.id:
@@ -975,8 +1051,7 @@ class Simulation:
             if mem_txt:
                 drone.memory = mem_txt
 
-            # Identification and incremental edge logging
-            self._update_identifications_from_drone_tile(drone)
+            # Incremental edge logging
             self._log_discovered_edges_incremental()
 
             self.post_info("\n")
@@ -1026,7 +1101,6 @@ class Simulation:
                 if pending:
                     d = self.drones[drone_index]
                     if self._try_finish_drone_turn(d):
-                        LOGGER.log(f"Round {self.round}.{self.turn} completed.")
                         drone_index += 1
                         if drone_index >= self.num_drones:
                             drone_index = 0
@@ -1068,7 +1142,12 @@ class Simulation:
             pass
         LOGGER.log("Clean shutdown complete.")
 
-# ---------------- Entry ----------------
+
+# In[18]:
+
+
+# Main
+
 if __name__ == "__main__":
     try:
         LOGGER.log("Launching simulation.")

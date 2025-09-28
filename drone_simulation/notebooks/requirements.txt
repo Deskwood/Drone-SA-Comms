@@ -1,0 +1,145 @@
+SOFTWARE REQUIREMENTS SPECIFICATION — CORASAT SIMULATION
+
+1. Scope
+   1.1 Goal: Provide a deterministic simulation that runs G games of R rounds with T drone turns per round, where drones act via LLM prompts and report edges; system scores precision and recall.
+   1.2 Out of scope: Optimizer model logic beyond emitting updated rules/config; networking; persistence beyond logs.
+
+2. Stakeholders
+   2.1 Researcher (owner).
+   2.2 Optimizer model (post-game consumer of logs/config).
+   2.3 LLM backends (manual, Ollama).
+
+3. Definitions
+   3.1 Tile: board cell at (x,y).
+   3.2 Drone: agent that outputs TurnResult.
+   3.3 Figure: chess piece defining targets and edges.
+   3.4 Edge: directed relation ((x1,y1)->(x2,y2)) when a figure targets another figure.
+   3.5 Planning phase: rounds ≤ planning_rounds.
+   3.6 Execution phase: rounds > planning_rounds.
+
+4. External Interfaces
+   REQ-EXT-1 The system shall read config.json at startup.
+   REQ-EXT-2 The system shall read rules.txt at startup.
+   REQ-EXT-3 The system shall optionally call an LLM through an adapter interface: chat(model, messages, temperature, format, num_predict) → str.
+   REQ-EXT-4 The system shall render an optional GUI using pygame.
+   REQ-EXT-5 The system shall write a rolling log to logs/simulation.log and to stdout.
+
+5. Configuration
+   REQ-CFG-1 The system shall support keys:
+
+* board.width:int, board.height:int
+* gui.cell_size:int, gui.margin:int, gui.background_color:(r,g,b), gui.grid_color, gui.drone_color, gui.text_color, gui.figure_image_dir:str, gui.sidebar_width:int
+* simulation.max_rounds:int, simulation.num_drones:int, simulation.models:list, simulation.model_index:int, simulation.temperature:float, simulation.use_gui:bool, simulation.headless:bool, simulation.rules_path:str
+* simulation.max_tokens_for_rationale|action|action_move|action_broadcast|memory:int, simulation.max_tokens_total_cap:int
+* simulation.planning_rounds:int, simulation.enforce_plan:bool
+* simulation.randomize_figures:bool, simulation.random_seed:int|null
+* prompt_requests.schema:str (mandatory default), plus optional rationale, action, action_move, action_broadcast, memory_update
+* figures.{color}.{figure_type}:[[x,y],...]
+  REQ-CFG-2 Defaults shall be applied when keys are missing, matching the provided codebase defaults.
+  REQ-CFG-3 The system shall substitute placeholders: in Simulation.rules replace NUMBER_OF_DRONES; in Drone.rules replace DRONE_ID, NUMBER_OF_DRONES, NUMBER_OF_ROUNDS.
+
+6. Domain and Data
+   REQ-DOM-1 Directions shall be limited to {north, south, east, west, northeast, northwest, southeast, southwest}.
+   REQ-DOM-2 Figures shall include {king, queen, rook, bishop, knight, pawn} with standard target rules.
+   REQ-DOM-3 Board coordinates shall be 0 ≤ x < width, 0 ≤ y < height.
+   REQ-DOM-4 Ground truth edges shall be computed as all figure targets that land on occupied tiles.
+
+7. Drone Turn I/O
+   REQ-DRN-1 Input to LLM per turn shall include:
+
+* RULES (system role)
+* SITUATION text (user role) with exact ordered lines: Phase, Current round number, Board size, My grid coords, Current position, AllowedDirections, Reminder line, Visible drones at position, Visible figure at position, Visible neighboring figures, Memory, Broadcast Rx Buffer; followed by optional cues joined from prompt_requests.
+  REQ-DRN-2 The drone shall output a TurnResult JSON with keys: rationale:str, action in {"wait","move","broadcast"}, direction:str|null, message:str|null, memory:str, found_edges:list or empty list.
+  REQ-DRN-3 The system shall validate/normalize TurnResult; on parse failure it shall produce a safe fallback: action="wait", memory=""; found_edges defaults to [].
+  REQ-DRN-4 The system shall clear the drone’s rx_buffer after it is included in SITUATION.
+
+8. Movement and Communication
+   REQ-MOV-1 The system shall move a drone only if the requested direction is in VALID_DIRECTIONS and the next tile is on board; otherwise no move.
+   REQ-MOV-2 During Planning phase the system shall block movement actions and convert them to wait.
+   REQ-MOV-3 If enforce_plan is true and a plan queue exists for a drone, the system shall allow only the next planned direction; mismatches convert to wait.
+   REQ-COM-1 Broadcasts shall be delivered only to drones co-located on the same tile in the same turn; recipients shall append a line "Drone <id> broadcasted: <message>\n" to rx_buffer.
+   REQ-COM-2 Empty messages shall be rejected and treated as wait.
+
+9. Plans
+   REQ-PLN-1 The system shall parse plan steps from any text field (memory or message) containing “PLAN: ... path= ...”.
+   REQ-PLN-2 The parser shall accept aliases {n,s,e,w,ne,nw,se,sw} and map to full names; invalid tokens shall be dropped and logged.
+   REQ-PLN-3 The plan shall be stored as a FIFO queue per drone; after a matching move, the system shall advance the queue.
+
+10. LLM Adapters and Token Budgets
+    REQ-LLM-1 The system shall support "manual" adapter: copy last user content to clipboard, read stdin for a raw JSON string.
+    REQ-LLM-2 The system shall support Ollama adapter if available; else degrade to a safe wait TurnResult.
+    REQ-LLM-3 The system shall compute a per-turn token budget as the sum of configured sections clamped to [512, max_tokens_total_cap]; num_predict = max(1024, budget).
+    REQ-LLM-4 The system shall retry once with a strict hint and doubled num_predict if parsing fails or found_edges is missing.
+    REQ-LLM-5 On second failure the system shall attempt to extract JSON and inject found_edges:[]; if still invalid, return safe wait with found_edges:[].
+
+11. Scoring and Metrics
+    REQ-SCR-1 The system shall aggregate per-drone reported edges into a union set.
+    REQ-SCR-2 The system shall compute: identified_nodes, discovered_edges, gt_edges, correct_edges, false_edges, score=(|correct|-|false|), precision, recall.
+    REQ-SCR-3 The system shall log newly discovered edges once with CORRECT/FALSE tag as they appear.
+    REQ-SCR-4 At simulation end the system shall log a final summary including lists of false edges.
+
+12. Simulation Orchestration
+    REQ-SIM-1 The system shall run for exactly max_rounds rounds, iterating drones in fixed order each round; no early termination.
+    REQ-SIM-2 Each drone shall get exactly one action per turn.
+    REQ-SIM-3 The system shall run the LLM call on a single-thread executor with at most one future active.
+    REQ-SIM-4 The system shall expose current turn (1..T) and round (1..R) for GUI captions and logging.
+    REQ-SIM-5 On shutdown the system shall cancel any pending future, stop the executor, close the GUI, and log completion.
+
+13. GUI (optional)
+    REQ-GUI-1 The system shall render a grid with figures and drones; multiple drones on one tile shall be arranged in a ring visually.
+    REQ-GUI-2 The sidebar shall show: phase, identified nodes, discovered edges, GT edges, correct edges, false edges, score, precision, recall, per-drone plan preview, and a scrollable log; latest entries at bottom.
+    REQ-GUI-3 While a turn is pending, the system shall highlight the active drone tile.
+    REQ-GUI-4 The system shall load figure images from gui.figure_image_dir when present; missing images shall not block rendering.
+
+14. Logging
+    REQ-LOG-1 The logger shall prepend timestamps and per-entry durations.
+    REQ-LOG-2 The logger shall reinitialize the log file on each run.
+    REQ-LOG-3 Logging failures shall not crash the process.
+
+15. Constraints
+    REQ-CON-1 The system shall not leak ground truth edges or counts to drones.
+    REQ-CON-2 The system shall enforce board bounds for all moves.
+    REQ-CON-3 The system shall keep rx_buffer private to the receiving drone and clear it after inclusion in SITUATION.
+    REQ-CON-4 Figures and board state shall be recomputed before GT edge computation.
+
+16. Randomization
+    REQ-RND-1 If simulation.randomize_figures is true or simulation.random_seed is not null, the system shall randomize figure positions subject to available tiles.
+    REQ-RND-2 Randomization shall be deterministic for a given seed.
+    REQ-RND-3 If placement exceeds available tiles, the system shall raise a configuration error.
+
+17. Error Handling
+    REQ-ERR-1 Any malformed TurnResult shall degrade to wait without raising.
+    REQ-ERR-2 Invalid move directions or out-of-bounds moves shall be logged and treated as wait.
+    REQ-ERR-3 Empty broadcasts shall be logged and treated as wait.
+    REQ-ERR-4 GUI errors shall be contained and shall not terminate the simulation loop; if GUI fails, the system may continue headless.
+
+18. Performance
+    REQ-PERF-1 GUI update rate target: 60 FPS when enabled.
+    REQ-PERF-2 LLM calls are serialized (single executor) to avoid race conditions.
+    REQ-PERF-3 For headless mode, SDL_VIDEODRIVER shall be set to "dummy" automatically.
+
+19. Security and Privacy
+    REQ-SEC-1 No external network calls except LLM adapter invocation configured by the user.
+    REQ-SEC-2 Clipboard access is limited to manual adapter behavior.
+
+20. Testability
+    REQ-TST-1 The system shall expose pure functions for: allowed_directions, move validation, plan parsing, edge normalization, edge computation, scoring.
+    REQ-TST-2 The system shall allow seeding of randomization for reproducible tests.
+    REQ-TST-3 The SITUATION text order shall be stable for snapshot tests.
+    REQ-TST-4 Unit tests shall cover: move legality at corners/edges/center; parser fallbacks; plan alias handling; scoring math.
+    REQ-TST-5 Integration tests shall cover: co-located broadcast lifecycle, planning gating, plan enforcement, incremental edge logging.
+
+21. Acceptance Criteria
+    AC-1 Given a fixed config with two figures that attack one another, after R rounds with drones reporting that edge, the final summary shall show precision=1.0 and recall=1.0.
+    AC-2 Given a Planning phase > 0, any LLM move output during those rounds shall not change any drone position.
+    AC-3 Given a plan queue [north,east] and enforce_plan=true, a drone outputting east first shall not move on that turn.
+    AC-4 Given malformed JSON from the LLM twice, the system shall not crash and shall record a wait action with found_edges:[].
+    AC-5 Given random_seed=S, repeated runs shall produce identical GT edges and scores.
+
+22. Maintainability
+    REQ-MNT-1 The codebase shall be split into modules: config, loggingx, domain, io_schema, llm, drone, sim, gui.
+    REQ-MNT-2 Cross-module dependencies shall follow: gui depends on sim; sim depends on domain/drone/io_schema/llm/loggingx/config; drone depends on sim view and llm/io_schema/domain; domain depends only on config constants.
+
+23. Optimizer Hand-off
+    REQ-OPT-1 After completion, the system shall provide logs and the effective config to the Optimizer.
+    REQ-OPT-2 The Optimizer may change rules.txt and config for subsequent runs; constraints in this SRS remain enforced by code, not by rules text.

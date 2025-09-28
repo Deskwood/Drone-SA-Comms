@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[13]:
+# In[ ]:
 
 
 # Sim Support
@@ -21,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor, Future
 import nbformat
 from nbconvert import PythonExporter
 from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
+from typing import TypedDict, Optional, Literal, List, Dict, Any, Set, Tuple
 try:
     from ollama import chat as ollama_chat
     _OLLAMA_AVAILABLE = True
@@ -42,6 +44,302 @@ DIRECTION_MAP: Dict[str, Tuple[int, int]] = {
 }
 VALID_DIRECTIONS = set(DIRECTION_MAP.keys())
 PLAN_PREFIX = "PLAN:"
+
+class _Rec(TypedDict):
+    action: str
+    specifier: Optional[str]
+    score: float
+    rationale: str
+    features: Dict[str, float]
+
+class _DTNode(TypedDict, total=False):
+    action: str
+    specifier: Optional[str]
+    score: float
+    features: Dict[str, float]
+    children: List["_DTNode"]
+
+def _normalize_weights(w: Dict[str, float]) -> Dict[str, float]:
+    s = float(sum(max(0.0, v) for v in w.values())) or 1.0
+    return {k: max(0.0, v) / s for k, v in w.items()}
+
+def _sign(x: float) -> str:
+    return "+" if x >= 0 else "-"
+
+def _format_features(feats: Dict[str, float], weights: Dict[str, float]) -> str:
+    parts = []
+    for k in ["recall","plan_adherence","comm_opportunity","exploration","move_validity","precision"]:
+        if k in feats:
+            parts.append(f"{k}({_sign(feats[k])}{abs(feats[k]):.2f}×{weights.get(k,0):.2f})")
+    return ", ".join(parts)
+
+def _visited_token(x:int,y:int) -> str:
+    return f"VISITED:{x},{y}"
+
+def _compute_allowed_from(x:int, y:int, W:int, H:int) -> List[str]:
+    out=[]
+    for name,(dx,dy) in DIRECTION_MAP.items():
+        nx, ny = x+dx, y+dy
+        if 0 <= nx < W and 0 <= ny < H:
+            out.append(name)
+    return out
+
+class _Rec(TypedDict):
+    action: str
+    specifier: Optional[str]
+    score: float
+    rationale: str
+    features: Dict[str, float]
+
+def _normalize_weights(w: Dict[str, float]) -> Dict[str, float]:
+    s = float(sum(max(0.0, v) for v in w.values())) or 1.0
+    return {k: max(0.0, v) / s for k, v in w.items()}
+
+def _visited_token(x:int,y:int) -> str: return f"VISITED:{x},{y}"
+
+def _format_features(feats: Dict[str, float], weights: Dict[str, float]) -> str:
+    items = []
+    for k in ["recall","exploration","plan_adherence","comm_opportunity","move_validity","precision"]:
+        if k in feats:
+            items.append(f"{k}={feats[k]:+.2f}×{weights.get(k,0):.2f}")
+    return ", ".join(items)
+
+def _compute_allowed_from(x:int, y:int, W:int, H:int) -> List[str]:
+    out=[]
+    for name,(dx,dy) in DIRECTION_MAP.items():
+        nx, ny = x+dx, y+dy
+        if 0 <= nx < W and 0 <= ny < H:
+            out.append(name)
+    return out
+
+# --- decision_support.score_action_sequence (replace function body) ---
+def score_action_sequence(local_state: Dict[str, Any],
+                          plan: List[str],
+                          sequence: List[Tuple[str, Optional[str]]],
+                          weights: Dict[str,float]) -> Tuple[float, Dict[str,float]]:
+    W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
+    feats = {"recall":0.0,"exploration":0.0,"plan_adherence":0.0,"move_validity":0.0,"comm_opportunity":0.0,"precision":0.0}
+    x, y = local_state["pos"]
+    allowed = set(local_state["allowed_dirs"])
+    # tolerate either key
+    same_ct = int(local_state.get("same_tile_count", local_state.get("same_tile_drones", 0)))
+    neighbor_figs: Dict[str,str] = local_state.get("neighbor_figs", {})
+    memory: str = local_state.get("memory","")
+    next_plan = plan[0] if plan else None
+    last_xy = (x, y)
+
+    step = 0
+    for (act, spec) in sequence:
+        step += 1
+        if act == "move":
+            d = (spec or "").lower()
+            legal = d in allowed
+            feats["move_validity"] += 1.0 if legal else 0.0
+            if next_plan:
+                if d == next_plan and step == 1: feats["plan_adherence"] += 1.0
+                elif d in plan[1:]: feats["plan_adherence"] += 0.5
+                else: feats["plan_adherence"] -= 0.25
+            if d in neighbor_figs:
+                feats["recall"] += 1.0
+                feats["precision"] += 0.05
+            dx, dy = DIRECTION_MAP.get(d, (0,0))
+            nx, ny = x+dx, y+dy
+            vec = (nx - x, ny - y)
+            mvdir = direction_from_vector(vec)
+            if mvdir in neighbor_figs:
+                feats["recall"] += 0.25  # small extra nudge
+            if f"VISITED:{nx},{ny}" not in memory:
+                feats["exploration"] += 1.0
+            if (nx,ny) == last_xy:
+                feats["exploration"] -= 0.5
+            last_xy = (nx,ny)
+            if 0 <= nx < W and 0 <= ny < H:
+                x, y = nx, ny
+                allowed = set(_compute_allowed_from(x,y,W,H))
+            if same_ct > 0:
+                feats["comm_opportunity"] -= 0.25
+        elif act == "broadcast":
+            feats["comm_opportunity"] += 1.0 if same_ct > 0 else 0.0
+            if next_plan: feats["plan_adherence"] -= 0.1
+        else:
+            feats["comm_opportunity"] += 0.5 if same_ct > 0 else 0.0
+            if next_plan: feats["plan_adherence"] -= 0.1
+
+    w = _normalize_weights(weights)
+    score = sum(feats[k]*w.get(k,0.0) for k in feats)
+    return score, feats
+
+def build_decision_tree(local_state: Dict[str, Any], plan: List[str], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    start = time.time()
+    W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
+    weights = cfg.get("weights", {})
+    max_depth = int(cfg.get("max_depth", 2))
+    max_branching = int(cfg.get("max_branching", 8))
+    beam_width = int(cfg.get("beam_width", 8))
+    timeout_ms = int(cfg.get("timeout_ms", 100))
+    deterministic = bool(cfg.get("deterministic", True))
+
+    def root_actions() -> List[Tuple[str, Optional[str]]]:
+        acts: List[Tuple[str, Optional[str]]] = []
+        for d in sorted(local_state.get("allowed_dirs", [])):
+            acts.append(("move", d))
+        acts.append(("broadcast", None))
+        acts.append(("wait", None))
+        return acts[:max_branching]
+
+    # Evaluate root
+    recs: List[_Rec] = []
+    nodes: List[Dict[str, Any]] = []
+    cand = root_actions()
+    scored = []
+    for a,s in cand:
+        if (time.time()-start)*1000.0 > timeout_ms: break
+        sc, feats = score_action_sequence(local_state, plan, [(a,s)], weights)
+        scored.append((sc,a,s,feats))
+    scored.sort(key=lambda t: (-t[0], t[1], t[2] or "")) if deterministic else scored.sort(key=lambda t: -t[0])
+    scored = scored[:beam_width]
+
+    for sc,a,s,feats in scored:
+        node = {"action": a, "specifier": s, "score": float(sc), "features": feats, "children": []}
+        # optional depth-2
+        if max_depth >= 2 and (time.time()-start)*1000.0 <= timeout_ms:
+            # simulate second step by reusing local_state scorer (pure heuristic)
+            child_opts = [("wait",None),("broadcast",None)] + [("move", d) for d in sorted(local_state.get("allowed_dirs", []))]
+            child_sc = []
+            for a2,s2 in child_opts[:max_branching]:
+                if (time.time()-start)*1000.0 > timeout_ms: break
+                sc2, f2 = score_action_sequence(local_state, plan, [(a,s),(a2,s2)], weights)
+                child_sc.append((sc2,a2,s2,f2))
+            child_sc.sort(key=lambda t: (-t[0], t[1], t[2] or "")) if deterministic else child_sc.sort(key=lambda t: -t[0])
+            for sc2,a2,s2,f2 in child_sc[:beam_width]:
+                node["children"].append({"action": a2, "specifier": s2, "score": float(sc2), "features": f2})
+        nodes.append(node)
+        recs.append(_Rec(action=a, specifier=s, score=float(sc),
+                         rationale=_format_features(feats, _normalize_weights(weights)),
+                         features=feats))
+
+    if deterministic:
+        recs.sort(key=lambda r: (-r["score"], r["action"], r["specifier"] or ""))
+    else:
+        recs.sort(key=lambda r: -r["score"])
+
+    return {"tree": {"action":"root","specifier":None,"children":nodes}, "recommendations": recs}
+
+def format_decision_support_section(recs: List[_Rec], plan_next: Optional[str], k:int=3) -> str:
+    lines = []
+    lines.append("DecisionSupport:")
+    lines.append(f"  PlanNext: {plan_next if plan_next else 'None'}")
+    lines.append("  TopRecommendations:")
+    for r in recs[:k]:
+        spec = r["specifier"] if r["specifier"] else "-"
+        lines.append(f"    - ({r['action']}, {spec}, {r['score']:.2f})")
+    lines.append("  WhyTop:")
+    if recs:
+        for b in (recs[0]["rationale"] or "").split(", ")[:6]:
+            lines.append(f"    - {b}")
+    return "\n".join(lines[:30])
+
+def build_decision_tree(local_state: Dict[str, Any], plan: List[str], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Returns {tree, recommendations}. Tree may be shallow if timeout triggers."""
+    start = time.time()
+    W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
+    weights = cfg.get("weights", {})
+    max_depth = int(cfg.get("max_depth", 2))
+    max_branching = int(cfg.get("max_branching", 8))
+    beam_width = int(cfg.get("beam_width", 8))
+    timeout_ms = int(cfg.get("timeout_ms", 100))
+    deterministic = bool(cfg.get("deterministic", True))
+
+    def root_actions() -> List[Tuple[str, Optional[str]]]:
+        acts: List[Tuple[str, Optional[str]]] = []
+        # moves first in deterministic alphabetical order
+        for d in sorted(local_state["allowed_dirs"]):
+            acts.append(("move", d))
+        acts.append(("broadcast", None))
+        acts.append(("wait", None))
+        return acts[:max_branching]
+
+    def expand(x:int, y:int, allowed_dirs:Set[str], same_tile:int, depth:int) -> List[Tuple[str, Optional[str], int, int, Set[str]]]:
+        """Generate children states for move/wait/broadcast."""
+        out=[]
+        # moves
+        for d in sorted(allowed_dirs):
+            dx, dy = DIRECTION_MAP[d]
+            nx, ny = x+dx, y+dy
+            child_allowed = set(_compute_allowed_from(nx,ny,W,H))
+            out.append(("move", d, nx, ny, child_allowed))
+            if len(out) >= max_branching: break
+        # broadcast and wait keep position
+        out.append(("broadcast", None, x, y, allowed_dirs))
+        out.append(("wait", None, x, y, allowed_dirs))
+        return out
+
+    # Build shallow tree with beam pruning
+    root_x, root_y = local_state["pos"]
+    root_allowed = set(local_state["allowed_dirs"])
+    root_children = []
+    recs: List[_Rec] = []
+
+    # Evaluate root actions
+    candidates = root_actions()
+    scored_root = []
+    for act, spec in candidates:
+        if (time.time() - start) * 1000.0 > timeout_ms: break
+        s, feats = score_action_sequence(local_state, plan, [(act, spec)], weights)
+        scored_root.append((s, act, spec, feats))
+    # beam prune at root
+    scored_root.sort(key=lambda t: (-t[0], t[1], t[2] or "")) if deterministic else scored_root.sort(key=lambda t: -t[0])
+    scored_root = scored_root[:beam_width]
+
+    # Optional deeper expansion (depth ≥ 2)
+    for s0, act0, spec0, feats0 in scored_root:
+        node: _DTNode = {"action": act0, "specifier": spec0, "score": float(s0), "features": feats0, "children": []}
+        if max_depth >= 2 and (time.time() - start) * 1000.0 <= timeout_ms:
+            # simulate state transition for depth-1 node
+            x, y = root_x, root_y
+            allowed = set(root_allowed)
+            if act0 == "move":
+                dx, dy = DIRECTION_MAP.get(spec0 or "", (0,0))
+                x, y = x+dx, y+dy
+                allowed = set(_compute_allowed_from(x,y,W,H))
+            # build children one step deeper and keep best few
+            child_opts = expand(x, y, allowed, local_state["same_tile_drones"], depth=2)
+            child_scored=[]
+            for act1, spec1, _, _, _ in child_opts:
+                if (time.time() - start) * 1000.0 > timeout_ms: break
+                s, feats = score_action_sequence(local_state, plan, [(act0, spec0), (act1, spec1)], weights)
+                child_scored.append((s, act1, spec1, feats))
+            child_scored.sort(key=lambda t: (-t[0], t[1], t[2] or "")) if deterministic else child_scored.sort(key=lambda t: -t[0])
+            for s1, a1, sp1, f1 in child_scored[:beam_width]:
+                node["children"].append({"action": a1, "specifier": sp1, "score": float(s1), "features": f1})
+        root_children.append(node)
+
+        # Build recommendation from root eval
+        rationale = _format_features(feats0, _normalize_weights(weights))
+        recs.append(_Rec(action=act0, specifier=spec0, score=float(s0), rationale=rationale, features=feats0))
+
+    # Final ordering of recommendations
+    recs.sort(key=lambda r: (-r["score"], r["action"], r["specifier"] or "")) if deterministic else recs.sort(key=lambda r: -r["score"])
+
+    tree = {"action": "root", "specifier": None, "children": root_children}
+    return {"tree": tree, "recommendations": recs}
+
+def format_decision_support_section(recs: List[_Rec], plan_next: Optional[str], max_k:int=3) -> str:
+    lines = []
+    lines.append("DecisionSupport:")
+    lines.append(f"  PlanNext: {plan_next if plan_next else 'None'}")
+    lines.append("  TopRecommendations:")
+    for r in recs[:max_k]:
+        spec = r["specifier"] if r["specifier"] else "-"
+        lines.append(f"    - ({r['action']}, {spec}, {r['score']:.2f})")
+    lines.append("  WhyTop:")
+    top = recs[0] if recs else None
+    if top:
+        # split features into short bullets
+        bullets = (top["rationale"] or "").split(", ")
+        for b in bullets[:6]:
+            lines.append(f"    - {b}")
+    return "\n".join(lines[:30])  # hard cap
 
 # -------------- Optional: export notebook --------------
 try:
@@ -105,8 +403,8 @@ def load_config(config_path: str = "config.json") -> dict:
             cfg = json.load(f)
     except FileNotFoundError:
         raise FileNotFoundError(f"Missing config file: {config_path}")
+
     cfg.setdefault("prompt_requests", {})
-    # Default, safe, model-agnostic schema cue
     pr = cfg["prompt_requests"]
     pr.setdefault("schema",
         ("OUTPUT FORMAT: Return a SINGLE JSON object with keys "
@@ -114,6 +412,7 @@ def load_config(config_path: str = "config.json") -> dict:
          "found_edges MUST be a JSON array (can be empty) of edges formatted as "
          "[[ [x1,y1],[x2,y2] ], ...]. Never omit found_edges. No extra text.")
     )
+
     cfg.setdefault("simulation", {})
     cfg.setdefault("board", {"width": 8, "height": 8})
     cfg.setdefault("gui", {
@@ -148,6 +447,26 @@ def load_config(config_path: str = "config.json") -> dict:
     # figure randomization
     sim.setdefault("randomize_figures", False)
     sim.setdefault("random_seed", None)
+
+    # Decision support defaults
+    cfg.setdefault("decision_support", {})
+    ds = cfg["decision_support"]
+    ds.setdefault("enabled", True)
+    ds.setdefault("max_depth", 2)
+    ds.setdefault("max_branching", 8)
+    ds.setdefault("beam_width", 8)
+    ds.setdefault("timeout_ms", 100)
+    ds.setdefault("weights", {
+        "recall": 0.5,
+        "precision": 0.2,
+        "plan_adherence": 0.2,
+        "move_validity": 0.1,
+        "comm_opportunity": 0.1,
+        "exploration": 0.05
+    })
+    ds.setdefault("prefer_top_recommendation", False)
+    ds.setdefault("include_in_prompt", True)
+    ds.setdefault("deterministic", True)
 
     cfg.setdefault("figures", {c: {t: [] for t in FIGURE_TYPES} for c in COLORS})
     return cfg
@@ -197,8 +516,26 @@ class TurnResult(BaseModel):
     direction: Optional[str] = None
     message: Optional[str] = None
     memory: str
-    # Each edge is [[x1,y1],[x2,y2]] in board coords
-    found_edges: Optional[List[List[List[int]]]] = None
+    # Never None. Always a list (possibly empty) of [[x1,y1],[x2,y2]]
+    found_edges: List[List[List[int]]] = []
+
+    @model_validator(mode="after")
+    def _require_specifiers(self) -> "TurnResult":
+        if self.action == "move" and not isinstance(self.direction, str):
+            raise ValueError("direction required when action=='move'")
+        if self.action == "broadcast" and not isinstance(self.message, str):
+            raise ValueError("message required when action=='broadcast'")
+        return self
+
+    @field_validator("found_edges", mode="before")
+    @classmethod
+    def _coerce_edges(cls, v):
+        # Accept None → [], dict-form → convert, otherwise pass through
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        return []
 
 def _extract_first_json_block(text: str) -> str:
     start = text.find('{')
@@ -212,13 +549,25 @@ def _extract_first_json_block(text: str) -> str:
                 return text[start:i+1]
     return text
 
-def safe_parse_turnresult(payload: str) -> dict:
+def safe_parse_turnresult(payload: str) -> Dict[str, Any]:
     try:
         candidate = _extract_first_json_block(payload)
         data = json.loads(candidate)
+        # Coerce found_edges early
+        if data.get("found_edges") is None:
+            data["found_edges"] = []
         return TurnResult.model_validate(data).model_dump()
     except Exception as e:
-        return {"rationale": f"Parse/validate error: {e}", "action": "wait", "direction": None, "message": None, "memory": ""}
+        # hard fallback with non-null found_edges
+        return {
+            "rationale": f"Parse/validate error: {e}",
+            "action": "wait",
+            "direction": None,
+            "message": None,
+            "memory": "",
+            "found_edges": []
+        }
+
 
 def _normalize_edges(raw: Any) -> Set[Tuple[Tuple[int,int], Tuple[int,int]]]:
     """
@@ -246,29 +595,130 @@ def _normalize_edges(raw: Any) -> Set[Tuple[Tuple[int,int], Tuple[int,int]]]:
     return out
 
 # ---------------- Plan parsing ----------------
-PLAN_RE = re.compile(r'(?i)\bplan\s*:\s*.*?\bpath\s*=\s*([^;|.\n\r]+)')
+PLAN_RE = re.compile(
+    r'(?is)\bplan\b[^;:\n\r]*[:;]?\s*(?:v\d+;)?(?P<body>.*)$'
+)
+PATH_RE = re.compile(
+    r'(?is)\b(?:d(?P<id>\d+)\s*:\s*)?path\s*=\s*(?P<seq>[a-z,\s]+)\b'
+)
 
-def parse_plan_from_text(text: str) -> List[str]:
-    if not text:
-        return []
-    m = PLAN_RE.search(text)
-    if not m:
-        return []
-    raw = m.group(1)
-    alias = {
-        "n": "north", "s": "south", "e": "east", "w": "west",
-        "ne": "northeast", "nw": "northwest", "se": "southeast", "sw": "southwest"
-    }
-    kept, dropped = [], []
-    for tok in [t.strip().lower() for t in raw.split(",") if t.strip()]:
-        tok = alias.get(tok, tok)
+_ALIAS = {
+    "n":"north","s":"south","e":"east","w":"west",
+    "ne":"northeast","nw":"northwest","se":"southeast","sw":"southwest"
+}
+def _normalize_dirs(seq: str) -> List[str]:
+    out = []
+    for tok in (t.strip().lower() for t in seq.split(",") if t.strip()):
+        tok = _ALIAS.get(tok, tok)
         if tok in DIRECTION_MAP:
-            kept.append(tok)
+            out.append(tok)
         else:
-            dropped.append(tok)
-    if dropped:
-        LOGGER.log(f"Plan parser dropped tokens: {dropped}")
-    return kept
+            LOGGER.log(f"Plan parser dropped token: {tok}")
+    return out
+
+def parse_plan_from_text(text: str, target_id: Optional[int] = None) -> List[str]:
+    if not text: return []
+    m = PLAN_RE.search(text) or PATH_RE.search(text)
+    if not m:
+        # also support plain "PATH=..." with no PLAN prefix
+        m2 = PATH_RE.search(text)
+        if not m2: return []
+        body = m2.group(0)
+        it = PATH_RE.finditer(body)
+    else:
+        body = m.group("body") if "body" in m.groupdict() else text
+        it = PATH_RE.finditer(body)
+    best: List[str] = []
+    for pm in it:
+        did = pm.group("id")
+        seq = _normalize_dirs(pm.group("seq"))
+        if target_id is None and seq:
+            best = seq  # first found if no target filter
+        elif did and target_id and int(did) == int(target_id) and seq:
+            return seq
+    return best
+
+def update_plan_from_text(plans: Dict[int, List[str]], drone_id: int, text: str) -> bool:
+    seq = parse_plan_from_text(text, target_id=drone_id)
+    if seq:
+        plans[drone_id] = seq
+        return True
+    return False
+
+def _is_edge_locally_plausible(board, src: Tuple[int,int], dst: Tuple[int,int]) -> bool:
+    x, y = src; tx, ty = dst
+    W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
+    if not (0 <= x < W and 0 <= y < H and 0 <= tx < W and 0 <= ty < H):
+        return False
+    here_tile = board[x][y]
+    if not here_tile.figure:
+        return False  # must stand on a figure
+    # destination must be adjacent (local LOS) and occupied
+    dx, dy = tx - x, ty - y
+    if (dx, dy) not in DIRECTION_MAP.values():
+        return False
+    dst_tile = board[tx][ty]
+    if not dst_tile.figure:
+        return False
+
+    f = here_tile.figure
+    # legal-for-type, restricted to first step only
+    if f.figure_type == "king":
+        return True
+    if f.figure_type == "pawn":
+        # white captures up, black captures down
+        caps = {(1,1),(-1,1)} if f.color == "white" else {(1,-1),(-1,-1)}
+        return (dx,dy) in caps
+    if f.figure_type == "rook":
+        return (dx == 0) ^ (dy == 0) and abs(dx) <= 1 and abs(dy) <= 1
+    if f.figure_type == "bishop":
+        return abs(dx) == 1 and abs(dy) == 1
+    if f.figure_type == "queen":
+        lin = (dx == 0) ^ (dy == 0)
+        diag = abs(dx) == 1 and abs(dy) == 1
+        return (lin and abs(dx) <= 1 and abs(dy) <= 1) or diag
+    # knight skipped for local adjacency
+    return False
+
+def candidate_edges_local(board: List[List["_Tile"]], pos: Tuple[int,int]) -> List[List[List[int]]]:
+    x, y = pos
+    tile = board[x][y]
+    if not tile.figure:
+        return []
+    here = tile.figure
+    W, H = CONFIG["board"]["width"], CONFIG["board"]["height"]
+
+    def onb(a,b): return 0 <= a < W and 0 <= b < H
+    out: List[List[List[int]]] = []
+
+    if here.figure_type == "king":
+        for dx,dy in DIRECTION_MAP.values():
+            nx, ny = x+dx, y+dy
+            if onb(nx,ny) and board[nx][ny].figure:
+                out.append([[x,y],[nx,ny]])
+
+    elif here.figure_type == "pawn":
+        diags = [(1,1),(-1,1)] if here.color == "white" else [(1,-1),(-1,-1)]
+        for dx,dy in diags:
+            nx, ny = x+dx, y+dy
+            if onb(nx,ny) and board[nx][ny].figure:
+                out.append([[x,y],[nx,ny]])
+
+    elif here.figure_type in ("rook","bishop","queen"):
+        rays = []
+        if here.figure_type in ("rook","queen"):
+            rays += [(1,0),(-1,0),(0,1),(0,-1)]
+        if here.figure_type in ("bishop","queen"):
+            rays += [(1,1),(-1,-1),(1,-1),(-1,1)]
+        # first step only (local)
+        for dx,dy in rays:
+            nx, ny = x+dx, y+dy
+            if onb(nx,ny) and board[nx][ny].figure:
+                out.append([[x,y],[nx,ny]])
+
+    # knight skipped due to nonlocal jump
+    return out
+
 
 # ---------------- Randomize figures ----------------
 def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, seed: Optional[int] = None) -> dict:
@@ -294,7 +744,7 @@ def _randomize_figures_layout(figures_cfg: dict, board_w: int, board_h: int, see
     return out
 
 
-# In[14]:
+# In[26]:
 
 
 # Figures and Tiles
@@ -381,7 +831,7 @@ def _compute_edges_for(figures: List[_Figure], board: List[List[_Tile]]) -> Set[
     return edges
 
 
-# In[15]:
+# In[ ]:
 
 
 # Drones
@@ -529,9 +979,62 @@ class _Drone:
             return _store(raw2)
         return _store(raw)
 
+    def _local_state(self) -> Dict[str, Any]:
+        x, y = self.position
+        tile = self.sim.board[x][y]
+        same_ct = sum(1 for d in tile.drones if d.id != self.id)
+        neighbor_figs: Dict[str,str] = {}
+        for dx in [-1,0,1]:
+            for dy in [-1,0,1]:
+                if dx==0 and dy==0: continue
+                nx, ny = x+dx, y+dy
+                if 0 <= nx < CONFIG["board"]["width"] and 0 <= ny < CONFIG["board"]["height"]:
+                    t = self.sim.board[nx][ny]
+                    if t.figure:
+                        neighbor_figs[direction_from_vector((dx,dy))] = t.figure.color
+        # provide BOTH keys for compatibility
+        return {
+            "pos": (x,y),
+            "allowed_dirs": self._allowed_directions(),
+            "same_tile_count": same_ct,
+            "same_tile_drones": same_ct,   # <= legacy key
+            "fig_here": tile.figure.figure_type if tile.figure else None,
+            "neighbor_figs": neighbor_figs,
+            "memory": self.memory or "",
+            "rx_preview": self.rx_buffer or ""
+        }
+
     def generate_full_model_response(self) -> List[dict]:
         temperature = CONFIG["simulation"].get("temperature", 0.7)
+
+        # Build base SITUATION and clear rx
         situation = self._determine_situation_description()
+
+        # Decision support block
+        ds_cfg = CONFIG.get("decision_support", {"enabled": False})
+        if ds_cfg.get("enabled", False):
+            local_state = self._local_state()
+            plan_queue = self.sim.plans.get(self.id, [])
+            ds_result = build_decision_tree(local_state, plan_queue, ds_cfg)
+            recs = ds_result.get("recommendations", [])
+            # store top for gating
+            if recs:
+                self.sim._ds_top_by_drone[self.id] = {"action": recs[0]["action"], "specifier": recs[0]["specifier"]}
+            else:
+                self.sim._ds_top_by_drone[self.id] = None
+            if ds_cfg.get("include_in_prompt", True) and recs:
+                situation += "\n" + format_decision_support_section(recs, self.sim._next_planned_step(self.id), 3)
+
+        # SuggestedEdges block (local only)
+        se = candidate_edges_local(self.sim.board, self.position)
+        if se:
+            situation += "\nSuggestedEdges: " + json.dumps(se)
+        strict_edge_hint = (
+        "EDGE RULE: Output edges ONLY from SuggestedEdges. "
+        "Do not invent edges. Keep found_edges a list. If SuggestedEdges is empty, use []."
+        )
+        situation += "\n" + strict_edge_hint
+        # Append cues
         pr = CONFIG.get("prompt_requests", {})
         cues = "\n".join([
             pr.get("schema",""),
@@ -540,8 +1043,9 @@ class _Drone:
             pr.get("action_move",""),
             pr.get("action_broadcast",""),
             pr.get("memory_update","")
-         ]).strip()
+        ]).strip()
         user_content = situation if not cues else situation + "\n\n" + cues
+
         messages = [
             {"role": "system", "content": self.rules},
             {"role": "user", "content": user_content}
@@ -550,7 +1054,7 @@ class _Drone:
         return self._generate_single_model_response(messages=messages, model=self.model, temperature=temperature)
 
 
-# In[16]:
+# In[28]:
 
 
 # GUI
@@ -738,7 +1242,7 @@ class _SimulationGUI:
         pygame.display.flip()
 
 
-# In[17]:
+# In[ ]:
 
 
 # Simulation
@@ -796,6 +1300,8 @@ class Simulation:
         self.executor = ThreadPoolExecutor(max_workers=1)
         self._current_future: Optional[Future] = None
         self._thinking = False
+        self._ds_top_by_drone: Dict[int, Optional[Dict[str, Any]]] = {}
+
 
     # ---- Phase helpers
     def phase_label(self) -> str:
@@ -846,6 +1352,8 @@ class Simulation:
         LOGGER.log(f"Creating {self.num_drones} drones.")
         for i in range(self.num_drones):
             d = _Drone(id=i+1, position=self.drone_base, model=self.model, rules=self.rules, sim=self)
+            vx, vy = d.position
+            d.memory = f"VISITED:{vx},{vy}"
             self.drones.append(d)
         base = self.board[self.drone_base[0]][self.drone_base[1]]
         for d in self.drones:
@@ -907,10 +1415,11 @@ class Simulation:
 
     # ---- Plan parsing/queue (optional; only if drones themselves keep PLAN in memory)
     def _maybe_update_plan_from_text(self, drone_id: int, text: str):
-        steps = parse_plan_from_text(text or "")
-        if steps:
-            self.plans[drone_id] = steps
-            self.post_info(f"[Plan] Drone {drone_id} plan set: {steps}")
+        if update_plan_from_text(self.plans, drone_id, text or ""):
+            self.post_info(f"[Plan] Drone {drone_id} plan set: {self.plans[drone_id]}")
+        else:
+            if "PLAN" in (text or "").upper() or "PATH=" in (text or ""):
+                LOGGER.log(f"Plan text found but unparsed for Drone {drone_id}.")
 
     def _next_planned_step(self, drone_id: int) -> Optional[str]:
         q = self.plans.get(drone_id, [])
@@ -964,6 +1473,47 @@ class Simulation:
         self.post_info(f"Disc:{len(disc)}  Corr:{len(correct)}  False:{len(false)}  "
                        f"Score:{len(correct)-len(false)}  P:{prec:.2f} R:{rec:.2f}")
 
+    def _auto_replan_if_illegal(self, drone_id: int):
+        """If next planned step is illegal/OOB, drop it and insert a legal detour that increases coverage."""
+        d = next((dr for dr in self.drones if dr.id == drone_id), None)
+        if not d: return
+        q = self.plans.get(drone_id, [])
+        if not q: return
+        nxt = q[0]
+        if nxt not in d._allowed_directions():
+            # drop head
+            q.pop(0)
+            # pick a legal move that moves away from current center and avoids re-co-location
+            allowed = d._allowed_directions()
+            if not allowed: return
+            x,y = d.position
+            tile = self.board[x][y]
+            occupied_dirs = set()
+            for name,(dx,dy) in DIRECTION_MAP.items():
+                nx,ny = x+dx,y+dy
+                if 0 <= nx < CONFIG["board"]["width"] and 0 <= ny < CONFIG["board"]["height"]:
+                    if self.board[nx][ny].drones and name in allowed:
+                        occupied_dirs.add(name)
+            candidates = [a for a in sorted(allowed) if a not in occupied_dirs]
+            detour = candidates[0] if candidates else sorted(allowed)[0]
+            q.insert(0, detour)
+            self.plans[drone_id] = q
+            self.post_info(f"[Plan] Drone {drone_id} auto-replan: inserted detour '{detour}'")
+
+    def _is_valid_broadcast_json(self, msg: str) -> bool:
+        try:
+            obj = json.loads(msg)
+            if not isinstance(obj, dict): return False
+            if "obs" in obj:
+                o = obj["obs"]
+                return isinstance(o, dict) and "x" in o and "y" in o and "here" in o and "neighbors" in o
+            if "plan" in obj:
+                p = obj["plan"]
+                return isinstance(p, dict) and "queue" in p
+            return False
+        except Exception:
+            return False
+
     # ---- GUI/log helper
     def post_info(self, msg: str):
         if hasattr(self, "gui"):
@@ -986,12 +1536,23 @@ class Simulation:
             result = messages[-1]["content"]
             LOGGER.log(f"Drone {drone.id} response:\n{pprint.pformat(result, indent=4, width=200)}")
 
-            # Accept plan updates only from the drone's own memory/message
-            self._maybe_update_plan_from_text(drone.id, result.get("memory", ""))
-            self._maybe_update_plan_from_text(drone.id, result.get("message", ""))
+            # update plans from memory/message
+            self._maybe_update_plan_from_text(drone.id, result.get("memory",""))
+            self._maybe_update_plan_from_text(drone.id, result.get("message",""))
+            self._auto_replan_if_illegal(drone.id)
 
-            # Edge intake: drones report edges; aggregate per drone
-            fedges = _normalize_edges(result.get("found_edges"))
+            # ingest edges
+            raw_edges = _normalize_edges(result.get("found_edges"))
+            fedges: Set[Tuple[Tuple[int,int], Tuple[int,int]]] = set()
+            if raw_edges:
+                # keep only edges that are locally plausible for THIS drone at THIS turn
+                src_expected = drone.position
+                for (src, dst) in raw_edges:
+                    if src == src_expected and _is_edge_locally_plausible(self.board, src, dst):
+                        fedges.add((src, dst))
+                    else:
+                        self.post_info(f"Discarded implausible edge from Drone {drone.id}: {src} -> {dst}")
+
             if fedges:
                 cur = self.drone_edges.get(drone.id, set())
                 before = len(cur)
@@ -999,14 +1560,26 @@ class Simulation:
                 self.drone_edges[drone.id] = cur
                 added = len(cur) - before
                 if added > 0:
-                    self.post_info(f"Drone {drone.id} submitted {added} edge(s).")
+                    self.post_info(f"Drone {drone.id} submitted {added} plausible edge(s).")
 
             self.post_info(f"Drone {drone.id}:")
             self.post_info(f"Rationale: {result.get('rationale','')}")
             action = result.get("action", "wait")
             phase = self.phase_label()
 
-            # Planning: enforce no movement
+            # DS prefer-top gating
+            ds_cfg = CONFIG.get("decision_support", {})
+            if bool(ds_cfg.get("prefer_top_recommendation", True)) and action == "move":
+                top = self._ds_top_by_drone.get(drone.id)
+                result_dir = (result.get("direction") or "").lower()
+                expected = self._next_planned_step(drone.id)
+                plan_viol = bool(expected) and (result_dir != expected)
+                not_top = (not top) or (top.get("action") != "move") or ((top.get("specifier") or "") != result_dir)
+                if plan_viol and not_top:
+                    self.post_info("DecisionSupport gating: non-top, plan-violating action → waiting.")
+                    action = "wait"
+
+            # planning blocks movement
             if phase == "Planning" and action == "move":
                 self.post_info("Planning phase: movement disabled. Waiting.")
                 action = "wait"
@@ -1032,12 +1605,11 @@ class Simulation:
 
             elif action == "broadcast":
                 msg = (result.get("message") or "").strip()
-                if not msg:
-                    self.post_info("Invalid broadcast with empty message. Waiting.")
+                if not msg or not self._is_valid_broadcast_json(msg):
+                    self.post_info("Invalid broadcast (empty or non-JSON). Waiting.")
                 else:
                     self.post_info("Broadcast")
                     self.post_info(msg)
-                    # Only co-located drones receive
                     tile = self.board[drone.position[0]][drone.position[1]]
                     for d in tile.drones:
                         if d.id != drone.id:
@@ -1046,14 +1618,16 @@ class Simulation:
             else:
                 self.post_info("Wait")
 
-            # Persist memory (do not clobber with empty)
+            # persist memory and mark visited
             mem_txt = (result.get("memory") or "").strip()
             if mem_txt:
                 drone.memory = mem_txt
+            vx, vy = drone.position
+            token = f"VISITED:{vx},{vy}"
+            if token not in drone.memory:
+                drone.memory += ("" if drone.memory.endswith("\n") else "\n") + token
 
-            # Incremental edge logging
             self._log_discovered_edges_incremental()
-
             self.post_info("\n")
         except Exception as e:
             LOGGER.log(f"Error finishing Drone {drone.id}'s turn: {e}")
@@ -1143,7 +1717,7 @@ class Simulation:
         LOGGER.log("Clean shutdown complete.")
 
 
-# In[18]:
+# In[30]:
 
 
 # Main

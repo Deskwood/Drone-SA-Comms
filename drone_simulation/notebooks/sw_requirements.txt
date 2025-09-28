@@ -1,0 +1,133 @@
+SOFTWARE REQUIREMENTS — CORASAT SIMULATION
+Version: 1.3 (precision guard, SuggestedEdges-only, structured comms, DS penalties)
+
+1. Scope
+   SCP-1 Run G games of R rounds with T drone turns per round.
+   SCP-2 Drones act via LLM, guided by local-only Decision Support (DS), and report edges.
+   SCP-3 No global knowledge beyond local observation and co-located broadcasts.
+
+2. Interfaces
+   EXT-1 Read config.json and rules.txt on startup.
+   EXT-2 LLM adapter: chat(model, messages, temperature, format, num_predict) → str.
+   EXT-3 Optional GUI (pygame).
+   EXT-4 Logs to file and stdout.
+
+3. Configuration
+   CFG-1 Keys: board, gui, simulation, prompt_requests, figures.
+   CFG-2 DS block: enabled, max_depth, max_branching, beam_width, timeout_ms, weights, prefer_top_recommendation (default true), include_in_prompt, deterministic.
+   CFG-3 DS default weights: recall=0.6, exploration=0.15, plan_adherence=0.15, move_validity=0.05, comm_opportunity=0.03, precision=0.02.
+   CFG-4 Placeholders: NUMBER_OF_DRONES, DRONE_ID, NUMBER_OF_ROUNDS.
+
+4. Domain
+   DOM-1 Directions: {north,south,east,west,northeast,northwest,southeast,southwest}.
+   DOM-2 Figures: {king,queen,rook,bishop,knight,pawn}.
+   DOM-3 GT edges = figure targets that land on occupied tiles (recomputed at init).
+
+5. Turn I/O
+   DRN-1 SITUATION fixed order lines (Phase, Round, Board size, My coords, Current position, AllowedDirections, Reminder, Visible drones, Visible figure here, Visible neighboring figures, Memory, RX).
+   DRN-2 DecisionSupport section (if enabled): PlanNext, TopRecommendations (≤3), WhyTop (≤30 lines total).
+   DRN-3 SuggestedEdges section: local-only candidates per SED-1, format `SuggestedEdges: [ [[x1,y1],[x2,y2]], ... ]`.
+   DRN-4 Append prompt_requests cues.
+   DRN-5 RULES in system role.
+   DRN-6 TurnResult (non-optional fields): rationale:str, action∈{wait,move,broadcast}, direction:str iff move, message:str iff broadcast, memory:str, found_edges:list (never null).
+
+6. Movement and Comms
+   MOV-1 Execute move only if direction legal and on-board; else wait.
+   MOV-2 Planning blocks movement.
+   MOV-3 If enforce_plan=true and a plan exists, only accept next planned direction.
+   COM-1 Broadcasts must be JSON (COM-JSON-1); non-JSON → wait.
+   COM-2 Delivery only to co-located drones; append to rx_buffer.
+
+7. Plans
+   PLN-1 Parser accepts: `PLAN:` or `PLAN v*;`, `PATH=...`, `D<id>:PATH=...`, aliases {n,s,e,w,ne,nw,se,sw}.
+   PLN-2 Per-drone FIFO; advance on exact match.
+   PLN-3 Auto-replan: if next step illegal/OOB at root, drop it and insert a legal detour that increases coverage and reduces re-co-location; log.
+
+8. Decision Support (local-only)
+   DS-1 Inputs: local tile, allowed dirs, figure here, neighbor figure colors, same-tile count, memory (reserved keys), rx preview, plan queue.
+   DS-2 Root actions: move(each allowed), broadcast, wait.
+   DS-3 Features (additive): recall, exploration, plan_adherence, move_validity, comm_opportunity, precision.
+   DS-4 Penalties: border proximity, repeat last tile, revisit within 2 steps, re-co-location on consecutive turns.
+   DS-5 Bonus: stepping onto a tile that (by local visibility) has a figure.
+   DS-6 Pruning: max_branching, beam_width, timeout_ms; deterministic ties.
+   DS-7 prefer_top_recommendation=true: if LLM picks a non-top action that also violates plan adherence at root → execute wait and log gating.
+
+9. SuggestedEdges (local edge helper)
+   SED-1 Generator uses only current tile + neighbor occupancy:
+
+* king: edges to any occupied neighbor.
+* pawn: forward diagonals occupied (by color).
+* rook/bishop/queen: first-step adjacent occupied along legal rays.
+* knight: none (not local LOS).
+  SED-2 Added to SITUATION each turn.
+
+10. Edge Intake Precision Guard
+    EDG-1 Intake filter: accept only edges where `src == current drone tile` AND `dst` is adjacent occupied AND move is first-step legal for the figure on `src` per SED-1.
+    EDG-2 Discard all other reported edges and log “Discarded implausible edge …”.
+    EDG-3 Scoring uses filtered edges only.
+
+11. Prompt Guardrail
+    PRG-1 Append strict cue: “EDGE RULE: Output edges ONLY from SuggestedEdges. If none, set found_edges: []. Do not invent edges.”
+
+12. Structured Broadcasts
+    COM-JSON-1 Valid payloads:
+
+* Observation: `{"obs":{"x":X,"y":Y,"here":"<type|None>","neighbors":{"dir":"color",...}}}`
+* Plan: `{"plan":{"next":"dir","queue":["dir",...]}}`
+  COM-JSON-2 Receivers merge JSON into their own memory; no simulator-level global map.
+
+13. Memory Discipline
+    MEM-1 Reserved keys only; simulator may append:
+
+* `MEM:VISITED=<x,y>|...`
+* `MEM:LAST_MOVE=<dir>`
+* `MEM:OBS:<x,y>=here:<type|None>|neighbors:<dir:color,...>`
+  MEM-2 DS reads reserved keys; ignores freeform text.
+
+14. LLM Robustness
+    LLM-1 found_edges must be a list, never None; validator enforces.
+    LLM-2 Retry once with strict schema hint; if still invalid, extract JSON; else safe wait with found_edges=[].
+    LLM-3 If SuggestedEdges non-empty and found_edges empty on retry, instruct to copy SuggestedEdges.
+
+15. Orchestration
+    SIM-1 Fixed order drones × rounds; no early termination.
+    SIM-2 One LLM future at a time.
+    SIM-3 Pre-LLM: build DS, log top-3, add DecisionSupport and SuggestedEdges.
+    SIM-4 Post-LLM: planning/block rules, plan enforcement, DS gating, execute/wait, persist memory, mark VISITED, intake filtered edges, incremental edge logging.
+    SIM-5 Shutdown cancels futures, stops GUI, logs.
+
+16. GUI
+    GUI-1 Render grid, figures overlay, drones, active highlight.
+    GUI-2 Sidebar: phase, counts, precision, recall, score, plan preview, scroll log.
+    GUI-3 Missing images do not block.
+
+17. Constraints
+    CON-1 No GT leakage to prompts, DS, SuggestedEdges, or memory.
+    CON-2 rx_buffer private; included once then cleared.
+    CON-3 All moves stay on-board.
+
+18. Error Handling
+    ERR-1 Malformed TurnResult → safe wait.
+    ERR-2 Invalid/OOB move → wait; log.
+    ERR-3 Non-JSON broadcast → wait; log.
+    ERR-4 DS timeout/error → skip DS; log.
+    ERR-5 Plan parse failure → log; no enforcement change.
+
+19. Performance
+    PERF-1 GUI target 60 FPS.
+    PERF-2 DS respects timeout_ms.
+    PERF-3 LLM calls serialized.
+
+20. Testability
+    TST-1 Pure functions: allowed_directions, move legality, plan parsing, candidate_edges_local, edge_plausibility_filter, normalize_edges, compute_edges_for, DS.score_action_sequence.
+    TST-2 Snapshot SITUATION including DecisionSupport + SuggestedEdges.
+    TST-3 Unit: TurnResult rejects found_edges=None; parser variants; intake filter accepts only legal first-step edges; DS penalties/bonuses; prefer-top gating firing.
+    TST-4 Integration: non-zero discovered edges on seeded boards with adjacent figures; zero false edges due to intake filter; structured broadcasts merged into memory; no GT leakage.
+
+21. Acceptance Criteria
+    AC-1 With adjacent occupied neighbor while standing on a figure, SuggestedEdges non-empty, model returns found_edges copied → discovered_edges ≥ 1 by round ≤ 5.
+    AC-2 No false edges ingested (precision = 1.0) due to EDG-1 filter.
+    AC-3 Planning blocks moves; enforce_plan accepts only next step; auto-replan inserts legal detour when needed.
+    AC-4 prefer_top_recommendation gating logs and converts plan-violating non-top actions to wait.
+    AC-5 Broadcasts not JSON are rejected; valid JSON updates receiver memory.
+    AC-6 No GT references appear in prompts or memory.

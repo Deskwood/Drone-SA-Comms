@@ -15,7 +15,6 @@
     ],
     "num_drones": 2,
     "max_rounds": 32,
-    "rules_path": "rules.txt",
     "max_tokens_for_rationale": 1024,
     "max_tokens_for_action": 1024,
     "max_tokens_for_action_move": 1024,
@@ -35,7 +34,7 @@
     "grid_color": [70, 70, 70],
     "drone_color": [0, 200, 255],
     "text_color": [255, 255, 255],
-    "figure_image_dir": "../img",
+    "figure_image_dir": "./img",
     "sidebar_width": 1200
   },
   "rules_path": "rules.txt",

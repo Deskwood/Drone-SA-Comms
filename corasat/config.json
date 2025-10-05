@@ -3,6 +3,7 @@
     "width": 8,
     "height": 8
   },
+  "rules_path": "rules.txt",
   "simulation": {
     "use_gui": true,
     "model_index": 1,
@@ -37,7 +38,6 @@
     "figure_image_dir": "./img",
     "sidebar_width": 1200
   },
-  "rules_path": "rules.txt",
   "figures": {
     "white": {
       "king": [[6, 2]],
@@ -55,6 +55,9 @@
       "knight": [[3, 6], [6, 0]],
       "pawn": [[0, 6], [1, 6], [2, 7], [3, 7], [4, 7], [5, 6], [6, 6], [7, 7]]
     }
+  },
+  "decision_support": {
+    "enabled": true
   },
   "prompt_requests": {
     "rationale": "Rationale: Provide a rationale on how you want to use your turn to reach the game objective.",

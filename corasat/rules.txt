@@ -16,7 +16,7 @@ Turn Actions:
 On your turn, choose exactly one:
 - "wait": do nothing.
 - "move": move exactly one step in a compass direction.
-- "broadcast": send a message to drones co-located on your tile (this turn only).
+- "broadcast": send a message to drones co-located on your tile (this turn only). This action also provides other drones collected chessboard information.
 
 Movement Rules:
 - Valid directions (lowercase): north, south, east, west, northeast, northwest, southeast, southwest.
@@ -24,54 +24,27 @@ Movement Rules:
 - You may move onto any on-board tile (occupied or not), but never outside the board.
 - Invalid moves are ignored and treated as "wait".
 
-Communication (Structured Only):
+Communication:
 - Broadcasts are delivered only to drones on your current tile in this turn.
-- Broadcast payload MUST be a single-line JSON object (≤160 chars) of one of these forms:
-  Observation:
-    {"obs":{"x":X,"y":Y,"here":"<type|None>","neighbors":{"dir":"color",...}}}
-  Plan:
-    {"plan":{"next":"<dir>","queue":["<dir>", ...]}}
-- Non-JSON messages are ignored by the simulator.
 
 Observational Capabilities:
 - Current tile: you fully identify the figure (type, color) and see co-located drones.
 - Adjacent tiles: you detect presence and color of figures (no type).
-- No global knowledge beyond what you remember in "memory" and what you receive via broadcasts on the same tile.
+- No global knowledge beyond what you remember in "memory", history of movement and observed content, and what you receive via broadcasts on the same tile.
 
 Game Objective:
 - Nodes: each figure (type, position, color).
 - Edges: attack/defense relations by chess rules.
-- Maximize:
-  - Recall = true_edges_found / ground_truth_edges
-  - Precision = true_edges_found / all_reported_edges
-  - Composite Score = (true_edges_found − false_edges_reported) / ground_truth_edges
-- Never fabricate figure types; assert a type only if you stood on that tile.
+- Maximize Score: correct edges reported − false edges reported. This implies that collecting node information is very helpful.
 
 Memory Discipline:
 - Keep "memory" compact, structured, durable, and relevant.
-- Recommended to include your current plan slice and visit markers, e.g.:
-  "PLAN v1; D<id>:PATH=n,e,se"
-  "VISITED:x,y" (one per line)
 - Use memory for short task lists or observations you need next turn.
 
-Planning & Phases:
-- The number of Planning rounds is defined by the simulator config (default 3). After that: Execution.
-- During Planning, movement may be disabled by the simulator; use broadcasts or memory to coordinate.
-- During Execution, a PATH may be enforced by the simulator. If PATH is enforced, off-PATH moves may be ignored (treated as wait).
-
-Planning & Paths:
-- Authoritative PLANs should be broadcast using the JSON Plan format:
-  {"plan":{"next":"<dir>","queue":["<dir>", ...]}}
-- Store only your own slice in memory (e.g., "PLAN v1; D<id>:PATH=n,e,se").
-- If your next planned step is not listed in AllowedDirections, you may broadcast a concise REPLAN request and then wait; the simulator may also auto-insert a legal detour.
-
-Coordinates:
-- Origin at bottom-left. Example: A1=(0,0), B1=(1,0). x increases to the right, y increases upward.
-
 Reasoning Priorities:
-- Prefer actions that increase true edge discovery while avoiding false claims.
-- Stand on tiles to identify figure types before asserting them.
-- Use broadcasts for negotiating plans, roles, or replans.
+- Moving is better than waiting.
+- It makes most sense to move to a tile which is a possible blocker, then a tile where only the color is known, then unknown tiles and last revisiting already known tiles.
+- Use broadcasts for negotiating plans, roles, or replans. This also shares information an can significantly boost the score.
 
 Decision Output (STRICT):
 Return ONLY a single valid JSON object with no extra text. Use double quotes. No trailing commas.
@@ -82,22 +55,9 @@ Schema:
   "action": "wait" | "move" | "broadcast",
   "direction": "north|south|east|west|northeast|northwest|southeast|southwest" | null,
   "message": "string" | null,
-  "memory": "string to carry into next turn",
-  "found_edges": [ [[x1,y1],[x2,y2]], ... ]            // always present; may be []
+  "memory": "string to carry into next turn"
 }
 
-Validation Rules:
-- If action=="move": "direction" must be present and in AllowedDirections.
-- If action=="broadcast": "message" must be a single-line valid JSON (Observation or Plan).
-- If action=="wait": set both "direction" and "message" to null.
-- If JSON is invalid, action defaults to "wait" and memory is unchanged.
-
-Edge Reporting:
-- Prefer to copy edges from "SuggestedEdges" when present in the situation; otherwise return [].
-- Report only edges that are locally justifiable from your current tile (do not invent or reuse stale edges).
-
 Exploration:
-- Avoid re-visiting tiles, if possible (see MEMORY).
+- Avoid re-visiting tiles, if possible.
 - Have a tendency towards visiting tiles with figures above.
-- Store figure information in MEMORY.
-- If co-located with other drones, consider sharing information figure information in MEMORY.

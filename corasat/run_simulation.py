@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[121]:
+# In[13]:
 
 
 #!/usr/bin/env python
@@ -19,7 +19,7 @@ from ollama import chat as ollama_chat
 from pydantic import BaseModel, field_validator, model_validator
 
 
-# In[122]:
+# In[14]:
 
 
 # Logger
@@ -69,7 +69,7 @@ class TimestampedLogger:
 LOGGER = TimestampedLogger()
 
 
-# In[123]:
+# In[15]:
 
 
 # --- Auto-export to .py when running inside a Jupyter notebook ---
@@ -114,7 +114,7 @@ except Exception:
     pass
 
 
-# In[124]:
+# In[16]:
 
 
 # Constants / Config
@@ -202,10 +202,7 @@ def load_config(config_path: str = "config.json") -> dict:
 CONFIG = load_config("config.json")
 
 
-# =========================
-
-
-# In[125]:
+# In[17]:
 
 
 # Figure Images
@@ -240,7 +237,7 @@ def load_figure_images() -> dict:
     return images
 
 
-# In[126]:
+# In[18]:
 
 
 # Domain: Figures/Tiles
@@ -312,7 +309,7 @@ class _Tile:
 
 
 
-# In[127]:
+# In[19]:
 
 
 # Chess helpers
@@ -344,7 +341,7 @@ def on_board(x, y):
     return 0 <= x < CONFIG["board"]["width"] and 0 <= y < CONFIG["board"]["height"]
 
 
-# In[128]:
+# In[20]:
 
 
 # Decision Support
@@ -353,7 +350,7 @@ def on_board(x, y):
 # //TODO: Implement Decision Support logic here
 
 
-# In[ ]:
+# In[21]:
 
 
 # Drone
@@ -606,7 +603,7 @@ class _Drone:
             return messages
 
 
-# In[130]:
+# In[ ]:
 
 
 # GUI
@@ -683,8 +680,6 @@ class _SimulationGUI:
         return (cx, cy)
 
     def save_screenshot(self, path: Optional[str] = None):
-        if self.stub:
-            return
         out_dir = "screenshots"
         os.makedirs(out_dir, exist_ok=True)
         fname = path or os.path.join(out_dir, f"last_run.png")
@@ -870,7 +865,7 @@ class _SimulationGUI:
         pygame.display.flip()
 
 
-# In[131]:
+# In[23]:
 
 
 # Simulation
@@ -1176,19 +1171,18 @@ class Simulation:
         except Exception:
             pass
         try:
-            if hasattr(self, "gui") and self.gui:
+            if self.gui:
                 # draw one last frame to ensure latest state is shown
-                try: self.gui.draw_field()
-                except Exception: pass
+                self.gui.draw_field()
                 self.gui.save_screenshot()  # default path in ./screenshots
-        except Exception:
-            pass
+        except Exception as ex:
+            LOGGER.log(f"Error during final GUI draw: {ex}")
         pygame.display.quit()
         pygame.quit()
         LOGGER.log("Clean shutdown complete.")
 
 
-# In[132]:
+# In[24]:
 
 
 # Main

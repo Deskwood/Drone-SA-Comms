@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[13]:
+# In[49]:
 
 
 #!/usr/bin/env python
@@ -19,7 +19,7 @@ from ollama import chat as ollama_chat
 from pydantic import BaseModel, field_validator, model_validator
 
 
-# In[14]:
+# In[50]:
 
 
 # Logger
@@ -69,7 +69,7 @@ class TimestampedLogger:
 LOGGER = TimestampedLogger()
 
 
-# In[15]:
+# In[51]:
 
 
 # --- Auto-export to .py when running inside a Jupyter notebook ---
@@ -114,7 +114,7 @@ except Exception:
     pass
 
 
-# In[16]:
+# In[52]:
 
 
 # Constants / Config
@@ -202,7 +202,7 @@ def load_config(config_path: str = "config.json") -> dict:
 CONFIG = load_config("config.json")
 
 
-# In[17]:
+# In[53]:
 
 
 # Figure Images
@@ -237,7 +237,7 @@ def load_figure_images() -> dict:
     return images
 
 
-# In[18]:
+# In[ ]:
 
 
 # Domain: Figures/Tiles
@@ -296,20 +296,20 @@ class _Tile:
     def __init__(self, x: int, y: int):
         self.x = x; self.y = y
         self.targeted_by = {"white": 0, "black": 0}
-        self.figure: Optional[_Figure] = None
-        self.drones: List['_Drone'] = []
+        self.figure = None
+        self.drones = []
 
-    def set_figure(self, figure: _Figure): self.figure = figure
-    def add_drone(self, drone: '_Drone'):
+    def set_figure(self, figure): self.figure = figure
+    def add_drone(self, drone):
         if drone not in self.drones: self.drones.append(drone)
-    def remove_drone(self, drone: '_Drone'):
+    def remove_drone(self, drone):
         if drone in self.drones: self.drones.remove(drone)
     def reset_targeted_by_amounts(self): self.targeted_by = {"white": 0, "black": 0}
     def add_targeted_by_amount(self, color: str, amount: int = 1): self.targeted_by[color] += amount
 
 
 
-# In[19]:
+# In[55]:
 
 
 # Chess helpers
@@ -341,7 +341,7 @@ def on_board(x, y):
     return 0 <= x < CONFIG["board"]["width"] and 0 <= y < CONFIG["board"]["height"]
 
 
-# In[20]:
+# In[56]:
 
 
 # Decision Support
@@ -350,7 +350,7 @@ def on_board(x, y):
 # //TODO: Implement Decision Support logic here
 
 
-# In[21]:
+# In[57]:
 
 
 # Drone
@@ -603,7 +603,7 @@ class _Drone:
             return messages
 
 
-# In[ ]:
+# In[58]:
 
 
 # GUI
@@ -865,7 +865,7 @@ class _SimulationGUI:
         pygame.display.flip()
 
 
-# In[23]:
+# In[ ]:
 
 
 # Simulation
@@ -1015,12 +1015,10 @@ class Simulation:
     def _log_final_summary(self):
         LOGGER.log("#"*60)
         LOGGER.log("FINAL EDGE SUMMARY")
-        LOGGER.log(f"Identified nodes: {len({n for e in self.reported_edges for n in e})}")
-        LOGGER.log(f"GT edges:         {len(self.gt_edges)}")
-        LOGGER.log(f"Reported edges:   {len(self.reported_edges)}")
-        LOGGER.log(f"  - Correct:      {self.correct_edge_counter}")
-        LOGGER.log(f"  - False:        {self.false_edge_counter}")
-        LOGGER.log(f"Score:            {self.score}")
+        LOGGER.log(f"Reported edges: {len(self.reported_edges)}")
+        LOGGER.log(f"  - Correct:    {self.correct_edge_counter}")
+        LOGGER.log(f"  - False:      {self.false_edge_counter}")
+        LOGGER.log(f"Score:          {self.score} / {len(self.gt_edges)}")
 
         LOGGER.log("\nEdge summary:")
         correct_edges = []; false_edges = []
@@ -1040,7 +1038,7 @@ class Simulation:
             except Exception:
                 pass
         self.post_info("=== FINAL EDGE SUMMARY ===")
-        self.post_info(f"Disc:{len(self.reported_edges)}  Corr:{self.correct_edge_counter}  False:{self.false_edge_counter}  Score:{self.score}")
+        self.post_info(f"Reported: {len(self.reported_edges)}  Correct: {self.correct_edge_counter}  False: {self.false_edge_counter}  Score: {self.score} / {len(self.gt_edges)}")
 
     # GUI/log helper
     def post_info(self, msg: str):
@@ -1182,7 +1180,7 @@ class Simulation:
         LOGGER.log("Clean shutdown complete.")
 
 
-# In[24]:
+# In[60]:
 
 
 # Main

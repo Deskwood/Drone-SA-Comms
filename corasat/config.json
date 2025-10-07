@@ -15,7 +15,7 @@
       "llama3.1:8b"
     ],
     "num_drones": 2,
-    "max_rounds": 8,
+    "max_rounds": 32,
     "temperature": 0.7,
     "planning_rounds": 2,
     "randomize_figures": true,

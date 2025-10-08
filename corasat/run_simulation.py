@@ -1,25 +1,22 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[49]:
+# In[ ]:
 
 
-#!/usr/bin/env python
-# coding: utf-8
-
-# =========================
 # Imports
 # =========================
-import os, re, json, time, random, pprint, logging, colorsys, math, nbformat, pygame, pyperclip
-from typing import Tuple, List, Optional, Literal, Dict, Any, Set, TypedDict
+import os, json, time, random, pprint, logging, colorsys, math, nbformat, pygame, pyperclip
+from typing import Tuple, List, Optional, Dict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, Future
 from nbconvert.exporters import PythonExporter
 from ollama import chat as ollama_chat
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import field_validator, model_validator
 
 
-# In[50]:
+
+# In[ ]:
 
 
 # Logger
@@ -69,10 +66,11 @@ class TimestampedLogger:
 LOGGER = TimestampedLogger()
 
 
-# In[51]:
+# In[ ]:
 
 
-# --- Auto-export to .py when running inside a Jupyter notebook ---
+# Notebook Export
+# =========================
 def _running_in_notebook() -> bool:
     try:
         from IPython import get_ipython
@@ -114,7 +112,7 @@ except Exception:
     pass
 
 
-# In[52]:
+# In[ ]:
 
 
 # Constants / Config
@@ -202,7 +200,8 @@ def load_config(config_path: str = "config.json") -> dict:
 CONFIG = load_config("config.json")
 
 
-# In[53]:
+
+# In[ ]:
 
 
 # Figure Images
@@ -235,6 +234,7 @@ def load_figure_images() -> dict:
             else:
                 LOGGER.log(f"ERROR: Image not found for {color} {figure_type} in {base_path}")
     return images
+
 
 
 # In[ ]:
@@ -309,7 +309,7 @@ class _Tile:
 
 
 
-# In[55]:
+# In[ ]:
 
 
 # Chess helpers
@@ -341,16 +341,187 @@ def on_board(x, y):
     return 0 <= x < CONFIG["board"]["width"] and 0 <= y < CONFIG["board"]["height"]
 
 
-# In[56]:
+
+# In[ ]:
 
 
 # Decision Support
 # =========================
 
-# //TODO: Implement Decision Support logic here
+def chebyshev_distance(a: Tuple[int, int], b: Tuple[int, int]) -> int:
+    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
-# In[57]:
+def _count_unknown_neighbors(drone: '_Drone', pos: Tuple[int, int]) -> int:
+    count = 0
+    for dx in [-1, 0, 1]:
+        for dy in [-1, 0, 1]:
+            if dx == 0 and dy == 0:
+                continue
+            nx, ny = pos[0] + dx, pos[1] + dy
+            if not on_board(nx, ny):
+                continue
+            key = cartesian_to_chess((nx, ny))
+            info = drone.local_board.get(key, {"color": "unknown", "type": "unknown"})
+            if info["type"] == "unknown" or info["color"] == "unknown" or info["type"] == "a possible target":
+                count += 1
+    return count
+
+
+def _estimate_intel_payload(drone: '_Drone') -> int:
+    unresolved = 0
+    for info in drone.local_board.values():
+        if info["type"] in ("unknown", "a possible target") or info["color"] == "unknown":
+            unresolved += 1
+    return unresolved
+
+
+def compute_decision_support(drone: '_Drone') -> Dict[str, object]:
+    scores: List[Dict[str, object]] = []
+    current_round = drone.sim.round
+    next_wp = drone._next_mission_waypoint()
+    target_pos = tuple(next_wp["target_cartesian"]) if next_wp else None
+
+    for step in drone._legal_movement_steps():
+        direction = step["direction"]
+        new_pos = tuple(step["new_position"])
+        tile_key = cartesian_to_chess(new_pos)
+        tile_info = drone.local_board.get(tile_key, {"color": "unknown", "type": "unknown"})
+
+        score = 0.0
+        components: Dict[str, float] = {}
+        notes: List[str] = []
+
+        if target_pos:
+            current_dist = chebyshev_distance(drone.position, target_pos)
+            new_dist = chebyshev_distance(new_pos, target_pos)
+            delta = current_dist - new_dist
+            components["plan_progress"] = delta
+            if delta > 0:
+                score += delta * 1.6
+                notes.append("closer to waypoint")
+            elif delta < 0:
+                score += delta * 1.2
+                notes.append("further from waypoint")
+
+            turns_remaining = max(0, next_wp["turn"] - (current_round + 1))
+            slack = turns_remaining - new_dist
+            components["deadline_margin"] = float(slack)
+            if slack >= 0:
+                score += 0.6
+            else:
+                score -= 0.6
+                notes.append("risk missing deadline")
+
+            tolerance = next_wp.get("tolerance_steps", 0)
+            if new_dist <= tolerance:
+                score += 0.4
+                components["within_tolerance"] = 1.0
+
+        if tile_info["type"] == "unknown":
+            score += 1.0
+            components["discover_type"] = 1.0
+            notes.append("unidentified tile")
+        elif tile_info["type"] == "a possible target":
+            score += 1.2
+            components["possible_target"] = 1.2
+            notes.append("possible blocker")
+        elif tile_info["type"] == "any figure":
+            score += 0.6
+            components["figure_hint"] = 0.6
+            notes.append("figure nearby")
+
+        if tile_info["color"] == "unknown":
+            score += 0.5
+            components["discover_color"] = 0.5
+
+        unknown_neighbors = _count_unknown_neighbors(drone, new_pos)
+        if unknown_neighbors:
+            score += unknown_neighbors * 0.2
+            components["unknown_neighbors"] = float(unknown_neighbors)
+            notes.append(f"{unknown_neighbors} unknown neighbors")
+
+        scores.append({
+            "action": "move",
+            "label": direction,
+            "score": round(score, 2),
+            "components": {k: round(v, 2) for k, v in components.items() if abs(v) >= 0.01},
+            "notes": notes,
+        })
+
+    tile = drone.sim.board[drone.position[0]][drone.position[1]]
+    recipients = [d for d in tile.drones if d.id != drone.id]
+    broadcast_components: Dict[str, float] = {"recipients": float(len(recipients))}
+    broadcast_notes: List[str] = []
+    broadcast_score = -0.5
+    if recipients:
+        ages: List[int] = []
+        for target in recipients:
+            last_round = drone.info_exchange_rounds.get(target.id)
+            age = current_round - last_round if last_round is not None else current_round
+            if age < 0:
+                age = 0
+            ages.append(age)
+        avg_age = sum(ages) / len(ages) if ages else 0.0
+        broadcast_components["avg_staleness"] = round(avg_age, 2)
+        broadcast_components["max_staleness"] = float(max(ages) if ages else 0)
+        intel_payload = _estimate_intel_payload(drone)
+        broadcast_components["intel_payload"] = float(intel_payload)
+        broadcast_score = len(recipients) * 0.8 + avg_age * 0.4 + intel_payload * 0.1
+        if avg_age > 0:
+            broadcast_notes.append("recipients have stale intel")
+        if intel_payload > 0:
+            broadcast_notes.append("carrying intel to share")
+    else:
+        broadcast_notes.append("no co-located drones")
+
+    scores.append({
+        "action": "broadcast",
+        "label": "share",
+        "score": round(broadcast_score, 2),
+        "components": {k: v for k, v in broadcast_components.items()},
+        "notes": broadcast_notes,
+    })
+
+    wait_score = -1.0
+    wait_notes: List[str] = ["no progress"]
+    wait_components: Dict[str, float] = {"idle_penalty": -1.0}
+    if target_pos:
+        dist_to_target = chebyshev_distance(drone.position, target_pos)
+        if dist_to_target == 0 and next_wp and current_round < next_wp["turn"]:
+            wait_score = -0.2
+            wait_notes = ["holding position at waypoint"]
+            wait_components["holding_pattern"] = 0.3
+    scores.append({
+        "action": "wait",
+        "label": "hold",
+        "score": round(wait_score, 2),
+        "components": {k: round(v, 2) for k, v in wait_components.items()},
+        "notes": wait_notes,
+    })
+
+    scores.sort(key=lambda entry: entry["score"], reverse=True)
+
+    intel_ledger: List[Dict[str, object]] = []
+    for other_id in sorted(drone.info_exchange_rounds.keys()):
+        last_round = drone.info_exchange_rounds[other_id]
+        age = current_round - last_round if last_round is not None else current_round
+        if age < 0:
+            age = 0
+        intel_ledger.append({
+            "drone": other_id,
+            "last_round": last_round,
+            "age": age,
+        })
+
+    return {
+        "scores": scores,
+        "next_waypoint": next_wp,
+        "intel_ledger": intel_ledger,
+    }
+
+
+# In[ ]:
 
 
 # Drone
@@ -368,7 +539,13 @@ class _Drone:
         self.memory = ""
         self.rx_buffer = ""
         self.mission_report: List = [self.position]
-        self.mission_plan: List[dict] = [] # //TODO: Fill mission plan
+        self.mission_plan: List[dict] = self._build_initial_mission_plan()
+        self.info_exchange_rounds: Dict[int, Optional[int]] = {
+            drone_id: None
+            for drone_id in range(1, CONFIG["simulation"]["num_drones"] + 1)
+            if drone_id != self.id
+        }
+        self._last_decision_support: Dict[str, object] = {}
         self.local_board = {}
         for bx in range(CONFIG["board"]["width"]):
             for by in range(CONFIG["board"]["height"]):
@@ -378,6 +555,120 @@ class _Drone:
         # possible combinations: (unknown,unknown), (n/a,n/a), (any figure,white/black), (king/queen/rook/bishop/knight/pawn,white/black), (a possible target,unknown)
         self.identified_edges = []
         self.update_board_report()
+
+    def _build_initial_mission_plan(self) -> List[dict]:
+        """Create a per-drone waypoint schedule with arrival deadlines and tolerances."""
+        board_w = CONFIG["board"]["width"]
+        board_h = CONFIG["board"]["height"]
+        num_drones = max(1, CONFIG["simulation"].get("num_drones", 1))
+        max_rounds = max(1, CONFIG["simulation"].get("max_rounds", board_w * board_h))
+        base_pos = self.position
+
+        # Build a serpentine coverage path and rotate it so the base position is first.
+        serpentine_path: List[Tuple[int, int]] = []
+        for by in range(board_h):
+            xs = range(board_w) if by % 2 == 0 else range(board_w - 1, -1, -1)
+            for bx in xs:
+                serpentine_path.append((bx, by))
+        if base_pos in serpentine_path:
+            base_idx = serpentine_path.index(base_pos)
+            serpentine_path = serpentine_path[base_idx:] + serpentine_path[:base_idx]
+        else:
+            serpentine_path.insert(0, base_pos)
+
+        lane_index = (self.id - 1) % num_drones
+        allocated_tiles = [
+            tile for idx, tile in enumerate(serpentine_path)
+            if idx % num_drones == lane_index
+        ]
+
+        plan: List[dict] = [{
+            "turn": 1,
+            "target": cartesian_to_chess(base_pos),
+            "target_cartesian": [base_pos[0], base_pos[1]],
+            "tolerance_steps": 0,
+            "notes": "Mission start / rally point."
+        }]
+
+        current_turn = 1
+        previous_tile = base_pos
+
+        for tile in allocated_tiles:
+            if tile == previous_tile:
+                continue
+            distance = max(abs(tile[0] - previous_tile[0]), abs(tile[1] - previous_tile[1]))
+            if distance == 0:
+                continue
+            current_turn += distance
+            tolerance = max(1, math.ceil(distance / 2))
+            plan.append({
+                "turn": current_turn,
+                "target": cartesian_to_chess(tile),
+                "target_cartesian": [tile[0], tile[1]],
+                "distance_steps": distance,
+                "tolerance_steps": tolerance,
+                "notes": "Coverage waypoint."
+            })
+            previous_tile = tile
+            if current_turn >= max_rounds:
+                break
+
+        return plan
+    def _next_mission_waypoint(self) -> Optional[dict]:
+        current_round = self.sim.round
+        for waypoint in self.mission_plan:
+            if waypoint.get("turn", 0) >= current_round:
+                return waypoint
+        return self.mission_plan[-1] if self.mission_plan else None
+
+    def _decision_support_snapshot(self) -> Dict[str, object]:
+        snapshot = compute_decision_support(self)
+        self._last_decision_support = snapshot
+        return snapshot
+
+    def _format_decision_support_lines(self, snapshot: Dict[str, object]) -> Tuple[List[str], List[str]]:
+        lines: List[str] = []
+        ledger_lines: List[str] = []
+
+        waypoint = snapshot.get("next_waypoint")
+        if waypoint:
+            tolerance = waypoint.get("tolerance_steps", 0)
+            lines.append(
+                f"Plan focus: {waypoint['target']} by turn {waypoint['turn']} (tol +/-{tolerance})"
+            )
+
+        for entry in snapshot.get("scores", []):
+            components = entry.get("components", {})
+            if components:
+                sorted_components = sorted(
+                    components.items(),
+                    key=lambda item: (-abs(item[1]), item[0])
+                )
+                component_text = ", ".join(
+                    f"{name}:{value:+.2f}" for name, value in sorted_components[:3]
+                )
+            else:
+                component_text = "n/a"
+            notes = entry.get("notes") or []
+            note_text = f" | notes: {'; '.join(notes)}" if notes else ""
+            label = entry.get("label") or "-"
+            lines.append(
+                f"{entry['action']} {label} -> {entry['score']:+.2f} | factors: {component_text}{note_text}"
+            )
+
+        for ledger in snapshot.get("intel_ledger", []):
+            last_round = ledger.get("last_round")
+            age = ledger.get("age", 0)
+            if last_round is None:
+                ledger_lines.append(
+                    f"Drone {ledger['drone']}: never shared (age {age} rounds)"
+                )
+            else:
+                ledger_lines.append(
+                    f"Drone {ledger['drone']}: last shared round {last_round} (age {age})"
+                )
+
+        return lines, ledger_lines
 
     def _identify_edges(self):
         # Identify edges according to current local board knowledge
@@ -479,6 +770,9 @@ class _Drone:
             if edge not in target_drone.identified_edges:
                 target_drone.identified_edges.append(edge)
 
+        current_round = self.sim.round
+        self.info_exchange_rounds[target_drone.id] = current_round
+        target_drone.info_exchange_rounds[self.id] = current_round
         # Update their board report (in case new edges imply new "a possible target" statuses)
         target_drone.update_board_report()
 
@@ -569,7 +863,6 @@ class _Drone:
                 elif info["type"] == "a possible target":
                     collected_figure_information += f"{cartesian_to_chess((bx,by))}: {info['type']}, "
         collected_figure_information = collected_figure_information.strip(", ")
-        LOGGER.log(collected_figure_information)
 
         s = []
         s.append(f"Current round number: {self.sim.round} of {CONFIG['simulation']['max_rounds']} rounds.")
@@ -582,6 +875,14 @@ class _Drone:
         s.append(f"Memory: {self.memory}")
         s.append(f"Collected figure information: {collected_figure_information}")
         s.append(f"Broadcast Rx Buffer: {self.rx_buffer}")
+        snapshot = self._decision_support_snapshot()
+        ds_lines, ledger_lines = self._format_decision_support_lines(snapshot)
+        if ds_lines:
+            s.append("Decision Support:")
+            s.extend([f"  {entry}" for entry in ds_lines])
+        if ledger_lines:
+            s.append("Intel Share Ledger:")
+            s.extend([f"  {entry}" for entry in ledger_lines])
         self.rx_buffer = ""  # drain the inbox each turn
         return "\n".join(s)
 
@@ -603,11 +904,11 @@ class _Drone:
             return messages
 
 
-# In[58]:
+# In[ ]:
 
 
 # GUI
-
+# =========================
 class _SimulationGUI:
     def __init__(self, sim):
         self.sim = sim
@@ -869,6 +1170,7 @@ class _SimulationGUI:
 
 
 # Simulation
+# =========================
 class Simulation:
     def __init__(self):
         if CONFIG["simulation"].get("headless", False):
@@ -984,21 +1286,18 @@ class Simulation:
     # Drones
     def _create_drones(self):
         LOGGER.log(f"Creating {self.num_drones} drones.")
-        for i in range(self.num_drones):
-            d = _Drone(id=i+1, position=self.drone_base, model=self.model, rules=self.rules, sim=self)
+        for drone_index in range(self.num_drones):
+            new_drone = _Drone(id=drone_index+1, position=self.drone_base, model=self.model, rules=self.rules, sim=self)
             # unique color by rotating hue
-            hue_deg = (i / max(1, self.num_drones)) * 360.0
-            d.render_color = hsv_to_rgb255(hue_deg, 0.85, 0.95)  # vivid, bright
-            vx, vy = d.position
-            d.memory = f"VISITED:{vx},{vy}"
-            self.drones.append(d)
-        base = self.board[self.drone_base[0]][self.drone_base[1]]
-        for d in self.drones:
-            base.add_drone(d)
+            hue_deg = (drone_index / max(1, self.num_drones)) * 360.0
+            new_drone.render_color = hsv_to_rgb255(hue_deg, 0.85, 0.95)  # vivid, bright
+            self.drones.append(new_drone)
+        base_tile = self.board[self.drone_base[0]][self.drone_base[1]]
+        for new_drone in self.drones:
+            base_tile.add_drone(new_drone)
 
     # Edges/score
     def report_edges(self, edges: List[str]):
-        LOGGER.log(f"Reported edges: {edges}")
         for edge in edges:
             if edge not in self.reported_edges:
                 self.reported_edges.append(edge)
@@ -1180,7 +1479,7 @@ class Simulation:
         LOGGER.log("Clean shutdown complete.")
 
 
-# In[60]:
+# In[ ]:
 
 
 # Main
@@ -1194,4 +1493,5 @@ if __name__ == "__main__":
         LOGGER.log("Interrupted by user (Ctrl+C).")
         try: SIM.shutdown()
         except Exception: pass
+
 

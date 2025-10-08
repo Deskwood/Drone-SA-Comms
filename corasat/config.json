@@ -16,7 +16,7 @@
     ],
     "num_drones": 2,
     "max_rounds": 32,
-    "temperature": 0.7,
+    "temperature": 0.2,
     "planning_rounds": 2,
     "randomize_figures": true,
     "random_seed": 456

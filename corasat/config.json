@@ -61,29 +61,32 @@
         "tolerance_bonus": 0.4,
         "unknown_tile_bonus": 1.0,
         "possible_target_bonus": 1.2,
-        "figure_hint_bonus": 0.6,
-        "unknown_color_bonus": 0.5,
-        "unknown_neighbor_bonus_per_tile": 0.2
+      "figure_hint_bonus": 0.6,
+      "unknown_color_bonus": 0.5,
+      "unknown_neighbor_bonus_per_tile": 0.2,
+      "first_turn_coordination_penalty": 1.5
       },
       "broadcast": {
         "base_penalty": 0.5,
         "recipient_factor": 0.8,
         "staleness_factor": 0.4,
-        "intel_payload_factor": 0.1
+        "intel_payload_factor": 0.1,
+        "first_turn_coordination_bonus": 2.5
       },
       "wait": {
         "default_score": -1.0,
         "idle_penalty_component": -1.0,
         "holding_position_score": -0.2,
-        "holding_pattern_component": 0.3
+        "holding_pattern_component": 0.3,
+        "over_activity_penalty": 0.6
       }
     }
   },
   "prompt_requests": {
-    "rationale": "Rationale: Provide a rationale on how you want to use your turn to reach the game objective.",
+    "rationale": "Rationale: Provide a rationale on how you want to use your turn to reach the game objective (Drone 1 on round 1 should explain the coverage plan and rendezvous).",
     "action": "Action: What you want to do?",
     "action_move": "Direction: If your action is to move, where you want to move?",
-    "action_broadcast": "Message: If your action is broadcast, what you want to broadcast?",
+    "action_broadcast": "Message: If your action is broadcast, describe the coverage assignments and rendezvous timing so every drone can update its plan. Only rebroadcast when co-located partners need an update (mandatory for Drone 1 on round 1).",
     "memory_update": "Memory: Summarize everything worth remembering. Pretend that you lose all your previous memory and only have this memory after your turn."
   }
 }

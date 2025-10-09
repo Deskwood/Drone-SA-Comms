@@ -5,6 +5,7 @@
   },
   "rules_path": "rules.txt",
   "simulation": {
+    "create_py_export": false,
     "use_gui": true,
     "model_index": 1,
     "models": [
@@ -50,7 +51,33 @@
     }
   },
   "decision_support": {
-    "enabled": true
+    "enabled": true,
+    "scoring": {
+      "move": {
+        "waypoint_progress_reward_per_step": 1.6,
+        "waypoint_regression_penalty_per_step": 1.2,
+        "deadline_slack_bonus": 0.6,
+        "deadline_slack_penalty": 0.6,
+        "tolerance_bonus": 0.4,
+        "unknown_tile_bonus": 1.0,
+        "possible_target_bonus": 1.2,
+        "figure_hint_bonus": 0.6,
+        "unknown_color_bonus": 0.5,
+        "unknown_neighbor_bonus_per_tile": 0.2
+      },
+      "broadcast": {
+        "base_penalty": 0.5,
+        "recipient_factor": 0.8,
+        "staleness_factor": 0.4,
+        "intel_payload_factor": 0.1
+      },
+      "wait": {
+        "default_score": -1.0,
+        "idle_penalty_component": -1.0,
+        "holding_position_score": -0.2,
+        "holding_pattern_component": 0.3
+      }
+    }
   },
   "prompt_requests": {
     "rationale": "Rationale: Provide a rationale on how you want to use your turn to reach the game objective.",

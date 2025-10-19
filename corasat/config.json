@@ -54,23 +54,21 @@
     "enabled": true,
     "scoring": {
       "move": {
-        "waypoint_progress_reward_per_step": 1.6,
-        "waypoint_regression_penalty_per_step": 1.2,
-        "deadline_slack_bonus": 0.6,
-        "deadline_slack_penalty": 0.6,
-        "tolerance_bonus": 0.4,
-        "unknown_tile_bonus": 1.0,
-        "possible_target_bonus": 1.2,
-      "figure_hint_bonus": 0.6,
-      "unknown_color_bonus": 0.5,
-      "unknown_neighbor_bonus_per_tile": 0.2,
-      "first_turn_coordination_penalty": 1.5
+        "waypoint_progress_reward_per_step": 1.0,
+        "waypoint_regression_penalty_per_step": -1.0,
+        "deadline_slack_bonus": 0.0,
+        "deadline_slack_penalty": -1.0,
+        "tolerance_bonus": 0.5,
+        "unknown_tile_bonus": 0.5,
+        "possible_target_bonus": 0.7,
+        "figure_hint_bonus": 1.0,
+        "unknown_color_bonus": 0.5,
+        "unknown_neighbor_bonus_per_tile": 0.3
       },
       "broadcast": {
-        "base_penalty": 0.5,
+        "base_penalty": -0.5,
         "recipient_factor": 0.8,
         "staleness_factor": 0.4,
-        "intel_payload_factor": 0.1,
         "first_turn_coordination_bonus": 2.5
       },
       "wait": {

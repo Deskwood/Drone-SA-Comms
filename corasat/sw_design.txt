@@ -1,243 +1,107 @@
-ARCHITECTURE / DESIGN — CORASAT v1.3
-(precision guard, SuggestedEdges-only, structured comms, DS penalties)
-
-GOAL
-Local-only agents with deterministic seams. High precision via intake filtering. Non-global comms. DS steers coverage.
-
-MODULES
-
-1. config
-
-* `load_config(path:str)->dict`
-
-  * Defaults: board, gui, simulation, prompt_requests, figures.
-  * `decision_support`: `{enabled, max_depth, max_branching, beam_width, timeout_ms, weights, prefer_top_recommendation=True, include_in_prompt=True, deterministic=True}`
-  * DS default weights: `recall=0.6, exploration=0.15, plan_adherence=0.15, move_validity=0.05, comm_opportunity=0.03, precision=0.02`
-  * Placeholder substitution: `NUMBER_OF_DRONES`, `DRONE_ID`, `NUMBER_OF_ROUNDS`.
-
-2. loggingx
-
-* `class TimestampedLogger(log_dir='logs', log_file='simulation.log')`
-
-  * `log(msg:str)->None`
-  * File+console, never raise.
-
-3. domain
-
-* Constants: `COLORS`, `FIGURE_TYPES`, `DIRECTION_MAP`, `VALID_DIRECTIONS`.
-* Helper: `direction_from_vector((dx,dy))->str`
-* `class Figure(pos:(int,int), color:str, figure_type:str)`
-
-  * `defended_by:int`, `attacked_by:int`, `target_positions:list[(int,int)]`
-  * `calculate_figure_targets(board:Tile[][])->None`  (standard chess)
-* `class Tile(x:int, y:int)`
-
-  * `figure:Figure|None`, `drones:list[Drone]`, `targeted_by:{"white":int,"black":int}`
-  * `set_figure(f)`, `add_drone(d)`, `remove_drone(d)`, `reset_targeted_by_amounts()`, `add_targeted_by_amount(color,amount=1)`
-* Ground truth: `compute_edges_for(figures:list[Figure], board:Tile[][])->set[((x1,y1),(x2,y2))]`
-
-4. io_schema
-
-* `class TurnResult` (Pydantic)
-
-  * `rationale:str`
-  * `action: Literal["wait","move","broadcast"]`
-  * `direction: Optional[str]`  (required iff `action=="move"`)
-  * `message: Optional[str]`    (required iff `action=="broadcast"`)
-  * `memory:str`
-  * `found_edges: List[List[List[int]]] = []`  (never None)
-  * Validators enforce specifier presence and list type.
-* JSON helpers:
-
-  * `extract_first_json_block(text:str)->str`
-  * `safe_parse_turnresult(payload:str)->dict`  (never raise; coerces `found_edges=[]`)
-  * `normalize_edges(raw:any)->set[((int,int),(int,int))]`
-
-5. plan_parser
-
-* Regex accepts: `PLAN:` or `PLAN v\d+;`, both `PATH=` and `D<id>:PATH=`, aliases `{n,s,e,w,ne,nw,se,sw}`
-* API:
-
-  * `parse_plan_from_text(text:str, target_id:Optional[int]=None)->list[str]`
-  * `update_plan_from_text(plans:dict[int,list[str]], drone_id:int, text:str)->bool`
-
-6. suggested_edges
-
-* Local-only candidate edges using current tile + neighbor occupancy.
-* API:
-
-  * `candidate_edges_local(board:Tile[][], pos:(int,int))->list[[[int,int],[int,int]]]`
-* Intake precision guard helper:
-
-  * `_is_edge_locally_plausible(board, src:(int,int), dst:(int,int))->bool`
-    Rules (first-step only):
-
-    * king: any occupied neighbor
-    * pawn: forward diagonals by color if occupied
-    * rook/bishop/queen: adjacent along legal rays if occupied
-    * knight: false (excluded for locality)
-
-7. decision_support
-
-* Types:
-
-  * `DroneLocalState = { pos:(x,y), allowed_dirs:[str], same_tile_count:int, fig_here:str|None, neighbor_figs:{dir:str}, memory:str, rx_preview:str }`
-  * `Recommendation = { action:str, specifier:str|None, score:float, rationale:str, features:{str:float} }`
-* Pure scorer:
-
-  * `score_action_sequence(local_state, plan:list[str], sequence:list[(action,spec)], weights:dict)->(score:float, features:dict)`
-  * Features: `recall, exploration, plan_adherence, move_validity, comm_opportunity, precision`
-  * Penalties: border proximity, repeat last tile, revisit within 2 steps, re-co-location
-  * Bonus: stepping onto tile with visible figure color
-* Tree:
-
-  * `build_decision_tree(local_state, plan:list[str], cfg:dict)->{tree:dict, recommendations:list[Recommendation]}`
-  * Root actions: move(each allowed, alphabetical), broadcast, wait
-  * Depth ≤ `max_depth`, prune by `max_branching`, `beam_width`, stop on `timeout_ms`, deterministic ties
-* Formatter:
-
-  * `format_decision_support_section(recs:list[Recommendation], plan_next:str|None, k:int=3)->str`  (≤30 lines)
-
-8. llm
-
-* Interface:
-
-  * `chat(model:str, messages:list[{role,content}], temperature:float, format:"json"|None, num_predict:int)->str`
-* Implementations: Manual, Ollama
-* Retry:
-
-  * First call → parse; on error or missing fields → strict schema hint + doubled `num_predict`; else fallback with `found_edges=[]`
-  * If `SuggestedEdges` non-empty and `found_edges` empty on retry, add hint: “Copy SuggestedEdges to found_edges now.”
-
-9. drone
-
-* State: `id:int, position:(int,int), color:str, model:str, rules:str, sim:SimView, memory:str, rx_buffer:str`
-* Methods:
-
-  * `_allowed_directions()->list[str]`
-  * `_move(direction:str)->bool`  (tile update + log)
-  * `_phase()->"Planning"|"Execution"`
-  * `_local_state()->DroneLocalState`  (provides `same_tile_count`)
-  * `_determine_situation_description()->str`  (fixed lines; clears `rx_buffer`)
-  * `_token_budget_total()->int`  (`num_predict = max(1024, budget)`)
-  * `generate_full_model_response()->list[messages]`:
-
-    1. Build `situation` via `_determine_situation_description`
-    2. DS: `build_decision_tree(local_state, plan_queue, ds_cfg)`; store top rec for gating; if `include_in_prompt`, append `DecisionSupport` section
-    3. Compute `se = candidate_edges_local(...)`; append `SuggestedEdges: <json>`
-    4. Append strict cue: `"EDGE RULE: Output edges ONLY from SuggestedEdges. If none, set found_edges: []."`
-    5. Append `prompt_requests` cues
-    6. Build `[{"system":rules},{"user":situation}]`, call LLM with retry
-    7. Return transcript (assistant TurnResult dict appended)
-
-10. simulation
-
-* Construction:
-
-  * Load rules (substitute `NUMBER_OF_DRONES`)
-  * Build board/figures (randomize if configured), compute GT edges
-  * Create drones at base (white king pos else (0,0))
-  * Seed memory: `MEM:VISITED=<x,y>`
-  * Optional GUI
-  * `ThreadPoolExecutor(max_workers=1)`
-  * DS cache: `_ds_top_by_drone: dict[int, {action,specifier}|None]`
-* Public: `run_simulation()`, `shutdown()`
-* Helpers:
-
-  * Phase/Threat/GT: `_rebuild_threat_map()`, `_compute_attack_defense_per_figure()`, `_compute_gt_edges()`
-  * Score: `discovered_edges()`, `score_stats()`
-  * Plans: `_maybe_update_plan_from_text(drone_id:int, text:str)`, `_next_planned_step(drone_id:int)`, `_advance_plan(drone_id:int)`, `_auto_replan_if_illegal(drone_id:int)`
-  * Logging: `_log_edge_line(edge)`, `_log_discovered_edges_incremental()`, `_log_final_summary()`, `post_info(msg)`
-  * Turns: `_start_drone_turn(drone)`, `_try_finish_drone_turn(drone)->bool`
-* `_try_finish_drone_turn` sequence:
-
-  1. On future done, get TurnResult dict
-  2. Update plan from `memory` and `message` via `plan_parser`; `_auto_replan_if_illegal`
-  3. **Intake precision guard**:
-
-     * `raw = normalize_edges(result["found_edges"])`
-     * Keep only edges with `src == drone.position` and `_is_edge_locally_plausible(board, src, dst)`
-     * Discard others and log
-     * Merge per-drone
-  4. DS gating:
-
-     * If `prefer_top_recommendation=True` and action=move violates plan adherence at root and not DS top → `action="wait"` and log gating
-  5. Phase gating:
-
-     * Planning: any move → wait
-  6. Plan enforcement:
-
-     * If `enforce_plan=True` and expected exists: accept only exact match; else wait
-  7. Execute:
-
-     * `move`: check allowed → `_move()`; advance plan on match
-     * `broadcast`: require valid JSON (COM schema); deliver to co-located drones’ `rx_buffer`
-     * else wait
-  8. Persist non-empty `memory`; ensure `MEM:VISITED=<x,y>` present
-  9. Incremental edge logging
-
-10. Log DS recap (top-3, features, executed action, match/mismatch, prune/timeout)
-
-11. Clear `_thinking`, future
-
-12. comms (structured)
-
-* Valid messages:
-
-  * Observation: `{"obs":{"x":X,"y":Y,"here":"<type|None>","neighbors":{"dir":"color",...}}}`
-  * Plan: `{"plan":{"next":"dir","queue":["dir",...]}}`
-* Receiver merges into **own** memory; simulator does not maintain a global map
-* Non-JSON broadcast → treated as wait; log
-
-DATA CONTRACTS
-
-* `DecisionSupport` prompt block:
-
-  ```
-  DecisionSupport:
-    PlanNext: <dir|None>
-    TopRecommendations:
-      - (action, specifier, score)
-      ...
-    WhyTop:
-      - <feature=contrib×weight>
-      ...
-  ```
-* `SuggestedEdges` prompt line:
-  `SuggestedEdges: [ [[x1,y1],[x2,y2]], ... ]`  (local only)
-
-CONSTRAINTS
-
-* Local-only info in DS, SuggestedEdges, prompts, memory
-* One action per turn
-* On-board moves only
-* `rx_buffer` cleared after inclusion
-
-TEST HOOKS (pure)
-
-* `parse_plan_from_text`
-* `candidate_edges_local`
-* `_is_edge_locally_plausible`
-* `score_action_sequence`
-* `normalize_edges`
-* `compute_edges_for`
-* `_allowed_directions`
-
-SEQUENCES (happy paths)
-A) Turn generation
-
-* Drone: build SITUATION → DS recs (+DecisionSupport) → SuggestedEdges (+EDGE RULE) → cues → LLM → TurnResult parsed
-
-B) Turn application
-
-* Sim: plan update → intake filter → gating (phase/plan/DS) → execute or wait → memory persist (VISITED) → log edges → GUI update
-
-REBUILD CHECKLIST
-
-1. Implement `candidate_edges_local` and `_is_edge_locally_plausible`.
-2. Add strict “EDGE RULE” to prompt.
-3. Enforce JSON broadcasts; add receiver merge.
-4. Strengthen DS scorer with penalties/bonuses; enable `prefer_top_recommendation`.
-5. Plan parser + `_auto_replan_if_illegal`.
-6. Tighten `TurnResult` validators and retry hints.
-7. Keep SITUATION line order; never include GT.
+CORASAT SOFTWARE DESIGN NOTES — v1.4
+=====================================
+Context: `Code/corasat/run_simulation.ipynb`
+Last reviewed: 2025‑10‑20
+
+Goal & Operating Principles
+---------------------------
+- Two autonomous “drones” collaborate to survey an 8×8 chess grid, identify figures, and report directed edges.
+- All reasoning stays strictly local; there is no shared world-state besides structured broadcasts.
+- Deterministic seams: every prompt, plan, and gating decision is repeatable so that runs can be debugged from the log.
+- Precision first: Suggested edges originate from local filters; decision support (DS) discourages noisy actions.
+
+Key Modules
+-----------
+1. Logging (`TimestampedLogger`)
+   - Initializes `logs/simulation.log`, removes previous file, attaches file+console handlers.
+   - `LOGGER.log(msg)` prepends wall/elapsed timestamps. All subsystems reuse the singleton.
+
+2. Configuration & Constants
+   - `load_config(path)` reads `config.json` (board, GUI, simulation, prompt requests, figure layout, decision-support scoring).
+   - Shared geometry helpers: `COLORS`, `FIGURE_TYPES`, `DIRECTION_MAP`, `direction_from_vector`, HSV→RGB.
+   - Coordinate conversions: `cartesian_to_chess`, `chess_to_cartesian` (defined later in the notebook) keep board I/O consistent.
+
+3. Domain Model
+   - `_Figure`: position, color/type, threatened squares, `defended_by` / `attacked_by`. Computes ray attacks for sliding pieces.
+   - `_Tile`: owns a board cell (figure reference, co‑located drones, `targeted_by` counters). Supports drone add/remove and target bookkeeping.
+   - Board creation populates tiles, drops figures from config (with optional randomization), and precomputes ground-truth edges.
+   - Edge helpers: `format_edge(...)` (string encoding) and `candidate_edges_local(board, pos)` + `_is_edge_locally_plausible(...)` (single‑step precision guard).
+
+4. Mission Planning & Drone State (`_Drone`)
+   - Core attributes: `mission_plan` (list of legs), `current_leg_index`, `assigned_sector`, `rendezvous_directive`, `mission_report` (history of positions), `info_exchange_rounds`, per-tile `local_board` (color/type knowledge), and `rx_buffer` for incoming comms.
+   - Sector management:
+     * `_default_sector_assignment()` covers the whole board (a8→h1).
+     * `_normalize_sector_assignment(...)` accepts string/JSON payloads (`plan.assignments`) and clamps coordinates to board bounds.
+     * `_set_sector_assignment(...)` applies sector updates, rebuilds leg plans, and logs adoption.
+   - Plan construction: `_build_mission_plan_for_sector` creates alternating vertical “legs” inside the sector (columns step by 2 to reduce overlap). Each leg entry:
+     * `leg_id`, `turn` (expected arrival), `leg_start`/`leg_end`, tolerance (currently 0), human-readable notes.
+     * Introductory “entry anchor” keeps drones inside their sector even when the starting position lies outside.
+     * Rendezvous directives (`_apply_rendezvous_to_plan`) are spliced into the plan without losing priority.
+   - Progress tracking: `_advance_leg_progress()` increments `current_leg_index` once the tolerance condition is met; `_next_mission_waypoint()` returns the active leg.
+   - Comms & broadcasts: `_apply_plan_directive(payload)` handles JSON messages (`{"plan":{"assignments":[...],"rendezvous":...}}`), updating sectors and rendezvous while preserving the plan ordering. `_provide_intelligence_to` merges board intel when two drones share a tile.
+   - Movement: `_move(direction)` validates in-bounds moves, updates tile membership, appends to `mission_report`, marks `VISITED:x,y` inside memory, and logs.
+   - Situation prompt: `_determine_situation_description()` composes the user message (board observations, memory, assigned sector, rendezvous, DS recap) and clears the `rx_buffer` after inclusion.
+
+5. Decision Support
+   - Entry point: `compute_decision_support(drone)` builds scoring tables for candidate actions (`move` in 8 directions, `broadcast`, `wait`).
+   - Feature set (selected):
+     * Plan adherence: waypoint Chebyshev progress/regression, per-leg deadline slack (with `late_penalty_multiplier` scaling lateness).
+     * Leg-specific cues: `leg_start_progress_reward`, `leg_start_regression_penalty`, `leg_alignment_reward`/`penalty`, `leg_travel_reward`/`penalty`, `leg_sideways_reward` (for perpendicular alignment), `leg_sideways_inspection_bonus` (one-tile off-leg probes).
+     * Exploration: unknown tile/color bonuses, unknown neighbor count, `border_edge_bonus` for hugging outer ranks/files.
+     * Rendezvous awareness: buffer tracking and urgency messaging when overdue.
+   - Results: returns a dict with `scores`, `next_waypoint`, `intel_ledger`, and (on the first turn) a `coordination_suggestion` JSON skeleton for broadcasts.
+   - DS output is pretty-printed into the prompt when `decision_support.enabled` is true.
+
+6. LLM Adapter
+   - `generate_full_model_response()` orchestrates a single LLM turn:
+     1. Build situation text.
+     2. Fetch DS recommendations; optionally append a `DecisionSupport` block to the prompt.
+     3. Append `SuggestedEdges` JSON (local candidates) and the strict `EDGE RULE` cue.
+     4. Add `prompt_requests` templates (rationale, action, broadcast, memory).
+     5. Call `ollama.chat` (or manual input), expecting a JSON TurnResult.
+     6. Retry with stricter schema hints when parsing fails or `found_edges` is empty despite suggestions.
+   - Returned transcript is a list of message dicts (system, user, assistant).
+
+7. Simulation Orchestrator (`Simulation`)
+   - Setup: loads rules (with placeholder substitution), creates the board, figures, and drones, seeds each drone’s `VISITED` token, and initializes `ThreadPoolExecutor(max_workers=1)` for asynchronous LLM calls. GUI (`_SimulationGUI`) is optional and renders the board, sidebar stats, and mission plan summaries.
+   - Mission-plan logging: `_last_logged_plans` caches a signature of each drone’s sector+plan; `_log_round_mission_plans(round)` logs only when a plan actually changes.
+   - Turn loop (`run_simulation`):
+     * Schedules each drone sequentially; when a future completes, `_try_finish_drone_turn` applies gating + execution.
+   - `_try_finish_drone_turn` pipeline:
+     1. Parse TurnResult, log rationale.
+     2. Update sector/mission plan via `_apply_plan_directive` and `_set_sector_assignment` if broadcasts/memory include plan data.
+     3. Filter reported edges with `_is_edge_locally_plausible` and merge new discoveries.
+     4. Decision-support gating: compare chosen action against DS top recommendation when `prefer_top_recommendation` is on; can force `wait`.
+     5. Phase/plan enforcement (planning vs execution).
+     6. Execute actions (`move`, `broadcast`, `wait`), append broadcast contents to co-located drones’ `rx_buffer`.
+     7. Persist memory (ensure `VISITED:x,y`) and update `mission_report`/`current_leg_index`.
+     8. Record incremental edge stats and GUI redraw if enabled.
+   - Shutdown: cancels outstanding futures, tears down executor and Pygame, forces a final GUI screenshot, and logs the edge summary.
+
+8. GUI (`_SimulationGUI`)
+   - Renders board tiles, figures, drone overlays, sidebar metrics (score, plan list, intel log), and saves `screenshots/last_run.png` at shutdown.
+   - Mission plan view highlights up to four upcoming legs per drone, marking the active leg with `>>`.
+
+9. Configurable Behavior (excerpt from `config.json`)
+   - `simulation`: `num_drones`, `max_rounds`, `temperature`, `planning_rounds`, `random_seed`, `use_gui`, `create_py_export`.
+   - `decision_support.scoring.move`: core weights (waypoint progress/regression, unknown tile/color/neighbor bonuses, figure hint, board-edge bias, leg_* coefficients such as `leg_travel_reward` 0.9 / `leg_travel_penalty` -0.3, `leg_sideways_reward` 1.2 with `leg_sideways_inspection_bonus` 0.8, `leg_start_progress_reward` 1.2 / `leg_start_regression_penalty` -1.0, `late_penalty_multiplier`).
+   - `prompt_requests`: natural-language scaffolding for rationale/action/broadcast/memory.
+   - `figures`: default piece placements (randomization toggled via `randomize_figures` + `random_seed`).
+
+10. Logs & Diagnostics
+    - `simulation.log` captures per-round headers, mission plan updates (only on change), LLM rationales, DS tables (scores, feature contributions), action outcomes, and final edge tallies.
+    - Mission plans include full leg JSON for traceability; filtering ensures the file doesn’t balloon with redundant snapshots.
+
+Interaction Summary
+-------------------
+1. **Prompt Preparation**: Drone gathers local state → DS scoring → Suggested edges → Compose prompt with EDGE RULE.
+2. **LLM Response**: TurnResult JSON with `action`, `direction`/`message`, `memory`, optional `found_edges`.
+3. **Execution & Logging**: Simulator filters edges, enforces plan/gating, performs action, persists memory + mission progress, logs DS recap, updates GUI.
+
+Change Log Highlights
+---------------------
+- Mission planning now builds explicit sector legs with alternating column sweeps and rendezvous insertion.
+- Sector broadcasts (`plan.assignments`) immediately rebuild plans; rendezvous directives remain in place when sectors change.
+- Decision support scoring emphasizes leg adherence (alignment, start/end progress) while still rewarding exploratory sideways probes and board-edge coverage.
+- Mission plan logging deduplicated via per-drone signatures to keep `simulation.log` concise.
+- Config now exposes leg-related weights (`leg_travel_reward`, `leg_sideways_reward`, etc.) and board-edge bias parameters.

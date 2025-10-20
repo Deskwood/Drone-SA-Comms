@@ -1,133 +1,116 @@
-SOFTWARE REQUIREMENTS — CORASAT SIMULATION
-Version: 1.3 (precision guard, SuggestedEdges-only, structured comms, DS penalties)
+SOFTWARE REQUIREMENTS — CORASAT SIMULATION (v1.4)
+=================================================
+Source of truth: `Code/corasat/run_simulation.ipynb` and companion assets (`config.json`, `rules.txt`, `logs/`, `screenshots/`).
 
 1. Scope
-   SCP-1 Run G games of R rounds with T drone turns per round.
-   SCP-2 Drones act via LLM, guided by local-only Decision Support (DS), and report edges.
-   SCP-3 No global knowledge beyond local observation and co-located broadcasts.
+--------
+SCP-1 The simulator orchestrates G games of up to R rounds; each round contains one turn per drone (T = number of drones).
+SCP-2 Drones reason locally via LLM prompts augmented with deterministic decision-support (DS) scores and SuggestedEdges.
+SCP-3 The only shared knowledge between drones is delivered through co-located JSON broadcasts; there is no global board state.
 
-2. Interfaces
-   EXT-1 Read config.json and rules.txt on startup.
-   EXT-2 LLM adapter: chat(model, messages, temperature, format, num_predict) → str.
-   EXT-3 Optional GUI (pygame).
-   EXT-4 Logs to file and stdout.
+2. External Interfaces
+----------------------
+EXT-1 On startup read `config.json` and inject placeholders (`NUMBER_OF_DRONES`, `DRONE_ID`, `NUMBER_OF_ROUNDS`) into `rules.txt`.
+EXT-2 LLM adapter exposes `chat(model, messages, temperature, format, num_predict) -> str`; current implementation targets Ollama (`deepseek-r1:*`, etc.) or manual mode.
+EXT-3 Optional Pygame GUI renders the board and sidebar metrics.
+EXT-4 Logging emits to `logs/simulation.log` and stdout using `TimestampedLogger`.
 
 3. Configuration
-   CFG-1 Keys: board, gui, simulation, prompt_requests, figures.
-   CFG-2 DS block: enabled, max_depth, max_branching, beam_width, timeout_ms, weights, prefer_top_recommendation (default true), include_in_prompt, deterministic.
-   CFG-3 DS default weights: recall=0.6, exploration=0.15, plan_adherence=0.15, move_validity=0.05, comm_opportunity=0.03, precision=0.02.
-   CFG-4 Placeholders: NUMBER_OF_DRONES, DRONE_ID, NUMBER_OF_ROUNDS.
+----------------
+CFG-1 `config.json` keys:
+  * `board`: width, height (currently 8×8 chessboard).
+  * `gui`: cell size, colours, sidebar width, figure image directory.
+  * `simulation`: `create_py_export`, `use_gui`, model list/index, `num_drones`, `max_rounds`, `temperature`, `planning_rounds`, `randomize_figures`, `random_seed`.
+  * `decision_support.scoring.move`: heuristic weights – including waypoint progress/regression, unknown tile/colour/neighbor bonuses, figure hint, board-edge bias (`board_edge_bias_bonus/range`), leg rewards (`leg_travel_reward` 0.9 / `leg_travel_penalty` -0.3, `leg_sideways_reward` 1.2, `leg_sideways_inspection_bonus` 0.8, `leg_along_penalty` -0.7, `leg_start_progress_reward` 1.2, `leg_start_regression_penalty` -1.0) and lateness scaling (`late_penalty_multiplier`).
+  * `decision_support.scoring.broadcast` (`base_penalty`, `recipient_factor`, `staleness_factor`, `first_turn_coordination_bonus`).
+  * `decision_support.scoring.wait` (`default_score`, `idle_penalty_component`, `holding_position_score`, `holding_pattern_component`, `over_activity_penalty`).
+  * `prompt_requests`: textual scaffolding for rationale/action/broadcast/memory cues.
+  * `figures`: initial piece placements (randomized when `randomize_figures` true with optional seed).
+CFG-2 Absent keys fall back to sensible defaults inside the notebook; configuration is validated lazily.
 
-4. Domain
-   DOM-1 Directions: {north,south,east,west,northeast,northwest,southeast,southwest}.
-   DOM-2 Figures: {king,queen,rook,bishop,knight,pawn}.
-   DOM-3 GT edges = figure targets that land on occupied tiles (recomputed at init).
+4. Board & Domain Model
+-----------------------
+DOM-1 Directions are limited to the eight compass moves defined in `DIRECTION_MAP`.
+DOM-2 Figures are limited to chess pieces (`king`, `queen`, `rook`, `bishop`, `knight`, `pawn`) with colour (`white` or `black`).
+DOM-3 `_Figure.calculate_figure_targets` computes ray/step attacks; `_Tile` stores figure occupancy, visiting drones, and “targeted by” counters.
+DOM-4 Ground-truth edges are precomputed during setup by pairing every attacking figure with an occupied destination tile.
 
-5. Turn I/O
-   DRN-1 SITUATION fixed order lines (Phase, Round, Board size, My coords, Current position, AllowedDirections, Reminder, Visible drones, Visible figure here, Visible neighboring figures, Memory, RX).
-   DRN-2 DecisionSupport section (if enabled): PlanNext, TopRecommendations (≤3), WhyTop (≤30 lines total).
-   DRN-3 SuggestedEdges section: local-only candidates per SED-1, format `SuggestedEdges: [ [[x1,y1],[x2,y2]], ... ]`.
-   DRN-4 Append prompt_requests cues.
-   DRN-5 RULES in system role.
-   DRN-6 TurnResult (non-optional fields): rationale:str, action∈{wait,move,broadcast}, direction:str iff move, message:str iff broadcast, memory:str, found_edges:list (never null).
+5. Mission Planning & Sectors
+-----------------------------
+PLN-1 Each drone maintains `assigned_sector` (upper-left / lower-right chess coordinates, default full board) and a `mission_plan` of legs.
+PLN-2 `_build_mission_plan_for_sector` constructs coverage legs column-by-column inside the sector, alternating sweep direction and inserting “entry anchor” legs when the drone starts outside the region.
+PLN-3 Rendezvous directives (from config or broadcast) are inserted into the plan without displacing later legs.
+PLN-4 `_advance_leg_progress` marks a leg complete when the drone reaches (or stays within tolerance of) the leg end; `current_leg_index` always points to the active leg.
+PLN-5 Sector change broadcasts have the highest priority: `_set_sector_assignment` normalizes payloads, rebuilds the mission plan, and logs adoption.
+PLN-6 Mission-plan logging is deduplicated – `_last_logged_plans` caches a signature so the log records updates only when a plan actually changes.
 
-6. Movement and Comms
-   MOV-1 Execute move only if direction legal and on-board; else wait.
-   MOV-2 Planning blocks movement.
-   MOV-3 If enforce_plan=true and a plan exists, only accept next planned direction.
-   COM-1 Broadcasts must be JSON (COM-JSON-1); non-JSON → wait.
-   COM-2 Delivery only to co-located drones; append to rx_buffer.
+6. Turn Prompt & LLM Contract
+-----------------------------
+IO-1 Each LLM prompt includes:
+  * A “Situation” block listing phase/round, position, allowed moves, visible figures, memory (with `VISITED:x,y` tokens), assigned sector, rendezvous directive, and drained `rx_buffer`.
+  * A `DecisionSupport` block (when enabled) enumerating the next leg focus, top‑K recommendations with scores/feature contributions, and the intel ledger.
+  * `SuggestedEdges: [ [[x1,y1],[x2,y2]], ... ]` derived solely from the drone’s current tile and adjacent occupancies.
+  * The strict guardrail `EDGE RULE: Output edges ONLY from SuggestedEdges. If none, set found_edges: []. Do not invent edges.` followed by the configured `prompt_requests` cues.
+IO-2 TurnResult schema (must parse without raising):
+  * `rationale: str`
+  * `action: "wait" | "move" | "broadcast"`
+  * `direction: str` required when `action == "move"` (case-insensitive compass keyword).
+  * `message: str` required when `action == "broadcast"`; must be JSON for the simulator to apply.
+  * `memory: str` (free-form, simulator appends VISITED token when absent).
+  * `found_edges: list` (never `None`; each entry is a pair of `[src[x,y], dst[x,y]]`).
 
-7. Plans
-   PLN-1 Parser accepts: `PLAN:` or `PLAN v*;`, `PATH=...`, `D<id>:PATH=...`, aliases {n,s,e,w,ne,nw,se,sw}.
-   PLN-2 Per-drone FIFO; advance on exact match.
-   PLN-3 Auto-replan: if next step illegal/OOB at root, drop it and insert a legal detour that increases coverage and reduces re-co-location; log.
+7. Movement & Broadcast Execution
+---------------------------------
+MOV-1 Moves outside `drone._legal_movement_steps()` revert to a wait and log an error; successful moves update tile membership, `mission_report`, memory, and logs.
+MOV-2 There is no hard plan enforcement; legs guide Decision Support but drones may deviate.
+COM-1 Broadcast `message` must be valid JSON. Recognised schema: `{"plan":{"assignments":[{"drone":<id>,"sector":{...}}], "rendezvous":{"tile": "...", "turn": ...}}}` plus arbitrary observation payloads.
+COM-2 Broadcasts propagate only to co-located drones (shared tile) and are appended to each receiver’s `rx_buffer`. Messages are merged by `_apply_plan_directive` and `_provide_intelligence_to`.
+COM-3 Non-JSON messages leave the drone waiting and log an error.
 
-8. Decision Support (local-only)
-   DS-1 Inputs: local tile, allowed dirs, figure here, neighbor figure colors, same-tile count, memory (reserved keys), rx preview, plan queue.
-   DS-2 Root actions: move(each allowed), broadcast, wait.
-   DS-3 Features (additive): recall, exploration, plan_adherence, move_validity, comm_opportunity, precision.
-   DS-4 Penalties: border proximity, repeat last tile, revisit within 2 steps, re-co-location on consecutive turns.
-   DS-5 Bonus: stepping onto a tile that (by local visibility) has a figure.
-   DS-6 Pruning: max_branching, beam_width, timeout_ms; deterministic ties.
-   DS-7 prefer_top_recommendation=true: if LLM picks a non-top action that also violates plan adherence at root → execute wait and log gating.
+8. Decision Support Scoring
+---------------------------
+DS-1 Inputs: local board knowledge (`local_board`), legal directions, current `mission_plan`, assigned sector, memory (including VISITED tokens), intel exchange ages, and DS configuration weights.
+DS-2 Every legal action is scored independently; there is no branching search tree.
+DS-3 Feature highlights:
+  * Waypoint progress/regression (Chebyshev distance to current leg start/end) plus lateness penalties scaled by `late_penalty_multiplier`.
+  * Unknown tile/colour/neighbor discovery bonuses; figure hint when stepping near known figures.
+  * Leg-specific cues: alignment with the leg axis, progress toward leg start/end, sideways probes (single-tile offsets) worth `leg_sideways_inspection_bonus`, penalties for sliding along the leg away from the axis.
+  * Board-edge bias rewards exploring perimeter tiles (`board_edge_bias_bonus`).
+DS-4 Output bundle: `scores` (sorted best-first with component breakdown), `next_waypoint` (current leg dict), `intel_ledger` (last exchange round per drone), and on the very first turn a `coordination_suggestion` broadcast template.
 
-9. SuggestedEdges (local edge helper)
-   SED-1 Generator uses only current tile + neighbor occupancy:
+9. Edge Intake & Precision Guard
+--------------------------------
+EDG-1 Reported edges are filtered on ingestion: only edges originating from the drone’s current tile and matching `_is_edge_locally_plausible` (king/pawn/rook/bishop/queen first steps) are accepted.
+EDG-2 Plausible edges are merged into the global discovered set; all others are discarded with a log entry.
+EDG-3 Final score = (#correct discovered edges) − (#false edges) and is summarised at shutdown.
 
-* king: edges to any occupied neighbor.
-* pawn: forward diagonals occupied (by color).
-* rook/bishop/queen: first-step adjacent occupied along legal rays.
-* knight: none (not local LOS).
-  SED-2 Added to SITUATION each turn.
+10. Memory & Logging Discipline
+-------------------------------
+MEM-1 Simulator appends `VISITED:x,y` tokens to the drone’s memory when necessary; drones may add extra text but should not remove existing tokens.
+MEM-2 `rx_buffer` content is included once per prompt and then cleared.
+LOG-1 Logs include per-round banners, mission-plan updates (on change), LLM rationales, DS tables, action outcomes, and incremental edge statistics.
+LOG-2 GUI (when enabled) paints current state and persists `screenshots/last_run.png` during shutdown.
 
-10. Edge Intake Precision Guard
-    EDG-1 Intake filter: accept only edges where `src == current drone tile` AND `dst` is adjacent occupied AND move is first-step legal for the figure on `src` per SED-1.
-    EDG-2 Discard all other reported edges and log “Discarded implausible edge …”.
-    EDG-3 Scoring uses filtered edges only.
+11. GUI Requirements
+--------------------
+GUI-1 Render the board with piece sprites (missing images fail gracefully).
+GUI-2 Sidebar shows score, reported/false edges, current leg summaries (`>>` marks active leg) for each drone, and scrollable info log.
+GUI-3 Target refresh rate ≈ 60 FPS while `use_gui` is true.
 
-11. Prompt Guardrail
-    PRG-1 Append strict cue: “EDGE RULE: Output edges ONLY from SuggestedEdges. If none, set found_edges: []. Do not invent edges.”
+12. Constraints & Error Handling
+--------------------------------
+CON-1 No ground-truth data may leak into prompts, memory, or DS features.
+CON-2 All drone moves must remain on-board; illegal directions convert to waits.
+CON-3 Structured broadcasts must be JSON; malformed payloads are ignored with a log message.
+ERR-1 Malformed TurnResult (missing required fields / parse failure) triggers a safe wait while preserving simulator integrity.
+ERR-2 DS computation errors (rare) fall back to producing prompts without DS sections and are logged.
 
-12. Structured Broadcasts
-    COM-JSON-1 Valid payloads:
-
-* Observation: `{"obs":{"x":X,"y":Y,"here":"<type|None>","neighbors":{"dir":"color",...}}}`
-* Plan: `{"plan":{"next":"dir","queue":["dir",...]}}`
-  COM-JSON-2 Receivers merge JSON into their own memory; no simulator-level global map.
-
-13. Memory Discipline
-    MEM-1 Reserved keys only; simulator may append:
-
-* `MEM:VISITED=<x,y>|...`
-* `MEM:LAST_MOVE=<dir>`
-* `MEM:OBS:<x,y>=here:<type|None>|neighbors:<dir:color,...>`
-  MEM-2 DS reads reserved keys; ignores freeform text.
-
-14. LLM Robustness
-    LLM-1 found_edges must be a list, never None; validator enforces.
-    LLM-2 Retry once with strict schema hint; if still invalid, extract JSON; else safe wait with found_edges=[].
-    LLM-3 If SuggestedEdges non-empty and found_edges empty on retry, instruct to copy SuggestedEdges.
-
-15. Orchestration
-    SIM-1 Fixed order drones × rounds; no early termination.
-    SIM-2 One LLM future at a time.
-    SIM-3 Pre-LLM: build DS, log top-3, add DecisionSupport and SuggestedEdges.
-    SIM-4 Post-LLM: planning/block rules, plan enforcement, DS gating, execute/wait, persist memory, mark VISITED, intake filtered edges, incremental edge logging.
-    SIM-5 Shutdown cancels futures, stops GUI, logs.
-
-16. GUI
-    GUI-1 Render grid, figures overlay, drones, active highlight.
-    GUI-2 Sidebar: phase, counts, precision, recall, score, plan preview, scroll log.
-    GUI-3 Missing images do not block.
-
-17. Constraints
-    CON-1 No GT leakage to prompts, DS, SuggestedEdges, or memory.
-    CON-2 rx_buffer private; included once then cleared.
-    CON-3 All moves stay on-board.
-
-18. Error Handling
-    ERR-1 Malformed TurnResult → safe wait.
-    ERR-2 Invalid/OOB move → wait; log.
-    ERR-3 Non-JSON broadcast → wait; log.
-    ERR-4 DS timeout/error → skip DS; log.
-    ERR-5 Plan parse failure → log; no enforcement change.
-
-19. Performance
-    PERF-1 GUI target 60 FPS.
-    PERF-2 DS respects timeout_ms.
-    PERF-3 LLM calls serialized.
-
-20. Testability
-    TST-1 Pure functions: allowed_directions, move legality, plan parsing, candidate_edges_local, edge_plausibility_filter, normalize_edges, compute_edges_for, DS.score_action_sequence.
-    TST-2 Snapshot SITUATION including DecisionSupport + SuggestedEdges.
-    TST-3 Unit: TurnResult rejects found_edges=None; parser variants; intake filter accepts only legal first-step edges; DS penalties/bonuses; prefer-top gating firing.
-    TST-4 Integration: non-zero discovered edges on seeded boards with adjacent figures; zero false edges due to intake filter; structured broadcasts merged into memory; no GT leakage.
-
-21. Acceptance Criteria
-    AC-1 With adjacent occupied neighbor while standing on a figure, SuggestedEdges non-empty, model returns found_edges copied → discovered_edges ≥ 1 by round ≤ 5.
-    AC-2 No false edges ingested (precision = 1.0) due to EDG-1 filter.
-    AC-3 Planning blocks moves; enforce_plan accepts only next step; auto-replan inserts legal detour when needed.
-    AC-4 prefer_top_recommendation gating logs and converts plan-violating non-top actions to wait.
-    AC-5 Broadcasts not JSON are rejected; valid JSON updates receiver memory.
-    AC-6 No GT references appear in prompts or memory.
+13. Testability & Acceptance
+----------------------------
+TST-1 Pure functions suitable for unit tests: `_legal_movement_steps`, `_build_mission_plan_for_sector`, `_distance_to_leg`, `candidate_edges_local`, `_is_edge_locally_plausible`, `normalize_edges`, `compute_decision_support`.
+TST-2 Regression checks: `VISITED` tokens appear after each move; mission plans rebuild when a sector assignment arrives; rendezvous instructions persist through sector changes.
+TST-3 Accuracy guard: on seeded boards with neighbouring figures, SuggestedEdges must match local occupancy and accepted edges must equal the filtered subset.
+AC-1 Drones adopt sector broadcasts (`plan.assignments`) and log the updated mission plan exactly once per change.
+AC-2 Rendezvous directives remain present in `mission_plan` after subsequent sector updates.
+AC-3 No false edges are accepted thanks to the intake filter; precision must stay at 1.0 for deterministic test runs.
+AC-4 GUI shutdown saves `screenshots/last_run.png` and the log ends with a correctly formatted FINAL EDGE SUMMARY.

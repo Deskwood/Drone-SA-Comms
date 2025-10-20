@@ -25,29 +25,185 @@
   "gui": {
     "cell_size": 80,
     "margin": 8,
-    "background_color": [30, 30, 30],
-    "grid_color": [70, 70, 70],
-    "drone_color": [0, 200, 255],
-    "text_color": [255, 255, 255],
+    "background_color": [
+      30,
+      30,
+      30
+    ],
+    "grid_color": [
+      70,
+      70,
+      70
+    ],
+    "drone_color": [
+      0,
+      200,
+      255
+    ],
+    "text_color": [
+      255,
+      255,
+      255
+    ],
     "figure_image_dir": "./img",
     "sidebar_width": 1200
   },
   "figures": {
     "white": {
-      "king": [[6, 2]],
-      "queen": [[1, 4]],
-      "rook": [[0, 0], [7, 5]],
-      "bishop": [[3, 3], [5, 7]],
-      "knight": [[2, 1], [4, 6]],
-      "pawn": [[0, 3], [1, 0], [2, 5], [3, 0], [4, 2], [5, 1], [6, 7], [7, 3]]
+      "king": [
+        [
+          6,
+          2
+        ]
+      ],
+      "queen": [
+        [
+          1,
+          4
+        ]
+      ],
+      "rook": [
+        [
+          0,
+          0
+        ],
+        [
+          7,
+          5
+        ]
+      ],
+      "bishop": [
+        [
+          3,
+          3
+        ],
+        [
+          5,
+          7
+        ]
+      ],
+      "knight": [
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          6
+        ]
+      ],
+      "pawn": [
+        [
+          0,
+          3
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          3
+        ]
+      ]
     },
     "black": {
-      "king": [[4, 4]],
-      "queen": [[0, 7]],
-      "rook": [[1, 7], [7, 1]],
-      "bishop": [[5, 4], [2, 6]],
-      "knight": [[3, 6], [6, 0]],
-      "pawn": [[0, 6], [1, 6], [2, 7], [3, 7], [4, 7], [5, 6], [6, 6], [7, 7]]
+      "king": [
+        [
+          4,
+          4
+        ]
+      ],
+      "queen": [
+        [
+          0,
+          7
+        ]
+      ],
+      "rook": [
+        [
+          1,
+          7
+        ],
+        [
+          7,
+          1
+        ]
+      ],
+      "bishop": [
+        [
+          5,
+          4
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "knight": [
+        [
+          3,
+          6
+        ],
+        [
+          6,
+          0
+        ]
+      ],
+      "pawn": [
+        [
+          0,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ]
+      ]
     }
   },
   "decision_support": {
@@ -63,7 +219,16 @@
         "possible_target_bonus": 0.7,
         "figure_hint_bonus": 1.0,
         "unknown_color_bonus": 0.5,
-        "unknown_neighbor_bonus_per_tile": 0.3
+        "unknown_neighbor_bonus_per_tile": 0.3,
+        "board_edge_bias_bonus": 0.2,
+        "board_edge_bias_range": 1,
+        "leg_travel_reward": 0.9,
+        "leg_travel_penalty": -0.3,
+        "leg_sideways_reward": 1.2,
+        "leg_sideways_inspection_bonus": 0.8,
+        "leg_along_penalty": -0.7,
+        "leg_start_progress_reward": 1.2,
+        "leg_start_regression_penalty": -1.0
       },
       "broadcast": {
         "base_penalty": -0.5,

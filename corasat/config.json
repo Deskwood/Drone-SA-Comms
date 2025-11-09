@@ -7,7 +7,7 @@
   "simulation": {
     "create_py_export": false,
     "use_gui": true,
-    "model_index": 1,
+    "model_index": 3,
     "models": [
       "manual",
       "deepseek-r1:32b",
@@ -20,7 +20,11 @@
     "temperature": 0.2,
     "planning_rounds": 2,
     "randomize_figures": true,
-    "random_seed": 456
+    "seed_list": [
+      111,
+      222,
+      333
+    ]
   },
   "gui": {
     "cell_size": 80,

@@ -1,264 +1,76 @@
 {
-  "board": {
-    "width": 8,
-    "height": 8
-  },
+  "board": {"width": 8, "height": 8},
   "rules_path": "rules.txt",
   "simulation": {
     "create_py_export": false,
-    "use_gui": false,
+    "use_gui": true,
     "model_index": 4,
-    "models": [
-      "manual",
-      "deepseek-r1:32b",
-      "qwen3:30b",
-      "deepseek-r1:14b",
-      "llama3.1:8b"
-    ],
+    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
     "num_drones": 2,
     "max_rounds": 32,
     "temperature": 0.0,
     "planning_rounds": 1,
     "randomize_figures": true,
-    "seed_list": [
-      0
-    ],
+    "seed_list": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99],
     "random_seed": 111
   },
   "gui": {
     "cell_size": 80,
     "margin": 8,
-    "background_color": [
-      30,
-      30,
-      30
-    ],
-    "grid_color": [
-      70,
-      70,
-      70
-    ],
-    "drone_color": [
-      0,
-      200,
-      255
-    ],
-    "text_color": [
-      255,
-      255,
-      255
-    ],
+    "background_color": [30, 30, 30],
+    "grid_color": [70, 70, 70],
+    "drone_color": [0, 200, 255],
+    "text_color": [255, 255, 255],
     "figure_image_dir": "./img",
     "sidebar_width": 1200
   },
   "figures": {
     "white": {
-      "king": [
-        [
-          6,
-          2
-        ]
-      ],
-      "queen": [
-        [
-          1,
-          4
-        ]
-      ],
-      "rook": [
-        [
-          0,
-          0
-        ],
-        [
-          7,
-          5
-        ]
-      ],
-      "bishop": [
-        [
-          3,
-          3
-        ],
-        [
-          5,
-          7
-        ]
-      ],
-      "knight": [
-        [
-          2,
-          1
-        ],
-        [
-          4,
-          6
-        ]
-      ],
-      "pawn": [
-        [
-          0,
-          3
-        ],
-        [
-          1,
-          0
-        ],
-        [
-          2,
-          5
-        ],
-        [
-          3,
-          0
-        ],
-        [
-          4,
-          2
-        ],
-        [
-          5,
-          1
-        ],
-        [
-          6,
-          7
-        ],
-        [
-          7,
-          3
-        ]
-      ]
+      "king": [[6, 2]],
+      "queen": [[1, 4]],
+      "rook": [[0, 0], [7, 5]],
+      "bishop": [[3, 3], [5, 7]],
+      "knight": [[2, 1], [4, 6]],
+      "pawn": [[0, 3], [1, 0], [2, 5], [3, 0], [4, 2], [5, 1], [6, 7], [7, 3]]
     },
     "black": {
-      "king": [
-        [
-          4,
-          4
-        ]
-      ],
-      "queen": [
-        [
-          0,
-          7
-        ]
-      ],
-      "rook": [
-        [
-          1,
-          7
-        ],
-        [
-          7,
-          1
-        ]
-      ],
-      "bishop": [
-        [
-          5,
-          4
-        ],
-        [
-          2,
-          6
-        ]
-      ],
-      "knight": [
-        [
-          3,
-          6
-        ],
-        [
-          6,
-          0
-        ]
-      ],
-      "pawn": [
-        [
-          0,
-          6
-        ],
-        [
-          1,
-          6
-        ],
-        [
-          2,
-          7
-        ],
-        [
-          3,
-          7
-        ],
-        [
-          4,
-          7
-        ],
-        [
-          5,
-          6
-        ],
-        [
-          6,
-          6
-        ],
-        [
-          7,
-          7
-        ]
-      ]
+      "king": [[4, 4]],
+      "queen": [[0, 7]],
+      "rook": [[1, 7], [7, 1]],
+      "bishop": [[5, 4], [2, 6]],
+      "knight": [[3, 6], [6, 0]],
+      "pawn": [[0, 6], [1, 6], [2, 7], [3, 7], [4, 7], [5, 6], [6, 6], [7, 7]]
     }
   },
   "decision_support": {
-    "enabled": true,
     "scoring": {
       "move": {
         "waypoint_progress_reward_per_step": 1.1390557352137365,
-        "waypoint_progress_reward_per_step_note": "Bonus applied each time a move reduces the Chebyshev distance to the current mission waypoint.",
         "waypoint_regression_penalty_per_step": -0.316352144799844,
-        "waypoint_regression_penalty_per_step_note": "Penalty when a move increases the distance to the active waypoint (moving backward on the leg).",
         "deadline_slack_bonus": -0.16352244315206657,
-        "deadline_slack_bonus_note": "Awarded if the move preserves or increases schedule slack relative to the waypoint's requested turn.",
         "deadline_slack_penalty": -1.2848331439337206,
-        "deadline_slack_penalty_note": "Applied when the move causes the ETA to fall behind the waypoint deadline.",
         "tolerance_bonus": 0.21237937241286878,
-        "tolerance_bonus_note": "Extra reward for entering the tolerance window around a waypoint endpoint.",
         "unknown_tile_bonus": 0.7680874901945238,
-        "unknown_tile_bonus_note": "Exploration credit granted when stepping onto a tile the drone has not visited yet.",
         "possible_target_bonus": 0.6746126342027848,
-        "possible_target_bonus_note": "Bonus for entering a tile marked as a possible target in intelligence reports.",
         "figure_hint_bonus": 2.8273538258515805,
-        "figure_hint_bonus_note": "Reward for moving where a figure hint (type/color) can be confirmed.",
         "unknown_color_bonus": 0.23587811445537304,
-        "unknown_color_bonus_note": "Encourages interacting with pieces whose color is still unknown.",
         "unknown_neighbor_bonus_per_tile": 0.3651632039653405,
-        "unknown_neighbor_bonus_per_tile_note": "Adds value for moves that expose adjacent tiles with unknown statuses.",
-        "board_edge_bias_bonus": 0.0918735834428143,
-        "board_edge_bias_bonus_note": "Positive bias for hugging sector boundaries or the board perimeter (useful for coverage).",
-        "board_edge_bias_range": 1.202429145359803,
-        "board_edge_bias_range_note": "Number of tiles from the perimeter where the edge bias bonus remains active.",
+        "leg_alignment_reward": 0.6,
+        "leg_alignment_penalty": -0.6,
         "leg_travel_reward": 0.3682416522100012,
-        "leg_travel_reward_note": "Reward when the move advances along the current leg in its intended direction.",
         "leg_travel_penalty": -0.299138984543186,
-        "leg_travel_penalty_note": "Penalty for drifting away from the leg corridor while it is the plan focus.",
         "leg_sideways_reward": 0.5973113343180227,
-        "leg_sideways_reward_note": "Encourages short lateral probes near the leg when scouting is helpful.",
         "leg_sideways_inspection_bonus": 0.7519634110819631,
-        "leg_sideways_inspection_bonus_note": "Additional bonus for sideways moves that inspect nearby unknowns but stay close to the leg.",
         "leg_along_penalty": -0.5662462252883823,
-        "leg_along_penalty_note": "Applied when a move travels along the leg axis but in the regressive/opposite direction.",
         "leg_start_progress_reward": 1.1733817270595754,
-        "leg_start_progress_reward_note": "Reward for staging toward the beginning of a leg when not yet aligned with its start point.",
         "leg_start_regression_penalty": -0.2581200428311292,
-        "leg_start_regression_penalty_note": "Penalty for moving farther away from the leg start while still trying to stage to it.",
         "sector_alignment_reward": 0.7850850533649799,
-        "sector_alignment_reward_note": "Incentive for moves that reduce distance to the assigned coverage sector boundary.",
         "sector_inside_bonus": 0.959147417154021,
-        "sector_inside_bonus_note": "Bonus once inside the assigned sector to reinforce staying within bounds.",
+        "late_penalty_multiplier": 2.0,
+        "board_edge_bias_bonus": 0.0918735834428143,
+        "board_edge_bias_range": 1,
         "sector_unknown_probe_bonus": 0.3635713710628939,
-        "sector_unknown_probe_bonus_note": "Bonus granted only when the remaining slack is enough to visit the nearest unknown tile within the sector without delaying the next waypoint.",
-        "sector_unknown_probe_min_slack": 1.1676590478688627,
-        "sector_unknown_probe_min_slack_note": "Minimum spare turns required before encouraging sector probe moves toward unknown tiles."
+        "sector_unknown_probe_min_slack": 1.1676590478688627
       },
       "broadcast": {
         "base_penalty": -0.5,
@@ -270,8 +82,7 @@
         "default_score": -1.0,
         "idle_penalty_component": -1.0,
         "holding_position_score": -0.2,
-        "holding_pattern_component": 0.3,
-        "over_activity_penalty": 0.6
+        "holding_pattern_component": 0.3
       }
     }
   },

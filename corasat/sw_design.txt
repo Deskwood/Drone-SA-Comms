@@ -1,107 +1,39 @@
-CORASAT SOFTWARE DESIGN NOTES — v1.4
-=====================================
-Context: `Code/corasat/run_simulation.ipynb`
-Last reviewed: 2025‑10‑20
+CORASAT SOFTWARE DESIGN - v1.5
+==============================
+Context: `Code/corasat/run_simulation.ipynb` (cells referenced below). Design choices map directly to the requirements in `sw_requirements.txt`.
 
-Goal & Operating Principles
----------------------------
-- Two autonomous “drones” collaborate to survey an 8×8 chess grid, identify figures, and report directed edges.
-- All reasoning stays strictly local; there is no shared world-state besides structured broadcasts.
-- Deterministic seams: every prompt, plan, and gating decision is repeatable so that runs can be debugged from the log.
-- Precision first: Suggested edges originate from local filters; decision support (DS) discourages noisy actions.
+D1 Logging (Cell 3)
+- `TimestampedLogger` centralises console + file logging, resets old handlers, and timestamps every entry. Log file lives in `logs/`.
 
-Key Modules
------------
-1. Logging (`TimestampedLogger`)
-   - Initializes `logs/simulation.log`, removes previous file, attaches file+console handlers.
-   - `LOGGER.log(msg)` prepends wall/elapsed timestamps. All subsystems reuse the singleton.
+D2 Configuration & Seeding (Cells 2/4/5/13)
+- `load_config` reads `config.json`; `set_all_seeds` applies seeds to `random`, `numpy`, and Torch (if installed).
+- Main loop iterates `simulation.seed_list`, updating `CONFIG["simulation"]["random_seed"]` per game so figure randomization stays in sync.
 
-2. Configuration & Constants
-   - `load_config(path)` reads `config.json` (board, GUI, simulation, prompt requests, figure layout, decision-support scoring).
-   - Shared geometry helpers: `COLORS`, `FIGURE_TYPES`, `DIRECTION_MAP`, `direction_from_vector`, HSV→RGB.
-   - Coordinate conversions: `cartesian_to_chess`, `chess_to_cartesian` (defined later in the notebook) keep board I/O consistent.
+D3 Constants & Helpers (Cells 4/8)
+- Shared chess helpers: `COLORS`, `FIGURE_TYPES`, `DIRECTION_MAP`, `cartesian_to_chess`, `chess_to_cartesian`, `format_edge`.
+- HSV-to-RGB helper supplies per-drone render colours.
 
-3. Domain Model
-   - `_Figure`: position, color/type, threatened squares, `defended_by` / `attacked_by`. Computes ray attacks for sliding pieces.
-   - `_Tile`: owns a board cell (figure reference, co‑located drones, `targeted_by` counters). Supports drone add/remove and target bookkeeping.
-   - Board creation populates tiles, drops figures from config (with optional randomization), and precomputes ground-truth edges.
-   - Edge helpers: `format_edge(...)` (string encoding) and `candidate_edges_local(board, pos)` + `_is_edge_locally_plausible(...)` (single‑step precision guard).
+D4 Board Model (Cell 7)
+- `_Tile` stores figure, drones, and per-colour targeting counts.
+- `_Figure.calculate_figure_targets` walks legal rays/steps to populate attack maps; results are written into tiles’ `targeted_by` counters.
 
-4. Mission Planning & Drone State (`_Drone`)
-   - Core attributes: `mission_plan` (list of legs), `current_leg_index`, `assigned_sector`, `rendezvous_directive`, `mission_report` (history of positions), `info_exchange_rounds`, per-tile `local_board` (color/type knowledge), and `rx_buffer` for incoming comms.
-   - Sector management:
-     * `_default_sector_assignment()` covers the whole board (a8→h1).
-     * `_normalize_sector_assignment(...)` accepts string/JSON payloads (`plan.assignments`) and clamps coordinates to board bounds.
-     * `_set_sector_assignment(...)` applies sector updates, rebuilds leg plans, and logs adoption.
-   - Plan construction: `_build_mission_plan_for_sector` creates alternating vertical “legs” inside the sector (columns step by 2 to reduce overlap). Each leg entry:
-     * `leg_id`, `turn` (expected arrival), `leg_start`/`leg_end`, tolerance (currently 0), human-readable notes.
-     * Introductory “entry anchor” keeps drones inside their sector even when the starting position lies outside.
-     * Rendezvous directives (`_apply_rendezvous_to_plan`) are spliced into the plan without losing priority.
-   - Progress tracking: `_advance_leg_progress()` increments `current_leg_index` once the tolerance condition is met; `_next_mission_waypoint()` returns the active leg.
-   - Comms & broadcasts: `_apply_plan_directive(payload)` handles JSON messages (`{"plan":{"assignments":[...],"rendezvous":...}}`), updating sectors and rendezvous while preserving the plan ordering. `_provide_intelligence_to` merges board intel when two drones share a tile.
-   - Movement: `_move(direction)` validates in-bounds moves, updates tile membership, appends to `mission_report`, marks `VISITED:x,y` inside memory, and logs.
-   - Situation prompt: `_determine_situation_description()` composes the user message (board observations, memory, assigned sector, rendezvous, DS recap) and clears the `rx_buffer` after inclusion.
+D5 Drone State & Planning (Cell 9)
+- `_Drone` owns memory, rx buffer, `mission_plan`, sector assignment, rendezvous directive, and locally perceived board (`local_board`).
+- `_build_mission_plan_for_sector` produces perimeter sweeps inside the assigned sector; rendezvous directives are spliced into the plan.
+- `_apply_plan_directive` ingests JSON broadcasts (`plan.assignments` / `plan.rendezvous`) and rebuilds plans; `_provide_intelligence_to` shares local board intel and edges with co-located drones.
+- Movement (`_move`) validates directions, updates tile membership, appends to `mission_report`, and refreshes local intel via `update_board_report`.
 
-5. Decision Support
-   - Entry point: `compute_decision_support(drone)` builds scoring tables for candidate actions (`move` in 8 directions, `broadcast`, `wait`).
-   - Feature set (selected):
-     * Plan adherence: waypoint Chebyshev progress/regression, per-leg deadline slack (with `late_penalty_multiplier` scaling lateness).
-     * Leg-specific cues: `leg_start_progress_reward`, `leg_start_regression_penalty`, `leg_alignment_reward`/`penalty`, `leg_travel_reward`/`penalty`, `leg_sideways_reward` (for perpendicular alignment), `leg_sideways_inspection_bonus` (one-tile off-leg probes).
-     * Exploration: unknown tile/color bonuses, unknown neighbor count, `border_edge_bonus` for hugging outer ranks/files.
-     * Rendezvous awareness: buffer tracking and urgency messaging when overdue.
-   - Results: returns a dict with `scores`, `next_waypoint`, `intel_ledger`, and (on the first turn) a `coordination_suggestion` JSON skeleton for broadcasts.
-   - DS output is pretty-printed into the prompt when `decision_support.enabled` is true.
+D6 Decision Support (Cell 10)
+- `compute_decision_support` evaluates every legal action using weights from `config.json` (waypoint progress/regression, sector alignment, exploration, border bias, rendezvous slack, broadcast value, wait penalties).
+- Returns `scores`, the active waypoint, intel ledger, and a first-turn coordination suggestion for Drone 1.
 
-6. LLM Adapter
-   - `generate_full_model_response()` orchestrates a single LLM turn:
-     1. Build situation text.
-     2. Fetch DS recommendations; optionally append a `DecisionSupport` block to the prompt.
-     3. Append `SuggestedEdges` JSON (local candidates) and the strict `EDGE RULE` cue.
-     4. Add `prompt_requests` templates (rationale, action, broadcast, memory).
-     5. Call `ollama.chat` (or manual input), expecting a JSON TurnResult.
-     6. Retry with stricter schema hints when parsing fails or `found_edges` is empty despite suggestions.
-   - Returned transcript is a list of message dicts (system, user, assistant).
+D7 GUI (Cell 11)
+- `_SimulationGUI` draws the board, figures, drone paths, active-drone highlight, and a sidebar with scores/mission plans/log output. Saves `screenshots/last_run.png` on shutdown. Respects `simulation.use_gui`.
 
-7. Simulation Orchestrator (`Simulation`)
-   - Setup: loads rules (with placeholder substitution), creates the board, figures, and drones, seeds each drone’s `VISITED` token, and initializes `ThreadPoolExecutor(max_workers=1)` for asynchronous LLM calls. GUI (`_SimulationGUI`) is optional and renders the board, sidebar stats, and mission plan summaries.
-   - Mission-plan logging: `_last_logged_plans` caches a signature of each drone’s sector+plan; `_log_round_mission_plans(round)` logs only when a plan actually changes.
-   - Turn loop (`run_simulation`):
-     * Schedules each drone sequentially; when a future completes, `_try_finish_drone_turn` applies gating + execution.
-   - `_try_finish_drone_turn` pipeline:
-     1. Parse TurnResult, log rationale.
-     2. Update sector/mission plan via `_apply_plan_directive` and `_set_sector_assignment` if broadcasts/memory include plan data.
-     3. Filter reported edges with `_is_edge_locally_plausible` and merge new discoveries.
-     4. Decision-support gating: compare chosen action against DS top recommendation when `prefer_top_recommendation` is on; can force `wait`.
-     5. Phase/plan enforcement (planning vs execution).
-     6. Execute actions (`move`, `broadcast`, `wait`), append broadcast contents to co-located drones’ `rx_buffer`.
-     7. Persist memory (ensure `VISITED:x,y`) and update `mission_report`/`current_leg_index`.
-     8. Record incremental edge stats and GUI redraw if enabled.
-   - Shutdown: cancels outstanding futures, tears down executor and Pygame, forces a final GUI screenshot, and logs the edge summary.
+D8 Simulation Orchestrator (Cell 12)
+- `Simulation.__init__` loads rules, builds the board (`_create_figures`), spawns drones (`_create_drones`), and prepares the GUI/executor.
+- `run_simulation` drives the round/turn loop, dispatches model calls asynchronously, and applies actions via `_try_finish_drone_turn`. Aborts cleanly on window close or Ctrl+C.
+- `report_edges` maintains global discovered edges and score; `_log_final_summary` writes a final recap.
 
-8. GUI (`_SimulationGUI`)
-   - Renders board tiles, figures, drone overlays, sidebar metrics (score, plan list, intel log), and saves `screenshots/last_run.png` at shutdown.
-   - Mission plan view highlights up to four upcoming legs per drone, marking the active leg with `>>`.
-
-9. Configurable Behavior (excerpt from `config.json`)
-   - `simulation`: `num_drones`, `max_rounds`, `temperature`, `planning_rounds`, `random_seed`, `use_gui`, `create_py_export`.
-   - `decision_support.scoring.move`: core weights (waypoint progress/regression, unknown tile/color/neighbor bonuses, figure hint, board-edge bias, leg_* coefficients such as `leg_travel_reward` 0.9 / `leg_travel_penalty` -0.3, `leg_sideways_reward` 1.2 with `leg_sideways_inspection_bonus` 0.8, `leg_start_progress_reward` 1.2 / `leg_start_regression_penalty` -1.0, `late_penalty_multiplier`).
-   - `prompt_requests`: natural-language scaffolding for rationale/action/broadcast/memory.
-   - `figures`: default piece placements (randomization toggled via `randomize_figures` + `random_seed`).
-
-10. Logs & Diagnostics
-    - `simulation.log` captures per-round headers, mission plan updates (only on change), LLM rationales, DS tables (scores, feature contributions), action outcomes, and final edge tallies.
-    - Mission plans include full leg JSON for traceability; filtering ensures the file doesn’t balloon with redundant snapshots.
-
-Interaction Summary
--------------------
-1. **Prompt Preparation**: Drone gathers local state → DS scoring → Suggested edges → Compose prompt with EDGE RULE.
-2. **LLM Response**: TurnResult JSON with `action`, `direction`/`message`, `memory`, optional `found_edges`.
-3. **Execution & Logging**: Simulator filters edges, enforces plan/gating, performs action, persists memory + mission progress, logs DS recap, updates GUI.
-
-Change Log Highlights
----------------------
-- Mission planning now builds explicit sector legs with alternating column sweeps and rendezvous insertion.
-- Sector broadcasts (`plan.assignments`) immediately rebuild plans; rendezvous directives remain in place when sectors change.
-- Decision support scoring emphasizes leg adherence (alignment, start/end progress) while still rewarding exploratory sideways probes and board-edge coverage.
-- Mission plan logging deduplicated via per-drone signatures to keep `simulation.log` concise.
-- Config now exposes leg-related weights (`leg_travel_reward`, `leg_sideways_reward`, etc.) and board-edge bias parameters.
+D9 Results Export (Cell 5/13)
+- `persist_run_results` appends per-seed metrics to `Code/corasat/results.csv`, including config hash and optional git SHA. `RESULTS_FIELDS` documents the schema.

@@ -1,5 +1,8 @@
 {
-  "board": {"width": 8, "height": 8},
+  "board": {
+    "width": 8,
+    "height": 8
+  },
   "rules_path": "rules.txt",
   "simulation": {
     "create_py_export": false,
@@ -9,10 +12,8 @@
     "num_drones": 2,
     "max_rounds": 32,
     "temperature": 0.0,
-    "planning_rounds": 1,
     "randomize_figures": true,
-    "seed_list": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99],
-    "random_seed": 111
+    "seed_list": [111]
   },
   "gui": {
     "cell_size": 80,
@@ -76,7 +77,9 @@
         "base_penalty": -0.5,
         "recipient_factor": 0.8,
         "staleness_factor": 0.4,
-        "first_turn_coordination_bonus": 2.5
+        "first_turn_coordination_bonus": 2.5,
+        "min_staleness_rounds": 2,
+        "fresh_penalty": -2.0
       },
       "wait": {
         "default_score": -1.0,

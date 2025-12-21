@@ -1,97 +1,211 @@
-# Main, Imports,General Constants, Config Loading
-# =========================
+"""Entry point for Corasat simulation runs.
 
-# Imports
+Loads configuration from config.json, iterates over the seed list, and runs the
+simulation loop. This module intentionally avoids CLI parameters for now; the
+config file is the single source of runtime settings while refactoring.
+"""
 from __future__ import annotations
-import os, json, time, random, logging, colorsys, nbformat, pygame, csv, hashlib, uuid, subprocess, math, torch
-import numpy as np
-from pathlib import Path
-from typing import Tuple, List, Optional, Dict, Any
+
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, Future
-from nbconvert.exporters import PythonExporter
-from ollama import chat as ollama_chat
+import json
+import time
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-from classes.Exporter import LOGGER
-from classes.Simulation import Simulation
+if TYPE_CHECKING:
+    import pygame
 
-# General Constants
+# Legacy shared constants (kept here until core modules are reorganized).
 COLORS = ["white", "black"]
 FIGURE_TYPES = ["king", "queen", "rook", "bishop", "knight", "pawn"]
 DIRECTION_MAP: Dict[str, Tuple[int, int]] = {
-    "north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0),
-    "northeast": (1, 1), "northwest": (-1, 1), "southeast": (1, -1), "southwest": (-1, -1)
+    "north": (0, 1),
+    "south": (0, -1),
+    "east": (1, 0),
+    "west": (-1, 0),
+    "northeast": (1, 1),
+    "northwest": (-1, 1),
+    "southeast": (1, -1),
+    "southwest": (-1, -1),
 }
 VALID_DIRECTIONS = set(DIRECTION_MAP.keys())
-FIGURE_IMAGES: Dict[Tuple[str,str], pygame.Surface] = {}
+FIGURE_IMAGES: Dict[Tuple[str, str], "pygame.Surface"] = {}
+
+CONFIG_PATH = "config.json"
+RUN_EXPORTS: List[Dict[str, Any]] = []
 
 
-# Configuration Loading
-def load_config(config_path: str = "config.json") -> dict:
-    """Load configuration from a JSON file."""
-    LOGGER.log(f"Load Config: {config_path}")
+def _init_logger():
+    """Return the shared TimestampedLogger if it is available."""
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Missing config file: {config_path}")
-
-    return cfg
-CONFIG = load_config("config.json")
+        from classes.Exporter import LOGGER as exporter_logger
+    except Exception:
+        return None
+    return exporter_logger
 
 
-# Main
-if __name__ == "__main__":
-    seed_list = CONFIG.get("simulation", {}).get("seed_list", [])
-    if not seed_list:
-        seed_list = [0]
-        LOGGER.log("No seed list found in config; defaulting to [0].")
-    elif len(seed_list) > 10:
-        LOGGER.log(f"Seed list: {seed_list[:3]} .. {seed_list[-3:]} (total {len(seed_list)})")
-    else:
-        LOGGER.log(f"Seed list: {seed_list}")
-    seeds = list(seed_list or [None])
-    total_games = max(1, len(seeds))
-    for game_index, seed in enumerate(seeds, start=1):
-        LOGGER.log(f"==== Running seed {seed} (game {game_index}/{total_games}) ====")
+_LOGGER = _init_logger()
+
+
+def _log(message: str) -> None:
+    """Log a message using the shared logger, falling back to print."""
+    if _LOGGER is not None:
         try:
-            set_global_seed(seed)
+            _LOGGER.log(message)
+            return
         except Exception:
             pass
-        CONFIG = load_config("config.json")
+    print(message)
+
+
+def load_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
+    """Load configuration from a JSON file."""
+    _log(f"Load Config: {config_path}")
+    try:
+        with open(config_path, "r", encoding="utf-8") as file_handle:
+            return json.load(file_handle)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Missing config file: {config_path}") from exc
+
+
+CONFIG = load_config(CONFIG_PATH)
+
+
+def reload_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
+    """Reload the global CONFIG from disk and return it."""
+    global CONFIG
+    CONFIG = load_config(config_path)
+    return CONFIG
+
+
+def _seed_list_from_config(config: Dict[str, Any]) -> List[Optional[int]]:
+    """Extract the simulation seed list and apply a fallback when missing."""
+    seed_list = config.get("simulation", {}).get("seed_list", [])
+    if not seed_list:
+        _log("No seed list found in config; defaulting to [0].")
+        return [0]
+    if len(seed_list) > 10:
+        _log(f"Seed list: {seed_list[:3]} .. {seed_list[-3:]} (total {len(seed_list)})")
+    else:
+        _log(f"Seed list: {seed_list}")
+    return list(seed_list)
+
+
+def _set_global_seed(seed: Optional[int]) -> None:
+    """Best-effort seeding helper that does not block runs during refactor."""
+    if seed is None:
+        return
+    try:
+        from classes.Core import set_global_seed
+    except Exception:
+        return
+    try:
+        set_global_seed(seed)
+    except Exception:
+        return
+
+
+def _safe_shutdown(sim: Optional[object]) -> None:
+    """Attempt to shut down the simulation without propagating errors."""
+    if sim is None:
+        return
+    try:
+        sim.shutdown()
+    except Exception:
+        pass
+
+
+def _create_simulation(game_index: int, total_games: int):
+    """Construct a Simulation instance, returning None on failure."""
+    try:
+        from classes.Simulation import Simulation
+    except Exception as exc:
+        _log(f"Simulation import failed: {exc}")
+        return None
+    try:
+        return Simulation(game_index=game_index, total_games=total_games)
+    except Exception as exc:
+        _log(f"Simulation init failed: {exc}")
+        return None
+
+
+def _persist_results(run_entry: Dict[str, Any]) -> None:
+    """Persist run results using the Exporter module if available."""
+    if not run_entry:
+        return
+    try:
+        from classes.Exporter import persist_run_results
+    except Exception:
+        return
+    try:
+        persist_run_results([run_entry])
+    except Exception as exc:
+        _log(f"Failed to update results.csv: {exc}")
+
+
+def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Run a single seed and return (run_entry, abort_requested)."""
+    _log(f"==== Running seed {seed} (game {game_index}/{total_games}) ====")
+    _set_global_seed(seed)
+    reload_config(CONFIG_PATH)
+
+    sim = _create_simulation(game_index=game_index, total_games=total_games)
+    if sim is None:
+        return None, False
+
+    _log("Launching simulation.")
+    run_started = time.time()
+    run_success = False
+    try:
+        sim.run_simulation()
+        run_success = True
+    except KeyboardInterrupt:
+        _log("Interrupted by user (Ctrl+C).")
+        raise
+    except Exception as exc:
+        _log(f"Simulation error: {exc}")
+    finally:
+        _safe_shutdown(sim)
+
+    if not run_success:
+        return None, False
+
+    if getattr(sim, "_abort_requested", False):
+        _log("GUI closed by user - stopping remaining seeds.")
+        return None, True
+
+    runtime_s = time.time() - run_started
+    run_entry = {
+        "sim": sim,
+        "config": CONFIG,
+        "seed": seed,
+        "runtime_s": runtime_s,
+        "timestamp": datetime.now().isoformat(),
+    }
+    RUN_EXPORTS.append(run_entry)
+    _persist_results(run_entry)
+    return run_entry, False
+
+
+def run_all_seeds(config_path: str = CONFIG_PATH) -> List[Dict[str, Any]]:
+    """Run all configured seeds in sequence."""
+    reload_config(config_path)
+    seeds = _seed_list_from_config(CONFIG)
+    total_games = max(1, len(seeds))
+
+    for game_index, seed in enumerate(seeds, start=1):
         try:
-            LOGGER.log("Launching simulation.")
-            run_started = time.time()
-            SIM = Simulation(game_index=game_index, total_games=total_games)
-            SIM.run_simulation()
-            runtime_s = time.time() - run_started
-            finished_at = datetime.now().isoformat()
-            if getattr(SIM, "_abort_requested", False):
-                LOGGER.log("GUI closed by user - stopping remaining seeds.")
-                break
-            run_entry = {
-                "sim": SIM,
-                "config": CONFIG,
-                "seed": seed,
-                "runtime_s": runtime_s,
-                "timestamp": finished_at,
-            }
-            RUN_EXPORTS.append(run_entry)
-            try:
-                persist_run_results([run_entry])
-            except Exception as exc:
-                LOGGER.log(f"Failed to update results.csv: {exc}")
+            _, abort_requested = run_seed(seed, game_index, total_games)
         except KeyboardInterrupt:
-            LOGGER.log("Interrupted by user (Ctrl+C).")
-            try:
-                SIM.shutdown()
-            except Exception:
-                pass
             break
-        except Exception as exc:
-            LOGGER.log(f"Simulation error: {exc}")
-        finally:
-            try:
-                SIM.shutdown()
-            except Exception:
-                pass
+        if abort_requested:
+            break
+    return RUN_EXPORTS
+
+
+def main() -> None:
+    """CLI entry point for running the configured simulation seeds."""
+    run_all_seeds(CONFIG_PATH)
+
+
+if __name__ == "__main__":
+    main()

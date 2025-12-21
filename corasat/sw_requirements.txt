@@ -1,40 +1,46 @@
-CORASAT SOFTWARE REQUIREMENTS - v1.5
+CORASAT SOFTWARE REQUIREMENTS - v1.6
 ====================================
-Source of truth: `Code/corasat/run_simulation.ipynb` plus `config.json`, `rules.txt`, `logs/`, and `screenshots/`.
+Source of truth: `Code/corasat/*.py` plus `config.json`, `rules.txt`, `logs/`, `screenshots/`, and `results.csv`.
 
-R1 Configuration (trace: `load_config`, Cells 4–5)
-- Read `config.json` for board size, GUI settings, simulation options (models, `seed_list`, `num_drones`, `max_rounds`, `temperature`, randomization), figure layout, decision-support weights, and prompt scaffolding.
-- Replace placeholders in `rules.txt` (`DRONE_ID`, `NUMBER_OF_DRONES`, `NUMBER_OF_ROUNDS`) before use.
+R1 Configuration & Paths
+- Load `config.json` via Core (resolved relative to CWD or the `Code/corasat` repository).
+- Resolve data files (e.g., `rules.txt`, `img/`) relative to the loaded config location.
+- Use config as the single source of runtime settings (no CLI overrides during refactor).
 
-R2 Seeding (trace: `set_all_seeds`, Cell 2; main loop Cell 13)
-- For each entry in `simulation.seed_list`, run one game; when a seed is set, apply it to Python `random`, `numpy`, and Torch (if available) and set `simulation.random_seed` for figure randomization.
+R2 Seeding & Randomization
+- For each entry in `simulation.seed_list`, run one game.
+- Apply seeds to Python `random`, NumPy, and Torch (when available).
+- When `randomize_figures` is true, figure placement uses the seeded global RNG.
 
-R3 Board & Ground Truth (trace: `Simulation._create_figures`, Cell 12)
-- Build an 8x8 grid of `_Tile` cells.
-- Place figures from config (or randomized when `randomize_figures` is true and `random_seed` provided).
-- Pre-compute ground-truth attack edges (`gt_edges`) from chess move rules for every occupied target.
+R3 Board & Ground Truth
+- Build a grid of `_Tile` cells using `board.width`/`board.height`.
+- Place figures from config (or randomized when enabled).
+- Pre-compute ground-truth attack edges (`gt_edges`) using chess move rules.
 
-R4 Drones & Sectors (trace: `_create_drones`, `_Drone.__init__`, `_build_mission_plan_for_sector`, Cells 9/12)
-- Instantiate `num_drones` at the base tile; each gets an initial full-board coverage plan and an empty memory/rx buffer.
-- Sector/rendezvous updates are accepted from JSON broadcasts (`plan.assignments` / `plan.rendezvous`) and rebuild mission plans immediately.
+R4 Drone Lifecycle & State
+- Instantiate `num_drones` at the base tile with memory, rx buffer, local board, and mission plan.
+- Accept sector/rendezvous updates from JSON broadcasts (`plan.assignments` / `plan.rendezvous`).
+- `rx_buffer` persists until mission support consumes it for the next prompt.
 
-R5 Per-Turn Flow (trace: `Simulation.run_simulation`, `_try_finish_drone_turn`, Cell 12)
-- Sequence turns by drone ID each round until `max_rounds` or user abort.
-- For the active drone: prepare the situation text, compute decision-support scores, call the configured model (`ollama.chat` or manual input), then execute the returned action (move/broadcast/wait).
-- Invalid moves are ignored and logged; broadcasts are delivered only to co-located drones.
+R5 Turn Pipeline
+- Run turns sequentially by drone ID each round until `max_rounds` or user abort.
+- For the active drone: Decision Support -> Language Model -> Aftermath.
+- Aftermath executes move/broadcast/wait, updates state, and returns a turn outcome.
 
-R6 Decision Support (trace: `compute_decision_support`, Cell 10)
-- Score every legal action using weights from `config.json` (waypoint progress/regression, sector alignment, exploration bonuses, border bias, rendezvous slack, broadcast value, wait penalties).
-- Surface the current waypoint and an optional first-turn coordination suggestion for Drone 1.
+R6 Simulation Loop & GUI Responsiveness
+- Keep the GUI responsive at ~60 FPS when enabled.
+- Model calls run asynchronously, but state changes apply sequentially under a shared lock.
 
-R7 Edge Tracking (trace: `_Drone.update_board_report`, `Simulation.report_edges`, Cells 9/12)
-- Drones infer edges from local board knowledge only; discovered edges are merged globally.
-- Score = correct edges – false edges; log a FINAL EDGE SUMMARY on shutdown.
+R7 Decision Support & Prompting
+- Score legal actions using weights from `config.json`.
+- Build the prompt from the situation text and request cues.
+- Provide an optional first-turn coordination suggestion for Drone 1.
 
-R8 Logging & Artifacts (trace: `TimestampedLogger`, `persist_run_results`, Cells 3/5/13)
-- Log to `logs/simulation_YYYY-MM-DD.log` and stdout with timestamps.
+R8 Edge Tracking & Scoring
+- Drones infer edges from local knowledge only; discovered edges merge globally.
+- Score = correct edges - false edges; log a final summary on shutdown.
+
+R9 Logging & Artifacts
+- Log to `logs/simulation_YYYY-MM-DD.log` and stdout.
 - Append run metrics to `Code/corasat/results.csv` after each seed.
-- When GUI is enabled, keep the window updated and save `screenshots/last_run.png` during shutdown.
-
-R9 Optional GUI (trace: `_SimulationGUI`, Cell 11)
-- Draw board, figures, drone paths, active-turn highlight, and sidebar with scores and mission plans at ~60 FPS when `simulation.use_gui` is true.
+- Save `screenshots/last_run.png` on shutdown when GUI is enabled.

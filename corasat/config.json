@@ -8,37 +8,39 @@
     "create_py_export": false,
     "use_gui": true,
     "model_index": 4,
-    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b", ], "num_drones": 2, "max_rounds": 32, "temperature": 0.0, "randomize_figures": true, "seed_list": [, 111]
+    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
+    "num_drones": 2,
+    "max_rounds": 32,
+    "temperature": 0.0,
+    "randomize_figures": true,
+    "seed_list": [111, 112, 113, 114, 115, 116, 117, 118, 119, 120]
   },
   "gui": {
     "cell_size": 80,
     "margin": 8,
-    "background_color": [30, 30, 30, ], "grid_color": [, 70, 70, 70, ], "drone_color": [, 0, 200, 255, ], "text_color": [, 255, 255, 255, ], "figure_image_dir": "./img", "sidebar_width": 1200, }, "figures": {, "white": {, "king": [, [, 6, 2]
-      ],
-      "queen": [[, 1, 4]
-      ],
-      "rook": [[, 0, 0, ], [, 7, 5]
-      ],
-      "bishop": [[, 3, 3, ], [, 5, 7]
-      ],
-      "knight": [[, 2, 1, ], [, 4, 6]
-      ],
-      "pawn": [[, 0, 3, ], [, 1, 0, ], [, 2, 5, ], [, 3, 0, ], [, 4, 2, ], [, 5, 1, ], [, 6, 7, ], [, 7, 3]
-      ]
+    "background_color": [30, 30, 30],
+    "grid_color": [70, 70, 70],
+    "drone_color": [0, 200, 255],
+    "text_color": [255, 255, 255],
+    "figure_image_dir": "./img",
+    "sidebar_width": 1200
+  },
+  "figures": {
+    "white": {
+      "king": [[6, 2]],
+      "queen": [[1, 4]],
+      "rook": [[0, 0], [7, 5]],
+      "bishop": [[3, 3], [5, 7]],
+      "knight": [[2, 1], [4, 6]],
+      "pawn": [[0, 3], [1, 0], [2, 5], [3, 0], [4, 2], [5, 1], [6, 7], [7, 3]]
     },
     "black": {
-      "king": [[, 4, 4]
-      ],
-      "queen": [[, 0, 7]
-      ],
-      "rook": [[, 1, 7, ], [, 7, 1]
-      ],
-      "bishop": [[, 5, 4, ], [, 2, 6]
-      ],
-      "knight": [[, 3, 6, ], [, 6, 0]
-      ],
-      "pawn": [[, 0, 6, ], [, 1, 6, ], [, 2, 7, ], [, 3, 7, ], [, 4, 7, ], [, 5, 6, ], [, 6, 6, ], [, 7, 7]
-      ]
+      "king": [[4, 4]],
+      "queen": [[0, 7]],
+      "rook": [[1, 7], [7, 1]],
+      "bishop": [[5, 4], [2, 6]],
+      "knight": [[3, 6], [6, 0]],
+      "pawn": [[0, 6], [1, 6], [2, 7], [3, 7], [4, 7], [5, 6], [6, 6], [7, 7]]
     }
   },
   "decision_support": {

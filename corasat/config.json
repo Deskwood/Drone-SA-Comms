@@ -8,39 +8,37 @@
     "create_py_export": false,
     "use_gui": true,
     "model_index": 4,
-    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
-    "num_drones": 2,
-    "max_rounds": 32,
-    "temperature": 0.0,
-    "randomize_figures": true,
-    "seed_list": [111]
+    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b", ], "num_drones": 2, "max_rounds": 32, "temperature": 0.0, "randomize_figures": true, "seed_list": [, 111]
   },
   "gui": {
     "cell_size": 80,
     "margin": 8,
-    "background_color": [30, 30, 30],
-    "grid_color": [70, 70, 70],
-    "drone_color": [0, 200, 255],
-    "text_color": [255, 255, 255],
-    "figure_image_dir": "./img",
-    "sidebar_width": 1200
-  },
-  "figures": {
-    "white": {
-      "king": [[6, 2]],
-      "queen": [[1, 4]],
-      "rook": [[0, 0], [7, 5]],
-      "bishop": [[3, 3], [5, 7]],
-      "knight": [[2, 1], [4, 6]],
-      "pawn": [[0, 3], [1, 0], [2, 5], [3, 0], [4, 2], [5, 1], [6, 7], [7, 3]]
+    "background_color": [30, 30, 30, ], "grid_color": [, 70, 70, 70, ], "drone_color": [, 0, 200, 255, ], "text_color": [, 255, 255, 255, ], "figure_image_dir": "./img", "sidebar_width": 1200, }, "figures": {, "white": {, "king": [, [, 6, 2]
+      ],
+      "queen": [[, 1, 4]
+      ],
+      "rook": [[, 0, 0, ], [, 7, 5]
+      ],
+      "bishop": [[, 3, 3, ], [, 5, 7]
+      ],
+      "knight": [[, 2, 1, ], [, 4, 6]
+      ],
+      "pawn": [[, 0, 3, ], [, 1, 0, ], [, 2, 5, ], [, 3, 0, ], [, 4, 2, ], [, 5, 1, ], [, 6, 7, ], [, 7, 3]
+      ]
     },
     "black": {
-      "king": [[4, 4]],
-      "queen": [[0, 7]],
-      "rook": [[1, 7], [7, 1]],
-      "bishop": [[5, 4], [2, 6]],
-      "knight": [[3, 6], [6, 0]],
-      "pawn": [[0, 6], [1, 6], [2, 7], [3, 7], [4, 7], [5, 6], [6, 6], [7, 7]]
+      "king": [[, 4, 4]
+      ],
+      "queen": [[, 0, 7]
+      ],
+      "rook": [[, 1, 7, ], [, 7, 1]
+      ],
+      "bishop": [[, 5, 4, ], [, 2, 6]
+      ],
+      "knight": [[, 3, 6, ], [, 6, 0]
+      ],
+      "pawn": [[, 0, 6, ], [, 1, 6, ], [, 2, 7, ], [, 3, 7, ], [, 4, 7, ], [, 5, 6, ], [, 6, 6, ], [, 7, 7]
+      ]
     }
   },
   "decision_support": {
@@ -51,11 +49,11 @@
         "deadline_slack_bonus": -0.16352244315206657,
         "deadline_slack_penalty": -1.2848331439337206,
         "tolerance_bonus": 0.21237937241286878,
-        "unknown_tile_bonus": 0.7680874901945238,
-        "possible_target_bonus": 0.6746126342027848,
-        "figure_hint_bonus": 2.8273538258515805,
-        "unknown_color_bonus": 0.23587811445537304,
-        "unknown_neighbor_bonus_per_tile": 0.3651632039653405,
+        "unknown_tile_bonus": 1.0,
+        "possible_target_bonus": 1.2,
+        "figure_hint_bonus": 3.0,
+        "unknown_color_bonus": 0.5,
+        "unknown_neighbor_bonus_per_tile": 0.45,
         "leg_alignment_reward": 0.6,
         "leg_alignment_penalty": -0.6,
         "leg_travel_reward": 0.3682416522100012,
@@ -68,10 +66,14 @@
         "sector_alignment_reward": 0.7850850533649799,
         "sector_inside_bonus": 0.959147417154021,
         "late_penalty_multiplier": 2.0,
-        "board_edge_bias_bonus": 0.0918735834428143,
+        "board_edge_bias_bonus": 0.05,
         "board_edge_bias_range": 1,
-        "sector_unknown_probe_bonus": 0.3635713710628939,
-        "sector_unknown_probe_min_slack": 1.1676590478688627
+        "sector_unknown_probe_bonus": 0.6,
+        "sector_unknown_probe_min_slack": 1.1676590478688627,
+        "known_empty_penalty": -0.8,
+        "known_figure_penalty": -0.4,
+        "novel_tile_bonus": 0.9,
+        "revisit_penalty": -1.2
       },
       "broadcast": {
         "base_penalty": -0.5,
@@ -82,7 +84,7 @@
         "fresh_penalty": -2.0
       },
       "wait": {
-        "default_score": -1.0,
+        "default_score": -1.4,
         "idle_penalty_component": -1.0,
         "holding_position_score": -0.2,
         "holding_pattern_component": 0.3

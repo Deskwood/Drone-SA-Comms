@@ -19,21 +19,19 @@ from classes.Core import (
     on_board,
 )
 from classes.Exporter import LOGGER
-
-if TYPE_CHECKING:
-    from classes.Drone import _Drone
+from classes.Drone import _Drone
 
 
 class _Drone_Knowledge:
     """Local board knowledge, memory, and intel sharing helpers."""
 
-    def __init__(self, drone: "_Drone"):
+    def __init__(self, drone: _Drone):
         self.drone = drone
-        drone.memory = ""
-        drone.rx_buffer = ""
-        drone.local_board = self._make_empty_local_board()
-        drone.identified_edges = []
-        drone.info_exchange_rounds = {}
+        self.drone.memory = ""
+        self.drone.rx_buffer = ""
+        self.drone.local_board = self._make_empty_local_board()
+        self.drone.identified_edges = []
+        self.drone.info_exchange_rounds = {}
 
     def _make_empty_local_board(self) -> Dict[str, Dict[str, str]]:
         """Initialize local board knowledge with unknown placeholders."""
@@ -278,6 +276,35 @@ class _Drone_Mission_Support:
             return {"label": sector}
         return self._default_sector_assignment()
 
+    def _build_sector_sweep_waypoints(
+        self,
+        bounds: Tuple[int, int, int, int],
+        start_pos: Tuple[int, int],
+    ) -> List[Tuple[int, int]]:
+        min_x, max_x, min_y, max_y = bounds
+        columns = list(range(min_x, max_x + 1))
+        if abs(start_pos[0] - min_x) > abs(max_x - start_pos[0]):
+            columns.reverse()
+
+        waypoints: List[Tuple[int, int]] = []
+        single_row = min_y == max_y
+        for idx, col in enumerate(columns):
+            if single_row:
+                waypoints.append((col, max_y))
+                continue
+            if idx % 2 == 0:
+                waypoints.append((col, max_y))
+                waypoints.append((col, min_y))
+            else:
+                waypoints.append((col, min_y))
+                waypoints.append((col, max_y))
+
+        cleaned: List[Tuple[int, int]] = []
+        for wp in waypoints:
+            if not cleaned or cleaned[-1] != wp:
+                cleaned.append(wp)
+        return cleaned
+
     def sector_bounds(self, sector: Optional[Dict[str, Any]] = None) -> Optional[Tuple[int, int, int, int]]:
         sector = sector or self.drone.assigned_sector
         if not isinstance(sector, dict):
@@ -336,27 +363,19 @@ class _Drone_Mission_Support:
         current_turn = 1
         start_pos = tuple(self.drone.position)
 
-        corners = [
-            (min_x, max_y),
-            (max_x, max_y),
-            (max_x, min_y),
-            (min_x, min_y),
-        ]
-        nearest_idx = min(range(len(corners)), key=lambda i: chebyshev_distance(start_pos, corners[i]))
-        ordered_corners = corners[nearest_idx:] + corners[:nearest_idx]
-
         max_rounds = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1))
         rv_turn = max_rounds - 1
         rv_cart = None
         if self.drone.rendezvous_directive:
             rv_cart = self.drone.rendezvous_directive.get("target_cartesian")
             if rv_cart is None and self.drone.rendezvous_directive.get("target"):
-                rv_cart = list(chess_to_cartesian(self.drone.rendezvous_directive["target"]))
+            rv_cart = list(chess_to_cartesian(self.drone.rendezvous_directive["target"]))
             rv_turn = max(1, self.drone.rendezvous_directive.get("turn") or rv_turn)
         if rv_cart is None:
-            rv_cart = ordered_corners[-1] if ordered_corners else start_pos
+            rv_cart = start_pos
 
-        waypoints = [start_pos] + ordered_corners + [tuple(rv_cart)]
+        sweep_waypoints = self._build_sector_sweep_waypoints(bounds, start_pos)
+        waypoints = [start_pos] + sweep_waypoints + [tuple(rv_cart)]
         legs = list(zip(waypoints[:-1], waypoints[1:]))
         distances = [chebyshev_distance(a, b) for a, b in legs]
         total_dist = max(1, sum(distances))
@@ -367,6 +386,14 @@ class _Drone_Mission_Support:
             cumulative += dist
             arrival_turn = current_turn + int(round(available_turns * (cumulative / total_dist)))
             duration_turns = (max_rounds - arrival_turn + 1) if wp_end == tuple(rv_cart) else 0
+            dx = wp_end[0] - wp_start[0]
+            dy = wp_end[1] - wp_start[1]
+            if dx == 0 and dy != 0:
+                orientation = "vertical"
+            elif dy == 0 and dx != 0:
+                orientation = "horizontal"
+            else:
+                orientation = "diagonal"
             plan.append(
                 {
                     "leg_id": leg_id,
@@ -374,6 +401,7 @@ class _Drone_Mission_Support:
                     "leg_start": [wp_start[0], wp_start[1]],
                     "leg_end": [wp_end[0], wp_end[1]],
                     "duration_turns": duration_turns,
+                    "orientation": orientation,
                 }
             )
             leg_id += 1
@@ -794,8 +822,12 @@ class _Drone_Decision_Support:
         unknown_tile_bonus = move_cfg.get("unknown_tile_bonus", 1.0)
         possible_target_bonus = move_cfg.get("possible_target_bonus", 1.2)
         figure_hint_bonus = move_cfg.get("figure_hint_bonus", 0.6)
+        known_figure_penalty = move_cfg.get("known_figure_penalty", -0.2)
+        known_empty_penalty = move_cfg.get("known_empty_penalty", -0.6)
         unknown_color_bonus = move_cfg.get("unknown_color_bonus", 0.5)
         unknown_neighbor_bonus = move_cfg.get("unknown_neighbor_bonus_per_tile", 0.2)
+        novel_tile_bonus = move_cfg.get("novel_tile_bonus", 0.6)
+        revisit_penalty = move_cfg.get("revisit_penalty", -1.0)
         leg_alignment_reward = move_cfg.get("leg_alignment_reward", 0.6)
         leg_alignment_penalty = move_cfg.get("leg_alignment_penalty", -0.6)
         leg_travel_reward = move_cfg.get("leg_travel_reward", 0.9)
@@ -868,6 +900,14 @@ class _Drone_Decision_Support:
             if best_unknown_pos is not None and best_unknown_dist is not None:
                 nearest_sector_unknown = {"tile": cartesian_to_chess(best_unknown_pos), "distance": best_unknown_dist}
                 closest_probe_distance = best_unknown_dist
+
+        visited_tiles: set = set()
+        for pos in getattr(drone, "mission_report", []) or []:
+            if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                try:
+                    visited_tiles.add((int(pos[0]), int(pos[1])))
+                except (TypeError, ValueError):
+                    continue
 
         for step in drone._legal_movement_steps():
             direction = step["direction"]
@@ -1005,10 +1045,27 @@ class _Drone_Decision_Support:
                 score += figure_hint_bonus
                 score_components["figure_hint"] = figure_hint_bonus
                 notes.append("figure nearby")
+            elif tile_info["type"] in FIGURE_TYPES and known_figure_penalty:
+                score += known_figure_penalty
+                score_components["known_figure"] = known_figure_penalty
+                notes.append("known figure tile")
+            elif tile_info["type"] == "n/a" and known_empty_penalty:
+                score += known_empty_penalty
+                score_components["known_empty"] = known_empty_penalty
+                notes.append("known empty tile")
 
             if tile_info["color"] == "unknown":
                 score += unknown_color_bonus
                 score_components["discover_color"] = unknown_color_bonus
+
+            if new_pos in visited_tiles:
+                score += revisit_penalty
+                score_components["revisit_penalty"] = revisit_penalty
+                notes.append("revisiting tile")
+            elif novel_tile_bonus:
+                score += novel_tile_bonus
+                score_components["new_tile"] = novel_tile_bonus
+                notes.append("new tile")
 
             unknown_neighbors = self._count_unknown_neighbors(new_pos)
             if unknown_neighbors:

@@ -5,6 +5,7 @@ import json
 import os
 import pprint
 import random
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, List, Optional
 
@@ -22,6 +23,7 @@ from classes.Core import (
     cartesian_to_chess,
     format_edge,
     hsv_to_rgb255,
+    resolve_data_path,
 )
 from classes.Drone import _Drone
 from classes.Exporter import LOGGER
@@ -54,6 +56,7 @@ class Simulation:
         self.planning_rounds = int(CONFIG["simulation"].get("planning_rounds", 2))
         self.plans: Dict[int, List[str]] = {}
         self._last_logged_plans: Dict[int, str] = {}
+        self.state_lock = threading.Lock()
 
         self.board = [[_Tile(x, y) for y in range(self.grid_size[1])] for x in range(self.grid_size[0])]
         self.figures: List[_Figure] = []
@@ -78,7 +81,8 @@ class Simulation:
     def _load_rules(self) -> str:
         """Load and personalize rules for this simulation instance."""
         rules_path = CONFIG.get("rules_path", "rules.txt")
-        with open(rules_path, "r", encoding="utf-8") as file_handle:
+        resolved = resolve_data_path(str(rules_path))
+        with open(resolved, "r", encoding="utf-8") as file_handle:
             rules = file_handle.read()
         return rules.replace("NUMBER_OF_DRONES", str(CONFIG["simulation"]["num_drones"]))
 
@@ -130,8 +134,7 @@ class Simulation:
         sim_cfg = CONFIG.get("simulation", {})
         width, height = self.grid_size
         randomize = bool(sim_cfg.get("randomize_figures", False))
-        rng_seed = globals().get("active_seed")
-        rng = random.Random(rng_seed)
+        rng = random
         if randomize:
             try:
                 all_tiles = [(x, y) for x in range(width) for y in range(height)]
@@ -151,7 +154,7 @@ class Simulation:
                     cursor += cnt
                     out[color][ftype] = [list(p) for p in picks]
                 figures_cfg = out
-                LOGGER.log(f"Figure positions RANDOMIZED (seed={rng_seed}).")
+                LOGGER.log("Figure positions RANDOMIZED.")
             except Exception as exc:
                 LOGGER.log(f"Randomization failed ({exc}); using configured positions.")
         for color in COLORS:

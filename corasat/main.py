@@ -7,12 +7,14 @@ config file is the single source of runtime settings while refactoring.
 from __future__ import annotations
 
 from datetime import datetime
-import json
 import time
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from classes.Simulation import Simulation
 
 if TYPE_CHECKING:
     import pygame
+
+import classes.Core as core
 
 # Legacy shared constants (kept here until core modules are reorganized).
 COLORS = ["white", "black"]
@@ -30,7 +32,6 @@ DIRECTION_MAP: Dict[str, Tuple[int, int]] = {
 VALID_DIRECTIONS = set(DIRECTION_MAP.keys())
 FIGURE_IMAGES: Dict[Tuple[str, str], "pygame.Surface"] = {}
 
-CONFIG_PATH = "config.json"
 RUN_EXPORTS: List[Dict[str, Any]] = []
 
 
@@ -57,24 +58,10 @@ def _log(message: str) -> None:
     print(message)
 
 
-def load_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
-    """Load configuration from a JSON file."""
+def _reload_config(config_path: str = core.CONFIG_PATH) -> Dict[str, Any]:
+    """Reload the shared Core CONFIG from disk."""
     _log(f"Load Config: {config_path}")
-    try:
-        with open(config_path, "r", encoding="utf-8") as file_handle:
-            return json.load(file_handle)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"Missing config file: {config_path}") from exc
-
-
-CONFIG = load_config(CONFIG_PATH)
-
-
-def reload_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
-    """Reload the global CONFIG from disk and return it."""
-    global CONFIG
-    CONFIG = load_config(config_path)
-    return CONFIG
+    return core.reload_config(config_path)
 
 
 def _seed_list_from_config(config: Dict[str, Any]) -> List[Optional[int]]:
@@ -95,19 +82,13 @@ def _set_global_seed(seed: Optional[int]) -> None:
     if seed is None:
         return
     try:
-        from classes.Core import set_global_seed
-    except Exception:
-        return
-    try:
-        set_global_seed(seed)
+        core.set_global_seed(seed)
     except Exception:
         return
 
 
-def _safe_shutdown(sim: Optional[object]) -> None:
+def _safe_shutdown(sim: Simulation) -> None:
     """Attempt to shut down the simulation without propagating errors."""
-    if sim is None:
-        return
     try:
         sim.shutdown()
     except Exception:
@@ -116,11 +97,6 @@ def _safe_shutdown(sim: Optional[object]) -> None:
 
 def _create_simulation(game_index: int, total_games: int):
     """Construct a Simulation instance, returning None on failure."""
-    try:
-        from classes.Simulation import Simulation
-    except Exception as exc:
-        _log(f"Simulation import failed: {exc}")
-        return None
     try:
         return Simulation(game_index=game_index, total_games=total_games)
     except Exception as exc:
@@ -146,7 +122,7 @@ def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Op
     """Run a single seed and return (run_entry, abort_requested)."""
     _log(f"==== Running seed {seed} (game {game_index}/{total_games}) ====")
     _set_global_seed(seed)
-    reload_config(CONFIG_PATH)
+    config = _reload_config(core.CONFIG_PATH)
 
     sim = _create_simulation(game_index=game_index, total_games=total_games)
     if sim is None:
@@ -176,7 +152,7 @@ def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Op
     runtime_s = time.time() - run_started
     run_entry = {
         "sim": sim,
-        "config": CONFIG,
+        "config": config,
         "seed": seed,
         "runtime_s": runtime_s,
         "timestamp": datetime.now().isoformat(),
@@ -186,10 +162,10 @@ def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Op
     return run_entry, False
 
 
-def run_all_seeds(config_path: str = CONFIG_PATH) -> List[Dict[str, Any]]:
+def run_all_seeds(config_path: str = core.CONFIG_PATH) -> List[Dict[str, Any]]:
     """Run all configured seeds in sequence."""
-    reload_config(config_path)
-    seeds = _seed_list_from_config(CONFIG)
+    config = _reload_config(config_path)
+    seeds = _seed_list_from_config(config)
     total_games = max(1, len(seeds))
 
     for game_index, seed in enumerate(seeds, start=1):
@@ -204,7 +180,7 @@ def run_all_seeds(config_path: str = CONFIG_PATH) -> List[Dict[str, Any]]:
 
 def main() -> None:
     """CLI entry point for running the configured simulation seeds."""
-    run_all_seeds(CONFIG_PATH)
+    run_all_seeds(core.CONFIG_PATH)
 
 
 if __name__ == "__main__":

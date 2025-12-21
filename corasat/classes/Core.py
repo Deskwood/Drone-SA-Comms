@@ -29,6 +29,7 @@ except Exception:
     LOGGER = None
 
 CONFIG_PATH = "config.json"
+CONFIG_SOURCE: Optional[Path] = None
 
 
 def _log(message: str) -> None:
@@ -42,10 +43,51 @@ def _log(message: str) -> None:
     print(message)
 
 
+def _resolve_config_path(config_path: str) -> Optional[Path]:
+    """Resolve config.json location relative to CWD or repository."""
+    path = Path(config_path)
+    if path.is_absolute():
+        return path if path.exists() else None
+    cwd_path = Path.cwd() / path
+    if cwd_path.exists():
+        return cwd_path
+    try:
+        repo_path = Path(__file__).resolve().parent.parent / path
+    except NameError:
+        return None
+    return repo_path if repo_path.exists() else None
+
+
+def resolve_data_path(path: str) -> Path:
+    """Resolve a data file path relative to the loaded config or repo."""
+    if not path:
+        return Path(path)
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    candidates: List[Path] = []
+    if CONFIG_SOURCE:
+        candidates.append(Path(CONFIG_SOURCE).parent / candidate)
+    candidates.append(Path.cwd() / candidate)
+    try:
+        candidates.append(Path(__file__).resolve().parent.parent / candidate)
+    except NameError:
+        pass
+    for option in candidates:
+        if option.exists():
+            return option
+    return candidates[0] if candidates else candidate
+
+
 def load_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
     """Load configuration from a JSON file."""
     try:
-        with open(config_path, "r", encoding="utf-8") as file_handle:
+        resolved = _resolve_config_path(config_path)
+        if resolved is None:
+            raise FileNotFoundError(config_path)
+        global CONFIG_SOURCE
+        CONFIG_SOURCE = resolved
+        with open(resolved, "r", encoding="utf-8") as file_handle:
             return json.load(file_handle)
     except FileNotFoundError:
         _log(f"Missing config file: {config_path}")
@@ -58,7 +100,14 @@ def load_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
 def reload_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
     """Reload the module-level CONFIG mapping."""
     global CONFIG
-    CONFIG = load_config(config_path)
+    updated = load_config(config_path)
+    if not updated:
+        return CONFIG
+    if isinstance(CONFIG, dict):
+        CONFIG.clear()
+        CONFIG.update(updated)
+        return CONFIG
+    CONFIG = updated
     return CONFIG
 
 
@@ -172,10 +221,12 @@ def load_figure_images() -> Dict[Tuple[str, str], Any]:
         _log("pygame not available; skipping figure image load.")
         return {}
     images: Dict[Tuple[str, str], Any] = {}
-    base_path = CONFIG.get("gui", {}).get("figure_image_dir", "figures")
+    base_path = resolve_data_path(CONFIG.get("gui", {}).get("figure_image_dir", "figures"))
+    if isinstance(base_path, Path) and base_path.is_file():
+        base_path = base_path.parent
 
-    def try_load(path: str):
-        return pygame.image.load(path) if os.path.exists(path) else None
+    def try_load(path: Path):
+        return pygame.image.load(str(path)) if path.exists() else None
 
     for color in COLORS:
         for figure_type in FIGURE_TYPES:
@@ -187,7 +238,7 @@ def load_figure_images() -> Dict[Tuple[str, str], Any]:
             ]
             img = None
             for name in candidates:
-                path = os.path.join(base_path, name)
+                path = Path(base_path) / name
                 img = try_load(path)
                 if img:
                     break

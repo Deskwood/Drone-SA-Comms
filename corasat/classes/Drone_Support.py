@@ -1,6 +1,7 @@
 """Support components for drone behavior and decision-making."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import math
 import time
@@ -210,6 +211,18 @@ class _Drone_Mission_Support:
             self.build_initial_mission_plan()
         except Exception:
             drone.mission_plan = []
+
+    def consume_rx_buffer(self) -> str:
+        """Return and clear broadcast RX messages after mission support reads them."""
+        lock = getattr(self.drone.sim, "state_lock", None)
+        if lock:
+            with lock:
+                buf = self.drone.rx_buffer
+                self.drone.rx_buffer = ""
+                return buf
+        buf = self.drone.rx_buffer
+        self.drone.rx_buffer = ""
+        return buf
 
     def _default_sector_assignment(self) -> Dict[str, str]:
         width = int(CONFIG.get("board", {}).get("width", 8))
@@ -645,7 +658,8 @@ class _Drone_Decision_Support:
         if getattr(drone, "rendezvous_directive", None):
             rv = drone.rendezvous_directive
             lines.append(f"Rendezvous directive: {rv['target']} on turn {rv['turn']}")
-        lines.append(f"Broadcast Rx Buffer: {drone.rx_buffer}")
+        rx_buffer = drone.mission_support.consume_rx_buffer()
+        lines.append(f"Broadcast Rx Buffer: {rx_buffer}")
         if drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1:
             total_drones = CONFIG["simulation"].get("num_drones", len(getattr(drone.sim, "drones", [])))
             lines.append(
@@ -665,7 +679,6 @@ class _Drone_Decision_Support:
             lines.append("Intel Share Ledger:")
             lines.extend([f"  {entry}" for entry in ledger_lines])
 
-        drone.rx_buffer = ""
         situation_description = "\n".join(lines)
         LOGGER.log(f"Drone {drone.id} Situation:\n{situation_description}")
         return situation_description
@@ -1192,6 +1205,15 @@ class _Drone_Aftermath:
     def __init__(self, drone: "_Drone"):
         self.drone = drone
 
+    @contextmanager
+    def _state_guard(self):
+        lock = getattr(self.drone.sim, "state_lock", None)
+        if lock:
+            with lock:
+                yield
+            return
+        yield
+
     def execute_turn(self, messages: List[dict]) -> Dict[str, object]:
         """Parse LM output, execute the action, and return a summary for Simulation."""
         result, parse_error = self._parse_messages(messages)
@@ -1268,13 +1290,14 @@ class _Drone_Aftermath:
             LOGGER.log(f"ERROR: Drone {drone.id} attempted to move to {(nx, ny)}.")
             return False, error
 
-        drone.sim.board[drone.position[0]][drone.position[1]].remove_drone(drone)
-        drone.position = (nx, ny)
-        drone.sim.board[nx][ny].add_drone(drone)
-        drone.mission_report.append(drone.position)
-        drone.knowledge.update_board_report()
-        drone.mission_support.advance_leg_progress()
-        LOGGER.log(f"Drone {drone.id} moved to {cartesian_to_chess(drone.position)}.")
+        with self._state_guard():
+            drone.sim.board[drone.position[0]][drone.position[1]].remove_drone(drone)
+            drone.position = (nx, ny)
+            drone.sim.board[nx][ny].add_drone(drone)
+            drone.mission_report.append(drone.position)
+            drone.knowledge.update_board_report()
+            drone.mission_support.advance_leg_progress()
+            LOGGER.log(f"Drone {drone.id} moved to {cartesian_to_chess(drone.position)}.")
         return True, None
 
     def _parse_broadcast_message(self, raw_message) -> Tuple[str, Optional[object]]:
@@ -1299,27 +1322,29 @@ class _Drone_Aftermath:
         drone = self.drone
         msg, payload = self._parse_broadcast_message(raw_message)
         if not msg:
+            with self._state_guard():
+                try:
+                    drone.sim.broadcast_count += 1
+                except Exception:
+                    pass
+            return "", payload, "ERROR: Empty broadcast."
+
+        with self._state_guard():
             try:
                 drone.sim.broadcast_count += 1
             except Exception:
                 pass
-            return "", payload, "ERROR: Empty broadcast."
 
-        try:
-            drone.sim.broadcast_count += 1
-        except Exception:
-            pass
+            if payload:
+                drone.mission_support.apply_plan_directive(payload)
 
-        if payload:
-            drone.mission_support.apply_plan_directive(payload)
-
-        tile = drone.sim.board[drone.position[0]][drone.position[1]]
-        for target_drone in tile.drones:
-            if target_drone.id != drone.id:
-                target_drone.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
-                if payload:
-                    target_drone.mission_support.apply_plan_directive(payload)
-                drone.knowledge.provide_intelligence_to(target_drone)
+            tile = drone.sim.board[drone.position[0]][drone.position[1]]
+            for target_drone in tile.drones:
+                if target_drone.id != drone.id:
+                    target_drone.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
+                    if payload:
+                        target_drone.mission_support.apply_plan_directive(payload)
+                    drone.knowledge.provide_intelligence_to(target_drone)
         return msg, payload, None
 
     def _update_memory(self, result: Dict[str, Any]) -> None:

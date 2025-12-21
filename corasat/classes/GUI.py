@@ -252,6 +252,15 @@ class _SimulationGUI:
             pygame.draw.rect(self.screen, color, pygame.Rect(rect_x, rect_y, rect_w, rect_h), 2)
 
     def draw_field(self) -> None:
+        """Render the simulation field while guarding shared state."""
+        lock = getattr(self.sim, "state_lock", None)
+        if lock is None:
+            self._draw_field_locked()
+            return
+        with lock:
+            self._draw_field_locked()
+
+    def _draw_field_locked(self) -> None:
         gui = CONFIG["gui"]
         cell = gui["cell_size"]
         margin = gui["margin"]

@@ -6,7 +6,7 @@
   "rules_path": "rules.txt",
   "simulation": {
     "create_py_export": false,
-    "use_gui": true,
+    "use_gui": false,
     "model_index": 4,
     "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
     "num_drones": 2,
@@ -94,10 +94,10 @@
     }
   },
   "prompt_requests": {
-    "rationale": "Rationale: Provide a rationale on how you want to use your turn to reach the game objective (Drone 1 on round 1 should explain the coverage plan and rendezvous).",
-    "action": "Action: What you want to do?",
-    "action_move": "Direction: If your action is to move, where you want to move?",
-    "action_broadcast": "Message: If your action is broadcast, describe the coverage assignments and rendezvous timing so every drone can update its plan. Only rebroadcast when co-located partners need an update (mandatory for Drone 1 on round 1).",
-    "memory_update": "Memory: Summarize everything worth remembering. Pretend that you lose all your previous memory and only have this memory after your turn."
+    "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s) or the mandatory rule you are following.",
+    "action": "Action: choose one of wait, move, broadcast. Follow rules; if Special directive says Drone 1 on round 1, you MUST broadcast.",
+    "action_move": "Direction: choose ONLY from AllowedDirections.",
+    "action_broadcast": "Message: If broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
+    "memory_update": "Memory: <=6 short lines. Use tags PLAN:, SECTOR:, RV:, FIG:, POSSIBLE:, NOTE:, VISITED:. Keep existing VISITED lines. Do NOT copy Decision Support, Legal movements, or Broadcast Rx Buffer."
   }
 }

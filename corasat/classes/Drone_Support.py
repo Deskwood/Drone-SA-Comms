@@ -19,7 +19,8 @@ from classes.Core import (
     on_board,
 )
 from classes.Exporter import LOGGER
-from classes.Drone import _Drone
+if TYPE_CHECKING:
+    from classes.Drone import _Drone
 
 
 class _Drone_Knowledge:
@@ -369,7 +370,7 @@ class _Drone_Mission_Support:
         if self.drone.rendezvous_directive:
             rv_cart = self.drone.rendezvous_directive.get("target_cartesian")
             if rv_cart is None and self.drone.rendezvous_directive.get("target"):
-            rv_cart = list(chess_to_cartesian(self.drone.rendezvous_directive["target"]))
+                rv_cart = list(chess_to_cartesian(self.drone.rendezvous_directive["target"]))
             rv_turn = max(1, self.drone.rendezvous_directive.get("turn") or rv_turn)
         if rv_cart is None:
             rv_cart = start_pos
@@ -667,14 +668,18 @@ class _Drone_Decision_Support:
             fig_here = drone.sim.board[drone.position[0]][drone.position[1]].figure.figure_type
 
         neighbor_figures = drone.knowledge.visible_neighbor_figures()
+        legal_steps = drone._legal_movement_steps()
         legal_movements = ", ".join(
-            [f"{lms['direction']} to {cartesian_to_chess(lms['new_position'])}" for lms in drone._legal_movement_steps()]
+            [f"{lms['direction']} to {cartesian_to_chess(lms['new_position'])}" for lms in legal_steps]
         )
+        allowed_directions = ", ".join([step["direction"] for step in legal_steps]) or "none"
         collected_figure_information = drone.knowledge.collected_figure_information_text()
 
         lines: List[str] = []
         lines.append(f"Current round number: {drone.sim.round} of {CONFIG['simulation']['max_rounds']} rounds.")
         lines.append(f"Current position: {cartesian_to_chess(drone.position)}")
+        lines.append("AllowedActions: wait, move, broadcast")
+        lines.append(f"AllowedDirections: {allowed_directions}")
         lines.append(f"Legal movements: {legal_movements}")
         lines.append(f"Visible drones at position: {', '.join(same_tile_drones) if same_tile_drones else 'None'}")
         lines.append(f"Visible figure at position: {fig_here}")
@@ -686,17 +691,21 @@ class _Drone_Decision_Support:
         if getattr(drone, "rendezvous_directive", None):
             rv = drone.rendezvous_directive
             lines.append(f"Rendezvous directive: {rv['target']} on turn {rv['turn']}")
-        rx_buffer = drone.mission_support.consume_rx_buffer()
-        lines.append(f"Broadcast Rx Buffer: {rx_buffer}")
+        rx_buffer = drone.mission_support.consume_rx_buffer().strip()
+        if rx_buffer:
+            rx_buffer = rx_buffer.replace("\n", " | ")
+            if len(rx_buffer) > 300:
+                rx_buffer = rx_buffer[:300].rstrip() + "...(truncated)"
+        lines.append(f"Broadcast Rx Buffer: {rx_buffer or 'None'}")
         if drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1:
             total_drones = CONFIG["simulation"].get("num_drones", len(getattr(drone.sim, "drones", [])))
             lines.append(
-                "Special directive: As Drone 1 on the opening turn, broadcast a coverage plan assigning every drone "
-                "their sector before taking other actions."
+                "Special directive (MANDATORY): As Drone 1 on the opening turn, broadcast a coverage plan assigning "
+                "every drone their sector before taking other actions."
             )
             lines.append(
                 f"Ensure the broadcast is valid JSON with plan->assignments entries for all {total_drones} drones "
-                "and describe each sector clearly."
+                "and describe each sector clearly. This overrides decision support ranking."
             )
 
         ds_lines, ledger_lines = self.format_lines(snapshot)
@@ -1404,12 +1413,79 @@ class _Drone_Aftermath:
                     drone.knowledge.provide_intelligence_to(target_drone)
         return msg, payload, None
 
+    def _sanitize_memory(self, mem_txt: str, prior_mem: str) -> str:
+        allowed_prefixes = ("PLAN:", "SECTOR:", "RV:", "FIG:", "POSSIBLE:", "NOTE:", "VISITED:")
+        max_chars = 800
+        max_line_len = 200
+        blocked_tokens = ("legal movements", "decision support", "broadcast rx buffer")
+
+        def _lines(text: str) -> List[str]:
+            return [line.strip() for line in text.splitlines() if line.strip()]
+
+        prior_lines = _lines(prior_mem)
+        new_lines = _lines(mem_txt)
+
+        selected: List[str] = []
+        for line in new_lines:
+            if line.lower().startswith("memory:"):
+                line = line.split(":", 1)[1].strip()
+            if line.startswith(allowed_prefixes):
+                selected.append(line[:max_line_len])
+                continue
+            lowered = line.lower()
+            if any(token in lowered for token in blocked_tokens):
+                continue
+            if any(token in lowered for token in ("sector", "rendezvous", "plan")) and len(line) <= 120:
+                selected.append(line[:max_line_len])
+
+        def _ensure_prefix(prefix: str) -> None:
+            if any(line.startswith(prefix) for line in selected):
+                return
+            for line in prior_lines:
+                if line.startswith(prefix):
+                    selected.append(line[:max_line_len])
+                    return
+
+        for prefix in ("PLAN:", "SECTOR:", "RV:"):
+            _ensure_prefix(prefix)
+
+        for line in prior_lines:
+            if line.startswith("VISITED:") and line not in selected:
+                selected.append(line[:max_line_len])
+
+        if not selected:
+            for line in new_lines:
+                lowered = line.lower()
+                if any(token in lowered for token in blocked_tokens):
+                    continue
+                selected.append(line[:max_line_len])
+                if len(selected) >= 3:
+                    break
+
+        deduped: List[str] = []
+        for line in selected:
+            if line not in deduped:
+                deduped.append(line)
+
+        joined = "\n".join(deduped)
+        if len(joined) > max_chars:
+            trimmed: List[str] = []
+            total = 0
+            for line in deduped:
+                extra = len(line) + (1 if trimmed else 0)
+                if total + extra > max_chars:
+                    continue
+                trimmed.append(line)
+                total += extra
+            joined = "\n".join(trimmed) if trimmed else joined[:max_chars]
+        return joined
+
     def _update_memory(self, result: Dict[str, Any]) -> None:
         mem_txt = (result.get("memory") or "").strip()
         if mem_txt:
-            self.drone.memory = mem_txt
+            self.drone.memory = self._sanitize_memory(mem_txt, self.drone.memory)
+        self.drone.memory = self._sanitize_memory(self.drone.memory, self.drone.memory)
         vx, vy = self.drone.position
         token = f"VISITED:{vx},{vy}"
         if token not in self.drone.memory:
             self.drone.memory += ("" if self.drone.memory.endswith("\n") else "\n") + token
-

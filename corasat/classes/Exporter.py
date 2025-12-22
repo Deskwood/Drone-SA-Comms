@@ -50,13 +50,37 @@ RESULTS_PATH = _resolve_results_path()
 
 def _safe_commit_sha() -> Optional[str]:
     """Return the current git commit SHA, or None if unavailable."""
+    candidates: List[Path] = []
     try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        ).decode("utf-8").strip()
+        candidates.append(Path.cwd())
     except Exception:
-        return None
+        pass
+    try:
+        exporter_root = Path(__file__).resolve().parent
+        candidates.extend([exporter_root, exporter_root.parent, exporter_root.parent.parent])
+    except Exception:
+        pass
+
+    seen = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            resolved = candidate.resolve()
+        except Exception:
+            resolved = candidate
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            return subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(resolved),
+                stderr=subprocess.DEVNULL,
+            ).decode("utf-8").strip()
+        except Exception:
+            continue
+    return None
 
 
 def _config_hash_from_dict(cfg: Dict[str, Any]) -> Optional[str]:

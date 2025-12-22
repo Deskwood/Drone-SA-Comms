@@ -224,11 +224,22 @@ class _Drone_Mission_Support:
         return buf
 
     def _default_sector_assignment(self) -> Dict[str, str]:
+        """Assign a default sector split among all drones."""
+        return self._sector_assignment_for_drone(self.drone.id)
+
+    def _sector_assignment_for_drone(self, drone_id: int) -> Dict[str, str]:
         width = int(CONFIG.get("board", {}).get("width", 8))
         height = int(CONFIG.get("board", {}).get("height", 8))
+        num_drones = max(1, int(CONFIG.get("simulation", {}).get("num_drones", 1)))
+        block_width = max(1, math.ceil(width / num_drones))
+        idx = max(0, int(drone_id) - 1)
+        start_col = min(idx * block_width, width - 1)
+        end_col = min(width - 1, start_col + block_width - 1)
+        if start_col > end_col:
+            start_col = end_col
         return {
-            "upper_left": cartesian_to_chess((0, height - 1)),
-            "lower_right": cartesian_to_chess((width - 1, 0)),
+            "upper_left": cartesian_to_chess((start_col, height - 1)),
+            "lower_right": cartesian_to_chess((end_col, 0)),
         }
 
     def _sector_to_key(self, sector: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -277,29 +288,58 @@ class _Drone_Mission_Support:
             return {"label": sector}
         return self._default_sector_assignment()
 
-    def _build_sector_sweep_waypoints(
+    def _build_sector_perimeter_waypoints(
         self,
         bounds: Tuple[int, int, int, int],
         start_pos: Tuple[int, int],
     ) -> List[Tuple[int, int]]:
         min_x, max_x, min_y, max_y = bounds
-        columns = list(range(min_x, max_x + 1))
-        if abs(start_pos[0] - min_x) > abs(max_x - start_pos[0]):
-            columns.reverse()
+        corners = [
+            (min_x, max_y),  # upper-left
+            (max_x, max_y),  # upper-right
+            (max_x, min_y),  # lower-right
+            (min_x, min_y),  # lower-left
+        ]
 
-        waypoints: List[Tuple[int, int]] = []
-        single_row = min_y == max_y
-        for idx, col in enumerate(columns):
-            if single_row:
-                waypoints.append((col, max_y))
-                continue
-            if idx % 2 == 0:
-                waypoints.append((col, max_y))
-                waypoints.append((col, min_y))
+        unique_corners: List[Tuple[int, int]] = []
+        for corner in corners:
+            if corner not in unique_corners:
+                unique_corners.append(corner)
+
+        if not unique_corners:
+            return [start_pos]
+
+        start_idx = min(
+            range(len(unique_corners)),
+            key=lambda idx: (chebyshev_distance(start_pos, unique_corners[idx]), idx),
+        )
+        start_corner = unique_corners[start_idx]
+        if len(unique_corners) == 1:
+            perimeter = [start_corner]
+        else:
+            dist_current = chebyshev_distance(start_pos, start_corner)
+            cw_next = unique_corners[(start_idx + 1) % len(unique_corners)]
+            ccw_next = unique_corners[(start_idx - 1) % len(unique_corners)]
+            dist_cw = chebyshev_distance(start_pos, cw_next)
+            dist_ccw = chebyshev_distance(start_pos, ccw_next)
+
+            if dist_cw > dist_current and dist_ccw <= dist_current:
+                clockwise = True
+            elif dist_ccw > dist_current and dist_cw <= dist_current:
+                clockwise = False
             else:
-                waypoints.append((col, min_y))
-                waypoints.append((col, max_y))
+                clockwise = True
 
+            perimeter = []
+            if clockwise:
+                for offset in range(len(unique_corners)):
+                    perimeter.append(unique_corners[(start_idx + offset) % len(unique_corners)])
+            else:
+                for offset in range(len(unique_corners)):
+                    perimeter.append(unique_corners[(start_idx - offset) % len(unique_corners)])
+            perimeter.append(perimeter[0])
+
+        waypoints = [start_pos] + perimeter + [start_pos]
         cleaned: List[Tuple[int, int]] = []
         for wp in waypoints:
             if not cleaned or cleaned[-1] != wp:
@@ -375,18 +415,30 @@ class _Drone_Mission_Support:
         if rv_cart is None:
             rv_cart = start_pos
 
-        sweep_waypoints = self._build_sector_sweep_waypoints(bounds, start_pos)
-        waypoints = [start_pos] + sweep_waypoints + [tuple(rv_cart)]
+        waypoints = self._build_sector_perimeter_waypoints(bounds, start_pos)
+        if tuple(rv_cart) != waypoints[-1]:
+            waypoints.append(tuple(rv_cart))
         legs = list(zip(waypoints[:-1], waypoints[1:]))
         distances = [chebyshev_distance(a, b) for a, b in legs]
-        total_dist = max(1, sum(distances))
-        available_turns = max(1, rv_turn - current_turn)
+        total_dist = sum(distances)
+        available_turns = max(0, rv_turn - current_turn)
+        slack = max(0, available_turns - total_dist)
 
         cumulative = 0
-        for (wp_start, wp_end), dist in zip(legs, distances):
+        last_arrival = current_turn
+        for idx, ((wp_start, wp_end), dist) in enumerate(zip(legs, distances)):
             cumulative += dist
-            arrival_turn = current_turn + int(round(available_turns * (cumulative / total_dist)))
-            duration_turns = (max_rounds - arrival_turn + 1) if wp_end == tuple(rv_cart) else 0
+            if total_dist > 0 and available_turns >= total_dist:
+                extra = int(round(slack * (cumulative / total_dist)))
+                arrival_turn = current_turn + cumulative + extra
+            else:
+                arrival_turn = current_turn + cumulative
+            if idx == len(legs) - 1 and available_turns >= total_dist:
+                arrival_turn = rv_turn
+            arrival_turn = max(arrival_turn, last_arrival)
+            last_arrival = arrival_turn
+
+            duration_turns = 1 if wp_end == tuple(rv_cart) else 0
             dx = wp_end[0] - wp_start[0]
             dy = wp_end[1] - wp_start[1]
             if dx == 0 and dy != 0:
@@ -527,11 +579,10 @@ class _Drone_Mission_Support:
                         return
                     max_rounds = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1))
                     requested_turn = int(turn) if turn is not None else max_rounds - 1
-                    rv_turn = max(1, max_rounds - 1)
+                    rv_turn = max(1, min(requested_turn, max_rounds))
                     if rv_turn != requested_turn:
                         LOGGER.log(
-                            f"Drone {self.drone.id} set rendezvous turn to {rv_turn} "
-                            "to reserve the final round for intel broadcast"
+                            f"Drone {self.drone.id} clamped rendezvous turn {requested_turn} -> {rv_turn}"
                         )
                     waypoint = {
                         "turn": rv_turn,
@@ -788,15 +839,11 @@ class _Drone_Decision_Support:
         board_w = int(CONFIG.get("board", {}).get("width", 8))
         board_h = int(CONFIG.get("board", {}).get("height", 8))
         num_drones = max(1, sim.num_drones)
-        block_width = max(1, math.ceil(board_w / num_drones))
         assignments: List[Dict[str, Any]] = []
         for idx in range(num_drones):
-            start_col = min(idx * block_width, board_w - 1)
-            end_col = min(board_w - 1, start_col + block_width - 1)
-            if start_col > end_col:
-                start_col = end_col
-            upper_left = cartesian_to_chess((start_col, board_h - 1))
-            lower_right = cartesian_to_chess((end_col, 0))
+            sector = drone.mission_support._sector_assignment_for_drone(idx + 1)
+            upper_left = sector.get("upper_left")
+            lower_right = sector.get("lower_right")
             assignments.append(
                 {
                     "drone": idx + 1,
@@ -1286,12 +1333,39 @@ class _Drone_Aftermath:
         if result is None:
             result = {}
 
-        action = (result.get("action") or "wait").strip().lower()
-        rationale = (result.get("rationale") or "").strip()
         errors: List[str] = []
         if parse_error:
             errors.append(parse_error)
 
+        is_first_coordination_turn = (
+            self.drone.id == 1 and getattr(self.drone.sim, "round", None) == 1 and getattr(self.drone.sim, "turn", None) == 1
+        )
+        if is_first_coordination_turn:
+            raw_message = result.get("message")
+            _, payload = self._parse_broadcast_message(raw_message)
+            valid_plan = False
+            if isinstance(payload, dict):
+                plan = payload.get("plan") if isinstance(payload.get("plan"), dict) else None
+                if isinstance(plan, dict):
+                    assignments = plan.get("assignments")
+                    rendezvous = plan.get("rendezvous")
+                    valid_plan = isinstance(assignments, list) and isinstance(rendezvous, dict) and bool(assignments)
+            action_txt = str(result.get("action") or "").strip().lower()
+            if action_txt != "broadcast" or not valid_plan:
+                coordination_payload = None
+                try:
+                    coordination_payload = self.drone.decision_support._build_coordination_suggestion()
+                except Exception:
+                    coordination_payload = None
+                if isinstance(coordination_payload, dict) and coordination_payload.get("plan"):
+                    result["action"] = "broadcast"
+                    result["direction"] = None
+                    result["message"] = coordination_payload
+                    if not result.get("rationale"):
+                        result["rationale"] = "Auto broadcast coverage plan."
+
+        action = (result.get("action") or "wait").strip().lower()
+        rationale = (result.get("rationale") or "").strip()
         moved = False
         direction = None
         broadcast_message = ""

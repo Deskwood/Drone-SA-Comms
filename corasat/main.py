@@ -175,7 +175,40 @@ def run_all_seeds(config_path: str = core.CONFIG_PATH) -> List[Dict[str, Any]]:
             break
         if abort_requested:
             break
+    avg_norm = _compute_average_norm_score(RUN_EXPORTS, seeds)
+    if avg_norm is not None:
+        _log(f"Average normalized score over {len(seeds)} seeds: {avg_norm:.5f}")
+    else:
+        _log("Average normalized score: n/a (no completed runs)")
     return RUN_EXPORTS
+
+
+def _compute_average_norm_score(
+    run_exports: List[Dict[str, Any]],
+    seeds: List[Optional[int]],
+) -> Optional[float]:
+    """Compute average normalized score for completed seed runs."""
+    if not run_exports:
+        return None
+    scores: List[float] = []
+    valid_seeds = {str(seed) for seed in seeds}
+    for entry in run_exports:
+        sim = entry.get("sim")
+        seed = entry.get("seed")
+        if sim is None or seed is None:
+            continue
+        if str(seed) not in valid_seeds:
+            continue
+        gt_edges = getattr(sim, "gt_edges", None)
+        if not gt_edges:
+            continue
+        score = getattr(sim, "score", None)
+        if score is None:
+            continue
+        scores.append(float(score) / max(1, len(gt_edges)))
+    if not scores:
+        return None
+    return sum(scores) / len(scores)
 
 
 def main() -> None:

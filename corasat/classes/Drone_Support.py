@@ -57,7 +57,15 @@ class _Drone_Knowledge:
                     continue
                 tile = self.drone.sim.board[nx][ny]
                 if tile.figure:
-                    neighbors.append(f"{direction_from_vector((dx, dy))}: {tile.figure.color}")
+                    color = tile.figure.color or "unknown"
+                    tile_key = cartesian_to_chess((nx, ny))
+                    info = self.drone.local_board.get(tile_key, {})
+                    figure_type = info.get("type")
+                    if figure_type in FIGURE_TYPES:
+                        desc = f"{color} {figure_type}"
+                    else:
+                        desc = f"{color} unknown"
+                    neighbors.append(f"{direction_from_vector((dx, dy))}: {desc}")
         return ", ".join(neighbors)
 
     def collected_figure_information_text(self) -> str:
@@ -734,17 +742,34 @@ class _Drone_Decision_Support:
 
         neighbor_figures = drone.knowledge.visible_neighbor_figures()
         legal_steps = drone._legal_movement_steps()
-        legal_movements = ", ".join(
-            [f"{lms['direction']} to {cartesian_to_chess(lms['new_position'])}" for lms in legal_steps]
-        )
-        allowed_directions = ", ".join([step["direction"] for step in legal_steps]) or "none"
+        legal_entries: List[str] = []
+        for step in legal_steps:
+            new_pos = step["new_position"]
+            tile = cartesian_to_chess(new_pos)
+            figure_label = None
+            try:
+                tile_state = drone.sim.board[new_pos[0]][new_pos[1]]
+            except Exception:
+                tile_state = None
+            if tile_state and tile_state.figure:
+                color = tile_state.figure.color or "unknown"
+                info = drone.local_board.get(tile, {})
+                figure_type = info.get("type")
+                if figure_type in FIGURE_TYPES:
+                    figure_label = f"{color} {figure_type}"
+                else:
+                    figure_label = f"{color} unknown"
+            if figure_label:
+                legal_entries.append(f"{step['direction']} to {tile} ({figure_label})")
+            else:
+                legal_entries.append(f"{step['direction']} to {tile}")
+        legal_movements = ", ".join(legal_entries) or "none"
         collected_figure_information = drone.knowledge.collected_figure_information_text()
 
         lines: List[str] = []
         lines.append(f"Current round number: {drone.sim.round} of {CONFIG['simulation']['max_rounds']} rounds.")
         lines.append(f"Current position: {cartesian_to_chess(drone.position)}")
         lines.append("AllowedActions: wait, move, broadcast")
-        lines.append(f"AllowedDirections: {allowed_directions}")
         lines.append(f"Legal movements: {legal_movements}")
         lines.append(f"Visible drones at position: {', '.join(same_tile_drones) if same_tile_drones else 'None'}")
         lines.append(f"Visible figure at position: {fig_here}")
@@ -930,6 +955,10 @@ class _Drone_Decision_Support:
 
         scores: List[Dict[str, object]] = []
         current_round = drone.sim.round
+        try:
+            drone._advance_leg_progress()
+        except Exception:
+            pass
         next_wp = drone._next_mission_waypoint()
         target_pos = tuple(next_wp["leg_end"]) if next_wp else None
         current_leg = next_wp if next_wp and next_wp.get("leg_start") else None
@@ -940,7 +969,7 @@ class _Drone_Decision_Support:
         timing_slack: Optional[int] = None
         if target_pos and next_wp and next_wp.get("turn") is not None:
             try:
-                timing_turns_remaining = max(0, int(next_wp["turn"]) - (current_round + 1))
+                timing_turns_remaining = max(0, int(next_wp["turn"]) - current_round)
                 timing_distance = chebyshev_distance(drone.position, target_pos)
                 timing_slack = timing_turns_remaining - timing_distance
             except (TypeError, ValueError):
@@ -1071,7 +1100,7 @@ class _Drone_Decision_Support:
                 turns_remaining = timing_turns_remaining
                 if turns_remaining is None and next_wp and next_wp.get("turn") is not None:
                     try:
-                        turns_remaining = max(0, int(next_wp["turn"]) - (current_round + 1))
+                        turns_remaining = max(0, int(next_wp["turn"]) - current_round)
                     except (TypeError, ValueError):
                         turns_remaining = None
                 slack = turns_remaining - new_dist if turns_remaining is not None else None
@@ -1592,6 +1621,6 @@ class _Drone_Aftermath:
             self.drone.memory = self._sanitize_memory(mem_txt, self.drone.memory)
         self.drone.memory = self._sanitize_memory(self.drone.memory, self.drone.memory)
         vx, vy = self.drone.position
-        token = f"VISITED:{vx},{vy}"
+        token = f"VISITED: {cartesian_to_chess((vx, vy))}"
         if token not in self.drone.memory:
             self.drone.memory += ("" if self.drone.memory.endswith("\n") else "\n") + token

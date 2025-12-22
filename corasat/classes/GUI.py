@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-import os
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -82,12 +82,21 @@ class _SimulationGUI:
         return (cx, cy)
 
     def save_screenshot(self, path: Optional[str] = None) -> None:
-        out_dir = "screenshots"
-        os.makedirs(out_dir, exist_ok=True)
-        fname = path or os.path.join(out_dir, "last_run.png")
         try:
-            pygame.image.save(self.screen, fname)
-            LOGGER.log(f"Saved GUI screenshot: {fname}")
+            base = Path(__file__).resolve().parent.parent
+        except NameError:
+            base = Path.cwd()
+        out_dir = base / "screenshots"
+        if path:
+            out_path = Path(path)
+            if not out_path.is_absolute():
+                out_path = base / out_path
+        else:
+            out_path = out_dir / "last_run.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            pygame.image.save(self.screen, str(out_path))
+            LOGGER.log(f"Saved GUI screenshot: {out_path}")
         except Exception as exc:
             LOGGER.log(f"Failed to save screenshot: {exc}")
 

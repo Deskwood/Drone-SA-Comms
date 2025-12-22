@@ -48,6 +48,18 @@ def _resolve_results_path() -> Path:
 RESULTS_PATH = _resolve_results_path()
 
 
+def _resolve_log_dir(log_dir: str) -> Path:
+    """Resolve the log directory relative to the Corasat root when needed."""
+    path = Path(log_dir)
+    if path.is_absolute():
+        return path
+    try:
+        base = Path(__file__).resolve().parent.parent
+    except NameError:
+        base = Path.cwd()
+    return base / path
+
+
 def _safe_commit_sha() -> Optional[str]:
     """Return the current git commit SHA, or None if unavailable."""
     candidates: List[Path] = []
@@ -176,7 +188,7 @@ class TimestampedLogger:
     def __init__(self, log_dir: str = "logs", log_file: str = "simulation.log"):
         date_tag = datetime.now().strftime("%Y-%m-%d")
         log_file = f"simulation_{date_tag}.log"
-        log_dir_path = Path(log_dir)
+        log_dir_path = _resolve_log_dir(log_dir)
         log_dir_path.mkdir(parents=True, exist_ok=True)
         self.log_path = log_dir_path / log_file
 

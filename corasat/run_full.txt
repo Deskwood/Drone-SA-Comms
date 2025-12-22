@@ -8881,3 +8881,909 @@ Decision Support:
   move west -> Bad choice (-3.92) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from coverage leg; sideways probe off leg; missing deadline; known figure tile; revisiting tile; nudged toward board edge
 Intel Share Ledger:
   Drone 1: last shared round 1 (age 11)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:15:57] (+2.030s) Drone 2 moved to f7.
+INFO:root:[2025-12-22 11:15:57] (+0.011s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'southeast',
+    'memory': 'PLAN: leg 2 e8 -> e1 (turn 12); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'Behind schedule and must reduce Chebyshev distance to the waypoint.'}
+INFO:root:[2025-12-22 11:15:57] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:15:57] (+0.000s) Simulation - Round 4.13.1/10.32.2
+INFO:root:[2025-12-22 11:15:57] (+0.002s) Drone 1 Situation:
+Current round number: 13 of 32 rounds.
+Current position: e8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, west, southeast, southwest
+Legal movements: south to e7, east to f8, west to d8, southeast to f7, southwest to d7
+Visible drones at position: None
+Visible figure at position: bishop
+Visible neighbor figures: west: black, south: black, east: white
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 2 d8 -> d1 (turn 13)
+  Waypoint timing: 7 steps away, 0 turns left (slack -7).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: a8 -> d1
+  move east -> Best choice (1.02) | factors: deadline_margin (-7.00), figure_hint (+3.00), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; missing deadline; figure nearby; new tile; 1 unknown neighbors; nudged toward board edge
+  move southwest -> Okay choice (0.81) | factors: deadline_margin (-6.00), leg_alignment (+1.00), plan_progress (+1.00) | notes: aligning with coverage leg; entered coverage leg corridor; skipping leg start; closer to waypoint (late); missing deadline; known empty tile; new tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+  move west -> Okay choice (0.05) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; entered coverage leg corridor; sidestep toward vertical leg; missing deadline; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move southeast -> Risky choice (-1.69) | factors: deadline_margin (-6.00), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; closer to waypoint (late); missing deadline; known empty tile; new tile; 1 unknown neighbors; nudged toward board edge
+  move south -> Bad choice (-3.55) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), plan_progress (+1.00) | notes: slide along vertical leg before aligning; closer to waypoint (late); missing deadline; known figure tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 12)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:15:59] (+2.046s) Drone 1 moved to f8.
+INFO:root:[2025-12-22 11:15:59] (+0.006s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'east',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors',
+    'message': None,
+    'rationale': 'Following the sector directive and trying to reduce Chebyshev distance to the waypoint.'}
+INFO:root:[2025-12-22 11:15:59] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:15:59] (+0.000s) Simulation - Round 4.13.2/10.32.2
+INFO:root:[2025-12-22 11:15:59] (+0.002s) Drone 2 Situation:
+Current round number: 13 of 32 rounds.
+Current position: f7
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to f8, south to f6, east to g7, west to e7, northeast to g8, northwest to e8, southeast to g6, southwest to e6
+Visible drones at position: None
+Visible figure at position: None
+Visible neighbor figures: southwest: black, west: black, northwest: white, north: white, southeast: white, northeast: white
+Memory: PLAN: leg 2 e8 -> e1 (turn 12); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 e1 -> h1 (turn 16)
+  Waypoint timing: 6 steps away, 2 turns left (slack -4).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: e8 -> h1
+  move northeast -> Best choice (11.67) | factors: deadline_margin (-5.00), figure_hint (+3.00), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; figure nearby; new tile; 1 unknown neighbors; within assigned sector; nudged toward board edge
+  move north -> Excellent choice (5.72) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move northwest -> Excellent choice (5.72) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move southwest -> Excellent choice (5.2) | factors: deadline_margin (-3.00), figure_hint (+3.00), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; figure nearby; new tile; within assigned sector
+  move south -> Good choice (2) | factors: deadline_margin (-3.00), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known empty tile; new tile; within assigned sector
+  move southeast -> Risky choice (-0.25) | factors: deadline_margin (-3.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move east -> Risky choice (-1.58) | factors: deadline_margin (-4.00), unknown_neighbors (+1.00), sector_inside (+0.96) | notes: slide along horizontal leg before aligning; missing deadline; known empty tile; new tile; 1 unknown neighbors; within assigned sector; nudged toward board edge
+  move west -> Bad choice (-3.73) | factors: deadline_margin (-4.00), revisit_penalty (-1.20), sector_inside (+0.96) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 12)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:01] (+2.109s) Drone 2 moved to e8.
+INFO:root:[2025-12-22 11:16:01] (+0.009s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'northwest',
+    'memory': 'PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'Following the sector directive and trying to reduce Chebyshev distance to the waypoint.'}
+INFO:root:[2025-12-22 11:16:01] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:01] (+0.000s) Simulation - Round 4.14.1/10.32.2
+INFO:root:[2025-12-22 11:16:01] (+0.002s) Drone 1 Situation:
+Current round number: 14 of 32 rounds.
+Current position: f8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, west, southeast, southwest
+Legal movements: south to f7, east to g8, west to e8, southeast to g7, southwest to e7
+Visible drones at position: None
+Visible figure at position: pawn
+Visible neighbor figures: southwest: black, west: white, east: white
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 d1 -> a1 (turn 16)
+  Waypoint timing: 7 steps away, 1 turns left (slack -6).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: a8 -> d1
+  move southeast -> Best choice (1.24) | factors: deadline_margin (-5.00), unknown_neighbors (+3.00), leg_start_focus (+1.00) | notes: closing distance to leg start; closer to waypoint (late); missing deadline; known empty tile; new tile; 3 unknown neighbors; nudged toward board edge
+  move east -> Okay choice (1.16) | factors: deadline_margin (-6.00), figure_hint (+3.00), unknown_neighbors (+2.00) | notes: drifting from coverage leg; slide along horizontal leg before aligning; missing deadline; figure nearby; new tile; 2 unknown neighbors; nudged toward board edge
+  move south -> Okay choice (1.09) | factors: deadline_margin (-5.00), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known empty tile; new tile; nudged toward board edge
+  move southwest -> Risky choice (-0.42) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile; moving toward assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move west -> Bad choice (-3.85) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), sector_alignment (+1.00) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; moving toward assigned sector; nudged toward board edge
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 13)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:03] (+2.013s) Drone 1 moved to f7.
+INFO:root:[2025-12-22 11:16:03] (+0.003s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'south',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors',
+    'message': None,
+    'rationale': 'Closing distance to leg start and aligning with coverage leg; missing deadline'}
+INFO:root:[2025-12-22 11:16:03] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:03] (+0.000s) Simulation - Round 4.14.2/10.32.2
+INFO:root:[2025-12-22 11:16:03] (+0.001s) Drone 2 Situation:
+Current round number: 14 of 32 rounds.
+Current position: e8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, west, southeast, southwest
+Legal movements: south to e7, east to f8, west to d8, southeast to f7, southwest to d7
+Visible drones at position: None
+Visible figure at position: bishop
+Visible neighbor figures: west: black, south: black, east: white
+Memory: PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 e1 -> h1 (turn 16)
+  Waypoint timing: 7 steps away, 1 turns left (slack -6).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: e8 -> h1
+  move southwest -> Best choice (0.49) | factors: deadline_margin (-5.00), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known empty tile; new tile; nudged toward board edge
+  move south -> Okay choice (0.35) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move southeast -> Risky choice (-0.65) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move east -> Bad choice (-3.68) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), sector_inside (+0.96) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move west -> Bad choice (-4.64) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), known_figure (-0.40) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 13)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:05] (+2.073s) Drone 2 moved to d7.
+INFO:root:[2025-12-22 11:16:05] (+0.008s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'southwest',
+    'memory': 'PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'Prioritize reducing Chebyshev distance to the waypoint and aligning with coverage leg.'}
+INFO:root:[2025-12-22 11:16:05] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:05] (+0.000s) Simulation - Round 4.15.1/10.32.2
+INFO:root:[2025-12-22 11:16:05] (+0.002s) Drone 1 Situation:
+Current round number: 15 of 32 rounds.
+Current position: f7
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to f8, south to f6, east to g7, west to e7, northeast to g8, northwest to e8, southeast to g6, southwest to e6
+Visible drones at position: None
+Visible figure at position: None
+Visible neighbor figures: southwest: black, west: black, northwest: white, north: white, southeast: white, northeast: white
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 d1 -> a1 (turn 16)
+  Waypoint timing: 6 steps away, 0 turns left (slack -6).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: a8 -> d1
+  move northeast -> Best choice (15.16) | factors: deadline_margin (-7.00), figure_hint (+3.00), leg_alignment (-2.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; figure nearby; new tile; 2 unknown neighbors; nudged toward board edge
+  move northwest -> Excellent choice (9.54) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; moving toward assigned sector; nudged toward board edge
+  move north -> Excellent choice (8.76) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; nudged toward board edge
+  move southwest -> Excellent choice (5.03) | factors: deadline_margin (-5.00), figure_hint (+3.00), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; figure nearby; new tile; moving toward assigned sector
+  move southeast -> Okay choice (1.8) | factors: deadline_margin (-6.00), figure_hint (+3.00), unknown_neighbors (+3.00) | notes: closing distance to leg start; missing deadline; figure nearby; revisiting tile; 3 unknown neighbors; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move south -> Risky choice (-1.06) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known empty tile; revisiting tile
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move east -> Bad choice (-2.24) | factors: deadline_margin (-6.00), unknown_neighbors (+3.00), leg_alignment (-1.00) | notes: drifting from coverage leg; slide along horizontal leg before aligning; missing deadline; known empty tile; new tile; 3 unknown neighbors; nudged toward board edge
+  move west -> Bad choice (-3.9) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), sector_alignment (+1.00) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; moving toward assigned sector; nudged toward board edge
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 14)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:07] (+1.937s) - CORRECT: Re6xg6
+INFO:root:[2025-12-22 11:16:07] (+0.000s) - CORRECT: Re6xd6
+INFO:root:[2025-12-22 11:16:07] (+0.000s) - CORRECT: Re6-e7
+INFO:root:[2025-12-22 11:16:07] (+0.000s) - CORRECT: Re6-e5
+INFO:root:[2025-12-22 11:16:07] (+0.000s) Drone 1 moved to e6.
+INFO:root:[2025-12-22 11:16:07] (+0.010s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'southwest',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors',
+    'message': None,
+    'rationale': 'Following the sector directive and trying to close distance to leg start.'}
+INFO:root:[2025-12-22 11:16:07] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:07] (+0.000s) Simulation - Round 4.15.2/10.32.2
+INFO:root:[2025-12-22 11:16:07] (+0.002s) Drone 2 Situation:
+Current round number: 15 of 32 rounds.
+Current position: d7
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to d8, south to d6, east to e7, west to c7, northeast to e8, northwest to c8, southeast to e6, southwest to c6
+Visible drones at position: None
+Visible figure at position: None
+Visible neighbor figures: southwest: black, west: white, south: white, north: black, southeast: black, east: black, northeast: white
+Memory: PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+VISITED:3,6
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 e1 -> h1 (turn 16)
+  Waypoint timing: 6 steps away, 0 turns left (slack -6).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: e8 -> h1
+  move northwest -> Best choice (11.36) | factors: deadline_margin (-7.00), unknown_neighbors (+2.00), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known empty tile; new tile; 2 unknown neighbors; nudged toward board edge
+  move northeast -> Excellent choice (10.5) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+  move north -> Excellent choice (8.76) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; nudged toward board edge
+  move southeast -> Excellent choice (5.99) | factors: deadline_margin (-5.00), figure_hint (+3.00), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; figure nearby; new tile; moving toward assigned sector; within assigned sector
+  move southwest -> Excellent choice (5.59) | factors: deadline_margin (-5.00), figure_hint (+3.00), unknown_neighbors (+3.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; figure nearby; new tile; 3 unknown neighbors
+  move west -> Good choice (2.16) | factors: deadline_margin (-6.00), figure_hint (+3.00), unknown_neighbors (+3.00) | notes: slide along horizontal leg before aligning; missing deadline; figure nearby; new tile; 3 unknown neighbors; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move south -> Risky choice (-0.66) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move east -> Bad choice (-2.94) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), sector_alignment (+1.00) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 14)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:09] (+2.110s) Drone 2 moved to e8.
+INFO:root:[2025-12-22 11:16:09] (+0.014s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'northeast',
+    'memory': 'PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'Following the sector directive to move toward assigned sector e8 -> h1'}
+INFO:root:[2025-12-22 11:16:09] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:09] (+0.000s) Simulation - Round 4.16.1/10.32.2
+INFO:root:[2025-12-22 11:16:09] (+0.002s) Drone 1 Situation:
+Current round number: 16 of 32 rounds.
+Current position: e6
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to e7, south to e5, east to f6, west to d6, northeast to f7, northwest to d7, southeast to f5, southwest to d5
+Visible drones at position: None
+Visible figure at position: rook
+Visible neighbor figures: southwest: white, west: white, south: black, north: black
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+VISITED:4,5
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 d1 -> a1 (turn 16)
+  Waypoint timing: 5 steps away, 0 turns left (slack -5).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: a8 -> d1
+  move northwest -> Best choice (10.15) | factors: deadline_margin (-6.00), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known empty tile; new tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+  move north -> Excellent choice (6.71) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known figure tile; revisiting tile; nudged toward board edge
+  move northeast -> Excellent choice (6.31) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), leg_alignment (-1.00) | notes: drifting from leg start; drifting from coverage leg; farther from waypoint (late); missing deadline; known empty tile; revisiting tile; nudged toward board edge
+  move southwest -> Okay choice (0.49) | factors: deadline_margin (-4.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector
+  move southeast -> Risky choice (-0.25) | factors: deadline_margin (-5.00), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; missing deadline; known empty tile; new tile; 1 unknown neighbors
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move south -> Risky choice (-0.66) | factors: deadline_margin (-4.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move west -> Bad choice (-2.99) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), sector_alignment (+1.00) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector
+  move east -> Bad choice (-5.14) | factors: deadline_margin (-5.00), revisit_penalty (-1.20), known_empty (-0.80) | notes: slide along horizontal leg before aligning; missing deadline; known empty tile; revisiting tile
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 15)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:11] (+1.977s) Drone 1 moved to e7.
+INFO:root:[2025-12-22 11:16:11] (+0.014s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'north',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors',
+    'message': None,
+    'rationale': "Prioritize reducing Chebyshev distance to the waypoint as I'm behind schedule."}
+INFO:root:[2025-12-22 11:16:11] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:11] (+0.000s) Simulation - Round 4.16.2/10.32.2
+INFO:root:[2025-12-22 11:16:11] (+0.002s) Drone 2 Situation:
+Current round number: 16 of 32 rounds.
+Current position: e8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, west, southeast, southwest
+Legal movements: south to e7, east to f8, west to d8, southeast to f7, southwest to d7
+Visible drones at position: None
+Visible figure at position: bishop
+Visible neighbor figures: west: black, south: black, east: white
+Memory: PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+VISITED:3,6
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 3 e1 -> h1 (turn 16)
+  Waypoint timing: 7 steps away, 0 turns left (slack -7).
+  Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint.
+  Sector directive: e8 -> h1
+  move south -> Best choice (0.35) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sidestep toward horizontal leg; closer to waypoint (late); missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move southeast -> Risky choice (-0.65) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move southwest -> Risky choice (-1.61) | factors: deadline_margin (-6.00), revisit_penalty (-1.20), leg_alignment (+1.00) | notes: closing distance to leg start; aligning with coverage leg; closer to waypoint (late); missing deadline; known empty tile; revisiting tile; nudged toward board edge
+  move east -> Bad choice (-3.68) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), sector_inside (+0.96) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move west -> Bad choice (-4.64) | factors: deadline_margin (-7.00), revisit_penalty (-1.20), known_figure (-0.40) | notes: slide along horizontal leg before aligning; missing deadline; known figure tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 15)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:13] (+2.059s) Drone 2 moved to e7.
+INFO:root:[2025-12-22 11:16:13] (+0.010s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'south',
+    'memory': 'PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': "Prioritize reducing Chebyshev distance to the waypoint as I'm behind schedule."}
+INFO:root:[2025-12-22 11:16:13] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:13] (+0.000s) Simulation - Round 4.17.1/10.32.2
+INFO:root:[2025-12-22 11:16:13] (+0.002s) Drone 1 Situation:
+Current round number: 17 of 32 rounds.
+Current position: e7
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to e8, south to e6, east to f7, west to d7, northeast to f8, northwest to d8, southeast to f6, southwest to d6
+Visible drones at position: Drone 2
+Visible figure at position: pawn
+Visible neighbor figures: southwest: white, northwest: black, south: black, north: white, northeast: white
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+VISITED:4,5
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 a1 -> a8 (turn 24)
+  Waypoint timing: 4 steps away, 6 turns left (slack 2).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: a8 -> d1
+  broadcast -> Best choice (7.2) | factors: avg_staleness (+16.00), max_staleness (+16.00), recipients (+1.00) | notes: recipients have stale intel
+  move west -> Good choice (3.09) | factors: leg_alignment (+1.00), sector_alignment (+1.00), sector_inside (+0.96) | notes: aligning with coverage leg; sidestep toward vertical leg; known empty tile; new tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+  move southwest -> Okay choice (1.92) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector
+  move northwest -> Okay choice (0.59) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (-1.00) | notes: drifting from leg start; aligning with coverage leg; known figure tile; revisiting tile; moving toward assigned sector; within assigned sector; nudged toward board edge
+  move south -> Risky choice (-0.99) | factors: revisit_penalty (-1.20), leg_start_focus (+1.00), known_figure (-0.40) | notes: closing distance to leg start; slide along vertical leg before aligning; known figure tile; revisiting tile
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move southeast -> Risky choice (-1.43) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; known empty tile; revisiting tile
+  move north -> Bad choice (-2.32) | factors: revisit_penalty (-1.20), leg_start_focus (-1.00), known_figure (-0.40) | notes: drifting from leg start; slide along vertical leg before aligning; known figure tile; revisiting tile; nudged toward board edge
+  move northeast -> Bad choice (-2.36) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; known figure tile; revisiting tile; nudged toward board edge
+  move east -> Bad choice (-2.55) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), known_empty (-0.80) | notes: drifting from coverage leg; known empty tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 16)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:15] (+1.848s) Drone 1 moved to d7.
+INFO:root:[2025-12-22 11:16:15] (+0.010s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'west',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors',
+    'message': None,
+    'rationale': 'Following sector directive and timing rule to stay on schedule.'}
+INFO:root:[2025-12-22 11:16:15] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:15] (+0.000s) Simulation - Round 4.17.2/10.32.2
+INFO:root:[2025-12-22 11:16:15] (+0.002s) Drone 2 Situation:
+Current round number: 17 of 32 rounds.
+Current position: e7
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to e8, south to e6, east to f7, west to d7, northeast to f8, northwest to d8, southeast to f6, southwest to d6
+Visible drones at position: None
+Visible figure at position: pawn
+Visible neighbor figures: southwest: white, northwest: black, south: black, north: white, northeast: white
+Memory: PLAN: leg 3 e1 -> h1 (turn 16); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+VISITED:3,6
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 h1 -> h8 (turn 25)
+  Waypoint timing: 3 steps away, 7 turns left (slack 4).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: e8 -> h1
+  move south -> Best choice (6.07) | factors: figure_hint (+3.00), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 3 steps away without delaying leg); figure nearby; new tile; within assigned sector
+  move southeast -> Good choice (3.43) | factors: leg_alignment (+1.00), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; new tile; within assigned sector
+  move east -> Okay choice (0.81) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), sector_inside (+0.96) | notes: aligning with coverage leg; sidestep toward vertical leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  move northeast -> Okay choice (0.4) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (-1.00) | notes: drifting from leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move southwest -> Risky choice (-0.43) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move north -> Risky choice (-0.77) | factors: revisit_penalty (-1.20), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move northwest -> Risky choice (-1.76) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; nudged toward board edge
+  move west -> Risky choice (-1.95) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), known_empty (-0.80) | notes: drifting from coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 16)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:17] (+1.949s) Drone 2 moved to e6.
+INFO:root:[2025-12-22 11:16:17] (+0.014s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'south',
+    'memory': 'PLAN: leg 4 h1 -> h8 (turn 25); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'Following sector directive and moving to close distance to leg start.'}
+INFO:root:[2025-12-22 11:16:17] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:17] (+0.000s) Simulation - Round 4.18.1/10.32.2
+INFO:root:[2025-12-22 11:16:17] (+0.002s) Drone 1 Situation:
+Current round number: 18 of 32 rounds.
+Current position: d7
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to d8, south to d6, east to e7, west to c7, northeast to e8, northwest to c8, southeast to e6, southwest to c6
+Visible drones at position: None
+Visible figure at position: None
+Visible neighbor figures: southwest: black, west: white, south: white, north: black, southeast: black, east: black, northeast: white
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+VISITED:4,5
+VISITED:3,6
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 a1 -> a8 (turn 24)
+  Waypoint timing: 3 steps away, 5 turns left (slack 2).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: a8 -> d1
+  move northwest -> Best choice (2.1) | factors: leg_alignment (+1.00), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; new tile; within assigned sector; nudged toward board edge
+  move southwest -> Okay choice (1.73) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector
+  move west -> Okay choice (1.21) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), sector_inside (+0.96) | notes: aligning with coverage leg; sidestep toward vertical leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move south -> Risky choice (-0.03) | factors: revisit_penalty (-1.20), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; known figure tile; revisiting tile; within assigned sector
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move southeast -> Risky choice (-1.03) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; known figure tile; revisiting tile
+  move north -> Risky choice (-1.37) | factors: revisit_penalty (-1.20), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; slide along vertical leg before aligning; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move east -> Bad choice (-2.15) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), known_figure (-0.40) | notes: drifting from coverage leg; known figure tile; revisiting tile; nudged toward board edge
+  move northeast -> Bad choice (-2.36) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; known figure tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 17)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:19] (+1.882s) Drone 1 moved to c8.
+INFO:root:[2025-12-22 11:16:19] (+0.001s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'northwest',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors',
+    'message': None,
+    'rationale': 'Following sector directive and moving to align with coverage leg.'}
+INFO:root:[2025-12-22 11:16:19] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:19] (+0.000s) Simulation - Round 4.18.2/10.32.2
+INFO:root:[2025-12-22 11:16:19] (+0.001s) Drone 2 Situation:
+Current round number: 18 of 32 rounds.
+Current position: e6
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to e7, south to e5, east to f6, west to d6, northeast to f7, northwest to d7, southeast to f5, southwest to d5
+Visible drones at position: None
+Visible figure at position: rook
+Visible neighbor figures: southwest: white, west: white, south: black, north: black
+Memory: PLAN: leg 4 h1 -> h8 (turn 25); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+VISITED:3,6
+VISITED:4,5
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 h1 -> h8 (turn 25)
+  Waypoint timing: 3 steps away, 6 turns left (slack 3).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: e8 -> h1
+  move southwest -> Best choice (4.92) | factors: figure_hint (+3.00), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; figure nearby; new tile; 1 unknown neighbors
+  move southeast -> Good choice (3.43) | factors: leg_alignment (+1.00), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; new tile; within assigned sector
+  move east -> Good choice (2.86) | factors: leg_alignment (+1.00), sector_inside (+0.96), new_tile (+0.90) | notes: aligning with coverage leg; sidestep toward vertical leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; new tile; within assigned sector
+  move south -> Okay choice (0.57) | factors: revisit_penalty (-1.20), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector
+  move northeast -> Risky choice (-0.05) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (-1.00) | notes: drifting from leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move north -> Risky choice (-0.82) | factors: revisit_penalty (-1.20), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move west -> Bad choice (-2.2) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), known_figure (-0.40) | notes: drifting from coverage leg; known figure tile; revisiting tile
+  move northwest -> Bad choice (-2.81) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; known empty tile; revisiting tile; nudged toward board edge
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 17)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:21] (+2.012s) Drone 2 moved to f5.
+INFO:root:[2025-12-22 11:16:21] (+0.015s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'southeast',
+    'memory': 'PLAN: leg 4 h1 -> h8 (turn 25); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'Following sector directive to probe within assigned sector e8 -> h1'}
+INFO:root:[2025-12-22 11:16:21] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:21] (+0.000s) Simulation - Round 4.19.1/10.32.2
+INFO:root:[2025-12-22 11:16:21] (+0.001s) Drone 1 Situation:
+Current round number: 19 of 32 rounds.
+Current position: c8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, west, southeast, southwest
+Legal movements: south to c7, east to d8, west to b8, southeast to d7, southwest to b7
+Visible drones at position: None
+Visible figure at position: None
+Visible neighbor figures: west: black, south: white, east: black
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+VISITED:4,5
+VISITED:3,6
+VISITED:2,7
+Collected figure information: a7: a possible target, b4: a possible target, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 a1 -> a8 (turn 24)
+  Waypoint timing: 2 steps away, 4 turns left (slack 2).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: a8 -> d1
+  move west -> Best choice (7.66) | factors: figure_hint (+3.00), unknown_neighbors (+2.00), leg_alignment (+1.00) | notes: aligning with coverage leg; sidestep toward vertical leg; sector probe feasible (nearest unknown 2 steps away without delaying leg); figure nearby; new tile; 2 unknown neighbors; within assigned sector; nudged toward board edge
+  move southwest -> Good choice (4.83) | factors: unknown_neighbors (+3.00), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; sector probe feasible (nearest unknown 2 steps away without delaying leg); known empty tile; new tile; 3 unknown neighbors; within assigned sector; nudged toward board edge
+  move south -> Okay choice (0.62) | factors: revisit_penalty (-1.20), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 2 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move southeast -> Risky choice (-0.42) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move east -> Risky choice (-1.14) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), sector_inside (+0.96) | notes: drifting from coverage leg; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 18)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:23] (+1.956s) - CORRECT: Bb8xc7
+INFO:root:[2025-12-22 11:16:23] (+0.000s) Drone 1 moved to b8.
+INFO:root:[2025-12-22 11:16:23] (+0.004s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'west',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors; VISITED:3,7',
+    'message': None,
+    'rationale': 'Following sector directive and moving to align with coverage leg.'}
+INFO:root:[2025-12-22 11:16:23] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:23] (+0.000s) Simulation - Round 4.19.2/10.32.2
+INFO:root:[2025-12-22 11:16:23] (+0.001s) Drone 2 Situation:
+Current round number: 19 of 32 rounds.
+Current position: f5
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to f6, south to f4, east to g5, west to e5, northeast to g6, northwest to e6, southeast to g4, southwest to e4
+Visible drones at position: None
+Visible figure at position: None
+Visible neighbor figures: west: black, northwest: black, south: white, east: black, northeast: white
+Memory: PLAN: leg 4 h1 -> h8 (turn 25); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+VISITED:3,6
+VISITED:4,5
+VISITED:5,4
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 h1 -> h8 (turn 25)
+  Waypoint timing: 3 steps away, 5 turns left (slack 2).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: e8 -> h1
+  move east -> Best choice (6.11) | factors: figure_hint (+3.00), leg_alignment (+1.00), sector_inside (+0.96) | notes: aligning with coverage leg; sidestep toward vertical leg; figure nearby; new tile; within assigned sector; nudged toward board edge
+  move southwest -> Good choice (2.08) | factors: leg_alignment (-1.00), leg_start_focus (+1.00), unknown_neighbors (+1.00) | notes: closing distance to leg start; drifting from coverage leg; known empty tile; new tile; 1 unknown neighbors; within assigned sector
+  move north -> Okay choice (0.83) | factors: leg_start_focus (-1.00), sector_inside (+0.96), new_tile (+0.90) | notes: drifting from leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 3 steps away without delaying leg); known empty tile; new tile; within assigned sector
+  move southeast -> Okay choice (0.78) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; aligning with coverage leg; known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  move northeast -> Okay choice (0.35) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), leg_start_focus (-1.00) | notes: drifting from leg start; aligning with coverage leg; sector probe feasible (nearest unknown 3 steps away without delaying leg); known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move south -> Risky choice (-0.03) | factors: revisit_penalty (-1.20), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; known figure tile; revisiting tile; within assigned sector
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  move west -> Risky choice (-1.24) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), sector_inside (+0.96) | notes: drifting from coverage leg; known figure tile; revisiting tile; within assigned sector
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move northwest -> Risky choice (-1.5) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (-1.00) | notes: drifting from leg start; drifting from coverage leg; known figure tile; revisiting tile; within assigned sector
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 18)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:25] (+2.026s) - CORRECT: g5xf4
+INFO:root:[2025-12-22 11:16:25] (+0.000s) Drone 2 moved to g5.
+INFO:root:[2025-12-22 11:16:25] (+0.016s) Drone 2 response:
+{   'action': 'move',
+    'direction': 'east',
+    'memory': 'PLAN: leg 4 h1 -> h8 (turn 25); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4',
+    'message': None,
+    'rationale': 'move east to align with coverage leg and sidestep toward vertical leg'}
+INFO:root:[2025-12-22 11:16:25] (+0.017s) ##################################################
+INFO:root:[2025-12-22 11:16:25] (+0.000s) Simulation - Round 4.20.1/10.32.2
+INFO:root:[2025-12-22 11:16:25] (+0.002s) Drone 1 Situation:
+Current round number: 20 of 32 rounds.
+Current position: b8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, west, southeast, southwest
+Legal movements: south to b7, east to c8, west to a8, southeast to c7, southwest to a7
+Visible drones at position: None
+Visible figure at position: bishop
+Visible neighbor figures: west: black, southeast: white
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors; VISITED:3,7
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+VISITED:4,5
+VISITED:3,6
+VISITED:2,7
+VISITED:1,7
+Collected figure information: b4: a possible target, b8: black bishop, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 a1 -> a8 (turn 24)
+  Waypoint timing: 1 steps away, 3 turns left (slack 2).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: a8 -> d1
+  move west -> Best choice (6.71) | factors: figure_hint (+3.00), leg_alignment (+1.00), within_tolerance (+1.00) | notes: aligning with coverage leg; entered coverage leg corridor; sidestep toward vertical leg; skipping leg start; sector probe feasible (nearest unknown 2 steps away without delaying leg); figure nearby; new tile; within assigned sector; nudged toward board edge
+  move southwest -> Good choice (3.72) | factors: leg_alignment (+1.00), leg_start_focus (+1.00), unknown_neighbors (+1.00) | notes: closing distance to leg start; aligning with coverage leg; entered coverage leg corridor; skipping leg start; sector probe feasible (nearest unknown 2 steps away without delaying leg); known empty tile; new tile; 1 unknown neighbors; within assigned sector; nudged toward board edge
+  move south -> Good choice (2.77) | factors: leg_start_focus (+1.00), unknown_neighbors (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; sector probe feasible (nearest unknown 2 steps away without delaying leg); known empty tile; new tile; 1 unknown neighbors; within assigned sector; nudged toward board edge
+  move southeast -> Risky choice (-0.02) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move east -> Risky choice (-1.54) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), sector_inside (+0.96) | notes: drifting from coverage leg; known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 19)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:27] (+2.057s) Drone 1 moved to a8.
+INFO:root:[2025-12-22 11:16:27] (+0.005s) Drone 1 response:
+{   'action': 'move',
+    'direction': 'west',
+    'memory': 'PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors; VISITED:3,7',
+    'message': None,
+    'rationale': 'Following the sector directive and moving within assigned sector to align with coverage leg.'}
+INFO:root:[2025-12-22 11:16:27] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:27] (+0.000s) Simulation - Round 4.20.2/10.32.2
+INFO:root:[2025-12-22 11:16:27] (+0.002s) Drone 2 Situation:
+Current round number: 20 of 32 rounds.
+Current position: g5
+AllowedActions: wait, move, broadcast
+AllowedDirections: north, south, east, west, northeast, northwest, southeast, southwest
+Legal movements: north to g6, south to g4, east to h5, west to f5, northeast to h6, northwest to f6, southeast to h4, southwest to f4
+Visible drones at position: None
+Visible figure at position: pawn
+Visible neighbor figures: southwest: white, north: white, east: black
+Memory: PLAN: leg 4 h1 -> h8 (turn 25); SECTOR: e8 -> h1; RV: g6 on turn 31; FIG: white queen at d6; VISITED:7,4
+VISITED:7,4
+VISITED:6,3
+VISITED:5,2
+VISITED:5,3
+VISITED:4,4
+VISITED:3,5
+VISITED:4,6
+VISITED:5,7
+VISITED:4,7
+VISITED:3,7
+VISITED:5,6
+VISITED:3,6
+VISITED:4,5
+VISITED:5,4
+VISITED:6,4
+Collected figure information: b7: a possible target, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f3: white pawn, f4: white pawn, f8: white pawn, g5: black pawn, g6: white king, h5: black pawn
+Assigned coverage sector: e8 -> h1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 h1 -> h8 (turn 25)
+  Waypoint timing: 3 steps away, 4 turns left (slack 1).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: e8 -> h1
+  move southeast -> Best choice (2.67) | factors: leg_alignment (+1.00), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; aligning with coverage leg; entered coverage leg corridor; skipping leg start; known empty tile; new tile; within assigned sector; nudged toward board edge
+  move northeast -> Okay choice (1.24) | factors: leg_alignment (+1.00), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; aligning with coverage leg; entered coverage leg corridor; skipping leg start; known empty tile; new tile; within assigned sector; nudged toward board edge
+  move east -> Okay choice (0.4) | factors: revisit_penalty (-1.20), leg_alignment (+1.00), sector_inside (+0.96) | notes: aligning with coverage leg; entered coverage leg corridor; sidestep toward vertical leg; skipping leg start; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move northwest -> Okay choice (0.2) | factors: leg_alignment (-1.00), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; drifting from coverage leg; known empty tile; new tile; within assigned sector
+  move southwest -> Risky choice (-0.07) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), leg_start_focus (+1.00) | notes: closing distance to leg start; drifting from coverage leg; known figure tile; revisiting tile; within assigned sector
+  move south -> Risky choice (-0.38) | factors: revisit_penalty (-1.20), leg_start_focus (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; slide along vertical leg before aligning; known empty tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+  wait -> Risky choice (-1.4) | factors: idle_penalty (-1.00) | notes: no progress
+  move north -> Risky choice (-1.42) | factors: revisit_penalty (-1.20), leg_start_focus (-1.00), sector_inside (+0.96) | notes: drifting from leg start; slide along vertical leg before aligning; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  move west -> Risky choice (-1.64) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), sector_inside (+0.96) | notes: drifting from coverage leg; known empty tile; revisiting tile; within assigned sector
+Intel Share Ledger:
+  Drone 1: last shared round 1 (age 19)
+INFO:httpx:HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+INFO:root:[2025-12-22 11:16:28] (+1.007s) Drone 2 moved to h4.
+INFO:root:[2025-12-22 11:16:28] (+0.006s) Drone 2 response:
+{'action': 'move', 'direction': 'southeast', 'rationale': 'Following sector directive to move southeast and close distance to leg start.'}
+INFO:root:[2025-12-22 11:16:28] (+0.016s) ##################################################
+INFO:root:[2025-12-22 11:16:28] (+0.000s) Simulation - Round 4.21.1/10.32.2
+INFO:root:[2025-12-22 11:16:28] (+0.002s) Drone 1 Situation:
+Current round number: 21 of 32 rounds.
+Current position: a8
+AllowedActions: wait, move, broadcast
+AllowedDirections: south, east, southeast
+Legal movements: south to a7, east to b8, southeast to b7
+Visible drones at position: None
+Visible figure at position: pawn
+Visible neighbor figures: east: black
+Memory: PLAN: d8 -> d1 (turn 13); SECTOR: a8 -> d1; RV: g6, turn 31; FIG: knight at d8; POSSIBLE: unknown neighbors; VISITED:3,7
+VISITED:6,5
+VISITED:5,5
+VISITED:4,4
+VISITED:3,3
+VISITED:3,4
+VISITED:2,5
+VISITED:3,5
+VISITED:4,6
+VISITED:3,7
+VISITED:2,6
+VISITED:4,7
+VISITED:5,7
+VISITED:5,6
+VISITED:4,5
+VISITED:3,6
+VISITED:2,7
+VISITED:1,7
+VISITED:0,7
+Collected figure information: a8: black pawn, b4: a possible target, b8: black bishop, c6: black pawn, c7: white rook, d4: black pawn, d5: white knight, d6: white queen, d8: black knight, e5: black pawn, e6: black rook, e7: black pawn, e8: white bishop, f8: white pawn
+Assigned coverage sector: a8 -> d1
+Rendezvous directive: g6 on turn 31
+Broadcast Rx Buffer: None
+Decision Support:
+  Plan focus: leg 4 a1 -> a8 (turn 24)
+  Waypoint timing: 0 steps away, 2 turns left (slack 2).
+  Timing rule: on schedule -> no timing bias unless distance exceeds turns left.
+  Sector directive: a8 -> d1
+  move southeast -> Best choice (2.88) | factors: leg_alignment (-1.00), leg_start_focus (+1.00), unknown_neighbors (+1.00) | notes: closing distance to leg start; drifting from coverage leg; sideways probe off leg; known empty tile; new tile; 1 unknown neighbors; within assigned sector; nudged toward board edge
+  move south -> Good choice (2.52) | factors: leg_start_focus (+1.00), unknown_neighbors (+1.00), sector_inside (+0.96) | notes: closing distance to leg start; skipping leg start; known empty tile; new tile; 1 unknown neighbors; within assigned sector; nudged toward board edge
+  wait -> Risky choice (-0.2) | factors: idle_penalty (-1.00), holding_pattern (+0.30) | notes: holding position at waypoint
+  move east -> Risky choice (-0.39) | factors: revisit_penalty (-1.20), leg_alignment (-1.00), sector_inside (+0.96) | notes: drifting from coverage leg; sideways probe off leg; known figure tile; revisiting tile; within assigned sector; nudged toward board edge
+  broadcast -> Risky choice (-0.5) | factors: recipients (+0.00) | notes: no co-located drones
+Intel Share Ledger:
+  Drone 2: last shared round 1 (age 20)

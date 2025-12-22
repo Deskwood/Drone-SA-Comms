@@ -401,7 +401,7 @@ class _Drone_Mission_Support:
 
         plan: List[dict] = []
         leg_id = 1
-        current_turn = 1
+        current_turn = max(1, int(getattr(self.drone.sim, "round", 1) or 1))
         start_pos = tuple(self.drone.position)
 
         max_rounds = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1))
@@ -633,6 +633,20 @@ class _Drone_Decision_Support:
                 target_vec = waypoint.get("leg_end")
                 target = cartesian_to_chess(tuple(target_vec)) if target_vec else "?"
                 lines.append(f"Plan focus: {target} by turn {waypoint.get('turn', '?')}")
+        timing = snapshot.get("waypoint_timing")
+        if timing:
+            dist = timing.get("distance")
+            turns_left = timing.get("turns_remaining")
+            slack = timing.get("slack")
+            if dist is not None and turns_left is not None:
+                lines.append(f"Waypoint timing: {dist} steps away, {turns_left} turns left (slack {slack}).")
+                if slack is not None:
+                    if slack < 0:
+                        lines.append(
+                            "Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint."
+                        )
+                    else:
+                        lines.append("Timing rule: on schedule -> no timing bias unless distance exceeds turns left.")
 
         if getattr(drone, "assigned_sector", None):
             lines.append(f"Sector directive: {drone.sector_summary()}")
@@ -921,6 +935,18 @@ class _Drone_Decision_Support:
         current_leg = next_wp if next_wp and next_wp.get("leg_start") else None
         current_leg_distance = drone._distance_to_leg(drone.position, current_leg) if current_leg else None
         current_leg_end_distance = drone._distance_to_leg_end(drone.position, current_leg) if current_leg else None
+        timing_turns_remaining: Optional[int] = None
+        timing_distance: Optional[int] = None
+        timing_slack: Optional[int] = None
+        if target_pos and next_wp and next_wp.get("turn") is not None:
+            try:
+                timing_turns_remaining = max(0, int(next_wp["turn"]) - (current_round + 1))
+                timing_distance = chebyshev_distance(drone.position, target_pos)
+                timing_slack = timing_turns_remaining - timing_distance
+            except (TypeError, ValueError):
+                timing_turns_remaining = None
+                timing_distance = None
+                timing_slack = None
         current_leg_start: Optional[Tuple[int, int]] = None
         current_leg_start_distance: Optional[int] = None
         if current_leg:
@@ -1042,52 +1068,51 @@ class _Drone_Decision_Support:
             if target_pos:
                 current_dist = chebyshev_distance(drone.position, target_pos)
                 new_dist = chebyshev_distance(new_pos, target_pos)
-                turns_remaining = max(0, next_wp["turn"] - (current_round + 1))
-                slack = turns_remaining - new_dist
+                turns_remaining = timing_turns_remaining
+                if turns_remaining is None and next_wp and next_wp.get("turn") is not None:
+                    try:
+                        turns_remaining = max(0, int(next_wp["turn"]) - (current_round + 1))
+                    except (TypeError, ValueError):
+                        turns_remaining = None
+                slack = turns_remaining - new_dist if turns_remaining is not None else None
 
-                delta = current_dist - new_dist
-                score_components["plan_progress"] = delta
-                if delta > 0:
-                    score += waypoint_progress_reward
-                    notes.append("closer to waypoint")
-                elif delta < 0:
-                    regression_penalty = waypoint_regression_penalty
-                    if slack < 0:
-                        regression_penalty += late_penalty_multiplier * abs(slack)
-                    score += regression_penalty
-                    notes.append("farther from waypoint")
+                if slack is not None and slack < 0:
+                    delta = current_dist - new_dist
+                    score_components["plan_progress"] = delta
+                    if delta > 0:
+                        score += waypoint_progress_reward
+                        notes.append("closer to waypoint (late)")
+                    elif delta < 0:
+                        regression_penalty = waypoint_regression_penalty + late_penalty_multiplier * abs(slack)
+                        score += regression_penalty
+                        notes.append("farther from waypoint (late)")
 
-                score_components["deadline_margin"] = float(slack)
-                if slack >= 0:
-                    score += deadline_slack_bonus
-                    notes.append("on schedule")
-                else:
+                    score_components["deadline_margin"] = float(slack)
                     slack_penalty = deadline_slack_penalty * max(1.0, late_penalty_multiplier)
                     score += slack_penalty
                     notes.append("missing deadline")
 
-                if next_wp.get("duration_turns", 0) > 0:
+                if next_wp.get("duration_turns", 0) > 0 and slack is not None:
                     buffer_turns = max(0, slack)
                     score_components["rendezvous_buffer"] = float(buffer_turns)
                     suffix = "turn" if buffer_turns == 1 else "turns"
                     notes.append(f"{buffer_turns} {suffix} left to reach rendezvous on time")
-                    if buffer_turns == 0:
-                        if slack < 0:
-                            notes.append("rendezvous already overdue - move immediately")
-                        else:
-                            notes.append("critical rendezvous move - no buffer remaining")
+                    if buffer_turns == 0 and slack < 0:
+                        notes.append("rendezvous already overdue - move immediately")
 
                 if new_dist <= 0:
                     score += tolerance_bonus
                     score_components["within_tolerance"] = 1.0
 
-                if sector_unknown_tiles and sector_unknown_probe_bonus and slack >= sector_unknown_probe_min_slack:
-                    if closest_probe_distance is not None and slack >= closest_probe_distance:
-                        score += sector_unknown_probe_bonus
-                        score_components["sector_unknown_probe"] = round(sector_unknown_probe_bonus, 2)
-                        notes.append(
-                            f"sector probe feasible (nearest unknown {closest_probe_distance} steps away without delaying leg)"
-                        )
+                if sector_unknown_tiles and sector_unknown_probe_bonus and slack is not None:
+                    if slack >= sector_unknown_probe_min_slack:
+                        if closest_probe_distance is not None and slack >= closest_probe_distance:
+                            score += sector_unknown_probe_bonus
+                            score_components["sector_unknown_probe"] = round(sector_unknown_probe_bonus, 2)
+                            notes.append(
+                                "sector probe feasible (nearest unknown "
+                                f"{closest_probe_distance} steps away without delaying leg)"
+                            )
 
             if tile_info["type"] == "unknown":
                 score += unknown_tile_bonus
@@ -1237,6 +1262,13 @@ class _Drone_Decision_Support:
         return {
             "scores": scores,
             "next_waypoint": next_wp,
+            "waypoint_timing": {
+                "distance": timing_distance,
+                "turns_remaining": timing_turns_remaining,
+                "slack": timing_slack,
+            }
+            if timing_turns_remaining is not None and timing_distance is not None
+            else None,
             "intel_ledger": intel_ledger,
             "coordination_suggestion": coordination_suggestion,
             "sector_unknown_target": nearest_sector_unknown,

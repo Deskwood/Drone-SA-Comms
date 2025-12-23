@@ -770,6 +770,89 @@ class _Drone_Decision_Support:
             "border_bias",
         ]
 
+        move_param_map = [
+            ("waypoint_progress_reward_per_step", "waypoint_progress"),
+            ("waypoint_regression_penalty_per_step", "waypoint_regression"),
+            ("late_penalty_multiplier", "waypoint_regression, deadline_penalty"),
+            ("deadline_slack_penalty", "deadline_penalty"),
+            ("tolerance_bonus", "tolerance_bonus"),
+            ("leg_start_progress_reward", "leg_start_progress"),
+            ("leg_start_regression_penalty", "leg_start_regression"),
+            ("leg_alignment_reward", "leg_alignment"),
+            ("leg_alignment_penalty", "leg_alignment"),
+            ("leg_travel_reward", "leg_travel"),
+            ("leg_travel_penalty", "leg_travel"),
+            ("leg_sideways_reward", "leg_sideways_reward"),
+            ("leg_sideways_inspection_bonus", "leg_sideways_probe"),
+            ("leg_along_penalty", "leg_along_penalty"),
+            ("sector_alignment_reward", "sector_alignment"),
+            ("sector_inside_bonus", "sector_inside"),
+            ("sector_unknown_probe_bonus", "sector_unknown_probe"),
+            ("sector_unknown_probe_min_slack", "sector_unknown_probe"),
+            ("unknown_tile_bonus", "discover_type"),
+            ("possible_target_bonus", "possible_target"),
+            ("figure_hint_bonus", "figure_hint"),
+            ("known_figure_penalty", "known_figure"),
+            ("known_empty_penalty", "known_empty"),
+            ("unknown_color_bonus", "discover_color"),
+            ("revisit_penalty", "revisit_penalty"),
+            ("novel_tile_bonus", "new_tile"),
+            ("unknown_neighbor_bonus_per_tile", "unknown_neighbors"),
+            ("board_edge_bias_bonus", "border_bias"),
+            ("board_edge_bias_range", "border_bias"),
+        ]
+
+        def _format_param_value(value: object) -> str:
+            if value is None:
+                return "n/a"
+            return str(value)
+
+        def _build_param_table(
+            param_specs: List[Tuple[str, str]],
+            params: Dict[str, object],
+            title: str,
+        ) -> List[str]:
+            if not param_specs or not params:
+                return []
+            headers = ["Parameter", "Value", "Log columns"]
+            rows: List[List[str]] = []
+            for key, columns in param_specs:
+                if key not in params:
+                    continue
+                value_text = _format_param_value(params.get(key))
+                rows.append([key, value_text, columns])
+            if not rows:
+                return []
+
+            widths = []
+            for col_idx, header in enumerate(headers):
+                width = len(header)
+                for row in rows:
+                    width = max(width, len(row[col_idx]))
+                widths.append(width)
+
+            aligns = ["left", "right", "left"]
+
+            def _pad(text: str, width: int, align: str) -> str:
+                return text.rjust(width) if align == "right" else text.ljust(width)
+
+            table_lines = []
+            if title:
+                table_lines.append(title)
+            header_line = " | ".join(
+                _pad(headers[idx], widths[idx], aligns[idx]) for idx in range(len(headers))
+            )
+            divider_line = "-+-".join("-" * widths[idx] for idx in range(len(headers)))
+            table_lines.append(header_line)
+            table_lines.append(divider_line)
+            for row in rows:
+                table_lines.append(
+                    " | ".join(
+                        _pad(row[idx], widths[idx], aligns[idx]) for idx in range(len(headers))
+                    )
+                )
+            return table_lines
+
         def _build_score_table(
             entries: List[Dict[str, object]],
             title: str,
@@ -836,6 +919,10 @@ class _Drone_Decision_Support:
                     )
                 )
             return table_lines
+
+        move_params = snapshot.get("move_params") or {}
+        if move_params:
+            lines.extend(_build_param_table(move_param_map, move_params, "Move parameters:"))
 
         if sorted_scores:
             move_entries = [entry for entry in sorted_scores if entry.get("action") == "move"]
@@ -981,7 +1068,6 @@ class _Drone_Decision_Support:
 
         waypoint_progress_reward = move_cfg.get("waypoint_progress_reward_per_step", 1.0)
         waypoint_regression_penalty = move_cfg.get("waypoint_regression_penalty_per_step", -1.0)
-        deadline_slack_bonus = move_cfg.get("deadline_slack_bonus", 0.2)
         deadline_slack_penalty = move_cfg.get("deadline_slack_penalty", -1.0)
         tolerance_bonus = move_cfg.get("tolerance_bonus", 0.5)
         unknown_tile_bonus = move_cfg.get("unknown_tile_bonus", 1.0)
@@ -1009,6 +1095,38 @@ class _Drone_Decision_Support:
         border_edge_range = int(move_cfg.get("board_edge_bias_range", 1))
         sector_unknown_probe_bonus = move_cfg.get("sector_unknown_probe_bonus", 0.0)
         sector_unknown_probe_min_slack = float(move_cfg.get("sector_unknown_probe_min_slack", 1))
+
+        move_params = {
+            "waypoint_progress_reward_per_step": waypoint_progress_reward,
+            "waypoint_regression_penalty_per_step": waypoint_regression_penalty,
+            "deadline_slack_penalty": deadline_slack_penalty,
+            "tolerance_bonus": tolerance_bonus,
+            "unknown_tile_bonus": unknown_tile_bonus,
+            "possible_target_bonus": possible_target_bonus,
+            "figure_hint_bonus": figure_hint_bonus,
+            "known_figure_penalty": known_figure_penalty,
+            "known_empty_penalty": known_empty_penalty,
+            "unknown_color_bonus": unknown_color_bonus,
+            "unknown_neighbor_bonus_per_tile": unknown_neighbor_bonus,
+            "novel_tile_bonus": novel_tile_bonus,
+            "revisit_penalty": revisit_penalty,
+            "leg_alignment_reward": leg_alignment_reward,
+            "leg_alignment_penalty": leg_alignment_penalty,
+            "leg_travel_reward": leg_travel_reward,
+            "leg_travel_penalty": leg_travel_penalty,
+            "leg_sideways_reward": leg_sideways_reward,
+            "leg_sideways_inspection_bonus": leg_sideways_probe_bonus,
+            "leg_along_penalty": leg_along_penalty,
+            "leg_start_progress_reward": leg_start_progress_reward,
+            "leg_start_regression_penalty": leg_start_regression_penalty,
+            "sector_alignment_reward": sector_alignment_reward,
+            "sector_inside_bonus": sector_inside_bonus,
+            "late_penalty_multiplier": late_penalty_multiplier,
+            "board_edge_bias_bonus": border_edge_bonus,
+            "board_edge_bias_range": border_edge_range,
+            "sector_unknown_probe_bonus": sector_unknown_probe_bonus,
+            "sector_unknown_probe_min_slack": sector_unknown_probe_min_slack,
+        }
 
         broadcast_base_penalty = broadcast_cfg.get("base_penalty", -0.5)
         broadcast_recipient_factor = broadcast_cfg.get("recipient_factor", 0.8)
@@ -1377,6 +1495,7 @@ class _Drone_Decision_Support:
 
         return {
             "scores": scores,
+            "move_params": move_params,
             "next_waypoint": next_wp,
             "waypoint_timing": {
                 "distance": timing_distance,

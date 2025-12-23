@@ -53,6 +53,40 @@ Notes:
 | `unknown_neighbors` | `decision_support.scoring.move.unknown_neighbor_bonus_per_tile` | `0.45` | Adds `unknown_neighbor_bonus_per_tile * unknown_neighbors` when `unknown_neighbors > 0`. |
 | `border_bias` | `decision_support.scoring.move.board_edge_bias_bonus`, `decision_support.scoring.move.board_edge_bias_range` | `0.05`, `1` | If `border_distance <= board_edge_bias_range`, adds `board_edge_bias_bonus * max(1, board_edge_bias_range - border_distance + 1)`. |
 
+## Move parameter values (config -> log column keys)
+
+| Config key | Current value | Log column(s) |
+| --- | --- | --- |
+| `decision_support.scoring.move.waypoint_progress_reward_per_step` | `1.1390557352137365` | `waypoint_progress` |
+| `decision_support.scoring.move.waypoint_regression_penalty_per_step` | `-0.316352144799844` | `waypoint_regression` |
+| `decision_support.scoring.move.late_penalty_multiplier` | `2.0` | `waypoint_regression`, `deadline_penalty` |
+| `decision_support.scoring.move.deadline_slack_penalty` | `-1.2848331439337206` | `deadline_penalty` |
+| `decision_support.scoring.move.tolerance_bonus` | `0.21237937241286878` | `tolerance_bonus` |
+| `decision_support.scoring.move.leg_start_progress_reward` | `1.1733817270595754` | `leg_start_progress` |
+| `decision_support.scoring.move.leg_start_regression_penalty` | `-0.2581200428311292` | `leg_start_regression` |
+| `decision_support.scoring.move.leg_alignment_reward` | `0.6` | `leg_alignment` |
+| `decision_support.scoring.move.leg_alignment_penalty` | `-0.6` | `leg_alignment` |
+| `decision_support.scoring.move.leg_travel_reward` | `0.3682416522100012` | `leg_travel` |
+| `decision_support.scoring.move.leg_travel_penalty` | `-0.299138984543186` | `leg_travel` |
+| `decision_support.scoring.move.leg_sideways_reward` | `0.5973113343180227` | `leg_sideways_reward` |
+| `decision_support.scoring.move.leg_sideways_inspection_bonus` | `0.7519634110819631` | `leg_sideways_probe` |
+| `decision_support.scoring.move.leg_along_penalty` | `-0.5662462252883823` | `leg_along_penalty` |
+| `decision_support.scoring.move.sector_alignment_reward` | `0.7850850533649799` | `sector_alignment` |
+| `decision_support.scoring.move.sector_inside_bonus` | `0.959147417154021` | `sector_inside` |
+| `decision_support.scoring.move.sector_unknown_probe_bonus` | `0.6` | `sector_unknown_probe` |
+| `decision_support.scoring.move.sector_unknown_probe_min_slack` | `1.1676590478688627` | `sector_unknown_probe` |
+| `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | `discover_type` |
+| `decision_support.scoring.move.possible_target_bonus` | `1.2` | `possible_target` |
+| `decision_support.scoring.move.figure_hint_bonus` | `3.0` | `figure_hint` |
+| `decision_support.scoring.move.known_figure_penalty` | `-0.4` | `known_figure` |
+| `decision_support.scoring.move.known_empty_penalty` | `-0.8` | `known_empty` |
+| `decision_support.scoring.move.unknown_color_bonus` | `0.5` | `discover_color` |
+| `decision_support.scoring.move.revisit_penalty` | `-1.2` | `revisit_penalty` |
+| `decision_support.scoring.move.novel_tile_bonus` | `0.9` | `new_tile` |
+| `decision_support.scoring.move.unknown_neighbor_bonus_per_tile` | `0.45` | `unknown_neighbors` |
+| `decision_support.scoring.move.board_edge_bias_bonus` | `0.05` | `border_bias` |
+| `decision_support.scoring.move.board_edge_bias_range` | `1` | `border_bias` |
+
 ## Broadcast scoring components (log column keys)
 
 | Component key | Config key(s) | Current value(s) | Adds to score when... |
@@ -80,7 +114,6 @@ Notes:
 
 | Config key | Current value | Status |
 | --- | --- | --- |
-| `decision_support.scoring.move.deadline_slack_bonus` | `-0.16352244315206657` | Read but not used in scoring. |
 | `decision_support.scoring.broadcast.min_staleness_rounds` | `2` | Not referenced in code. |
 | `decision_support.scoring.broadcast.fresh_penalty` | `-2.0` | Not referenced in code. |
 | `decision_support.scoring.wait.idle_penalty_component` | `-1.0` | Read but not used in scoring. |

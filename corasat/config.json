@@ -48,7 +48,6 @@
       "move": {
         "waypoint_progress_reward_per_step": 1.1390557352137365,
         "waypoint_regression_penalty_per_step": -0.316352144799844,
-        "deadline_slack_bonus": -0.16352244315206657,
         "deadline_slack_penalty": -1.2848331439337206,
         "tolerance_bonus": 0.21237937241286878,
         "unknown_tile_bonus": 1.0,

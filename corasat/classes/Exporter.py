@@ -15,12 +15,10 @@ from typing import Any, Dict, List, Optional
 import uuid
 
 RESULTS_FIELDS = [
-    "run_id",
     "timestamp",
-    "commit_sha",
-    "config_hash",
     "model",
     "seed",
+    "norm_score",
     "rounds",
     "broadcasts",
     "coverage",
@@ -28,9 +26,11 @@ RESULTS_FIELDS = [
     "false_edges",
     "total_gt_edges",
     "mission_score",
-    "norm_score",
     "runtime_s",
     "logfile",
+    "run_id",
+    "commit_sha",
+    "config_hash",
 ]
 
 

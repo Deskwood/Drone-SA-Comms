@@ -746,60 +746,28 @@ class _Drone_Decision_Support:
         move_component_keys = [
             "waypoint_progress",
             "waypoint_regression",
-            "deadline_penalty",
-            "tolerance_bonus",
-            "leg_start_progress",
-            "leg_start_regression",
             "leg_alignment",
-            "leg_travel",
-            "leg_sideways_reward",
-            "leg_sideways_probe",
-            "leg_along_penalty",
             "sector_alignment",
-            "sector_inside",
-            "sector_unknown_probe",
-            "discover_type",
+            "unknown_tile_bonus",
             "possible_target",
             "figure_hint",
-            "known_figure",
-            "known_empty",
-            "discover_color",
             "revisit_penalty",
-            "new_tile",
-            "unknown_neighbors",
-            "border_bias",
+            "neighborhood_potential",
         ]
 
         move_param_map = [
             ("waypoint_progress_reward_per_step", "waypoint_progress"),
             ("waypoint_regression_penalty_per_step", "waypoint_regression"),
-            ("late_penalty_multiplier", "waypoint_regression, deadline_penalty"),
-            ("deadline_slack_penalty", "deadline_penalty"),
-            ("tolerance_bonus", "tolerance_bonus"),
-            ("leg_start_progress_reward", "leg_start_progress"),
-            ("leg_start_regression_penalty", "leg_start_regression"),
+            ("late_penalty_multiplier", "waypoint_regression"),
             ("leg_alignment_reward", "leg_alignment"),
             ("leg_alignment_penalty", "leg_alignment"),
-            ("leg_travel_reward", "leg_travel"),
-            ("leg_travel_penalty", "leg_travel"),
-            ("leg_sideways_reward", "leg_sideways_reward"),
-            ("leg_sideways_inspection_bonus", "leg_sideways_probe"),
-            ("leg_along_penalty", "leg_along_penalty"),
             ("sector_alignment_reward", "sector_alignment"),
-            ("sector_inside_bonus", "sector_inside"),
-            ("sector_unknown_probe_bonus", "sector_unknown_probe"),
-            ("sector_unknown_probe_min_slack", "sector_unknown_probe"),
-            ("unknown_tile_bonus", "discover_type"),
+            ("unknown_tile_bonus", "unknown_tile_bonus"),
             ("possible_target_bonus", "possible_target"),
             ("figure_hint_bonus", "figure_hint"),
-            ("known_figure_penalty", "known_figure"),
-            ("known_empty_penalty", "known_empty"),
-            ("unknown_color_bonus", "discover_color"),
             ("revisit_penalty", "revisit_penalty"),
-            ("novel_tile_bonus", "new_tile"),
-            ("unknown_neighbor_bonus_per_tile", "unknown_neighbors"),
-            ("board_edge_bias_bonus", "border_bias"),
-            ("board_edge_bias_range", "border_bias"),
+            ("neighborhood_potential", "neighborhood_potential"),
+            ("border_bonus", "neighborhood_potential"),
         ]
 
         def _format_param_value(value: object) -> str:
@@ -996,21 +964,25 @@ class _Drone_Decision_Support:
             "user_content": user_content,
         }
 
-    def _count_unknown_neighbors(self, pos: Tuple[int, int]) -> int:
+    def _compute_neighborhood_potential(self, pos: Tuple[int, int], border_bonus: float) -> float:
         drone = self.drone
-        count = 0
+        weights = {
+            "any figure": 3.0,
+            "a possible target": 1.0,
+        }
+        total = 0.0
         for dx in [-1, 0, 1]:
             for dy in [-1, 0, 1]:
                 if dx == 0 and dy == 0:
                     continue
                 nx, ny = pos[0] + dx, pos[1] + dy
                 if not on_board(nx, ny):
+                    total += border_bonus
                     continue
                 key = cartesian_to_chess((nx, ny))
-                info = drone.local_board.get(key, {"color": "unknown", "type": "unknown"})
-                if info["type"] in {"unknown", "a possible target"} or info["color"] == "unknown":
-                    count += 1
-        return count
+                info = drone.local_board.get(key, {"type": "unknown"})
+                total += weights.get(info.get("type"), 0.0)
+        return total
 
     def _distance_to_sector(self, point: Tuple[int, int], bounds: Tuple[int, int, int, int]) -> Optional[int]:
         if point is None or bounds is None:
@@ -1068,64 +1040,30 @@ class _Drone_Decision_Support:
 
         waypoint_progress_reward = move_cfg.get("waypoint_progress_reward_per_step", 1.0)
         waypoint_regression_penalty = move_cfg.get("waypoint_regression_penalty_per_step", -1.0)
-        deadline_slack_penalty = move_cfg.get("deadline_slack_penalty", -1.0)
-        tolerance_bonus = move_cfg.get("tolerance_bonus", 0.5)
         unknown_tile_bonus = move_cfg.get("unknown_tile_bonus", 1.0)
         possible_target_bonus = move_cfg.get("possible_target_bonus", 1.2)
         figure_hint_bonus = move_cfg.get("figure_hint_bonus", 0.6)
-        known_figure_penalty = move_cfg.get("known_figure_penalty", -0.2)
-        known_empty_penalty = move_cfg.get("known_empty_penalty", -0.6)
-        unknown_color_bonus = move_cfg.get("unknown_color_bonus", 0.5)
-        unknown_neighbor_bonus = move_cfg.get("unknown_neighbor_bonus_per_tile", 0.2)
-        novel_tile_bonus = move_cfg.get("novel_tile_bonus", 0.6)
+        neighborhood_potential_factor = move_cfg.get("neighborhood_potential", 0.2)
+        border_bonus = move_cfg.get("border_bonus", 0.0)
         revisit_penalty = move_cfg.get("revisit_penalty", -1.0)
         leg_alignment_reward = move_cfg.get("leg_alignment_reward", 0.6)
         leg_alignment_penalty = move_cfg.get("leg_alignment_penalty", -0.6)
-        leg_travel_reward = move_cfg.get("leg_travel_reward", 0.9)
-        leg_travel_penalty = move_cfg.get("leg_travel_penalty", -0.3)
-        leg_sideways_reward = move_cfg.get("leg_sideways_reward", 1.2)
-        leg_sideways_probe_bonus = move_cfg.get("leg_sideways_inspection_bonus", leg_sideways_reward)
-        leg_along_penalty = move_cfg.get("leg_along_penalty", -0.7)
-        leg_start_progress_reward = move_cfg.get("leg_start_progress_reward", 1.2)
-        leg_start_regression_penalty = move_cfg.get("leg_start_regression_penalty", -1.0)
         sector_alignment_reward = move_cfg.get("sector_alignment_reward", 0.8)
-        sector_inside_bonus = move_cfg.get("sector_inside_bonus", 0.5)
         late_penalty_multiplier = move_cfg.get("late_penalty_multiplier", 2.0)
-        border_edge_bonus = move_cfg.get("board_edge_bias_bonus", 0.2)
-        border_edge_range = int(move_cfg.get("board_edge_bias_range", 1))
-        sector_unknown_probe_bonus = move_cfg.get("sector_unknown_probe_bonus", 0.0)
-        sector_unknown_probe_min_slack = float(move_cfg.get("sector_unknown_probe_min_slack", 1))
 
         move_params = {
             "waypoint_progress_reward_per_step": waypoint_progress_reward,
             "waypoint_regression_penalty_per_step": waypoint_regression_penalty,
-            "deadline_slack_penalty": deadline_slack_penalty,
-            "tolerance_bonus": tolerance_bonus,
             "unknown_tile_bonus": unknown_tile_bonus,
             "possible_target_bonus": possible_target_bonus,
             "figure_hint_bonus": figure_hint_bonus,
-            "known_figure_penalty": known_figure_penalty,
-            "known_empty_penalty": known_empty_penalty,
-            "unknown_color_bonus": unknown_color_bonus,
-            "unknown_neighbor_bonus_per_tile": unknown_neighbor_bonus,
-            "novel_tile_bonus": novel_tile_bonus,
+            "neighborhood_potential": neighborhood_potential_factor,
+            "border_bonus": border_bonus,
             "revisit_penalty": revisit_penalty,
             "leg_alignment_reward": leg_alignment_reward,
             "leg_alignment_penalty": leg_alignment_penalty,
-            "leg_travel_reward": leg_travel_reward,
-            "leg_travel_penalty": leg_travel_penalty,
-            "leg_sideways_reward": leg_sideways_reward,
-            "leg_sideways_inspection_bonus": leg_sideways_probe_bonus,
-            "leg_along_penalty": leg_along_penalty,
-            "leg_start_progress_reward": leg_start_progress_reward,
-            "leg_start_regression_penalty": leg_start_regression_penalty,
             "sector_alignment_reward": sector_alignment_reward,
-            "sector_inside_bonus": sector_inside_bonus,
             "late_penalty_multiplier": late_penalty_multiplier,
-            "board_edge_bias_bonus": border_edge_bonus,
-            "board_edge_bias_range": border_edge_range,
-            "sector_unknown_probe_bonus": sector_unknown_probe_bonus,
-            "sector_unknown_probe_min_slack": sector_unknown_probe_min_slack,
         }
 
         broadcast_base_penalty = broadcast_cfg.get("base_penalty", -0.5)
@@ -1151,7 +1089,6 @@ class _Drone_Decision_Support:
         target_pos = tuple(next_wp["leg_end"]) if next_wp else None
         current_leg = next_wp if next_wp and next_wp.get("leg_start") else None
         current_leg_distance = drone._distance_to_leg(drone.position, current_leg) if current_leg else None
-        current_leg_end_distance = drone._distance_to_leg_end(drone.position, current_leg) if current_leg else None
         timing_turns_remaining: Optional[int] = None
         timing_distance: Optional[int] = None
         timing_slack: Optional[int] = None
@@ -1164,23 +1101,9 @@ class _Drone_Decision_Support:
                 timing_turns_remaining = None
                 timing_distance = None
                 timing_slack = None
-        current_leg_start: Optional[Tuple[int, int]] = None
-        current_leg_start_distance: Optional[int] = None
-        if current_leg:
-            start_vec = current_leg.get("leg_start")
-            if isinstance(start_vec, (list, tuple)) and len(start_vec) == 2:
-                try:
-                    current_leg_start = (int(start_vec[0]), int(start_vec[1]))
-                    current_leg_start_distance = chebyshev_distance(drone.position, current_leg_start)
-                except (TypeError, ValueError):
-                    current_leg_start = None
-                    current_leg_start_distance = None
-
         sector_bounds = drone._sector_bounds() if hasattr(drone, "_sector_bounds") else None
         current_sector_distance = self._distance_to_sector(drone.position, sector_bounds) if sector_bounds else None
-        sector_unknown_tiles: List[Tuple[int, int]] = []
         nearest_sector_unknown: Optional[Dict[str, object]] = None
-        closest_probe_distance: Optional[int] = None
         if sector_bounds:
             min_x, max_x, min_y, max_y = sector_bounds
             best_unknown_dist: Optional[int] = None
@@ -1191,14 +1114,12 @@ class _Drone_Decision_Support:
                     tile_report = drone.local_board.get(tile_key, {})
                     if tile_report.get("type") == "unknown":
                         pos = (sx, sy)
-                        sector_unknown_tiles.append(pos)
                         dist = chebyshev_distance(drone.position, pos)
                         if best_unknown_dist is None or dist < best_unknown_dist:
                             best_unknown_dist = dist
                             best_unknown_pos = pos
             if best_unknown_pos is not None and best_unknown_dist is not None:
                 nearest_sector_unknown = {"tile": cartesian_to_chess(best_unknown_pos), "distance": best_unknown_dist}
-                closest_probe_distance = best_unknown_dist
 
         visited_tiles: set = set()
         for pos in getattr(drone, "mission_report", []) or []:
@@ -1217,7 +1138,6 @@ class _Drone_Decision_Support:
             score = 0.0
             score_components: Dict[str, float] = {}
             notes: List[str] = []
-            new_start_distance: Optional[int] = None
 
             def _add_component(name: str, value: float) -> None:
                 if not value:
@@ -1226,18 +1146,6 @@ class _Drone_Decision_Support:
 
             if current_leg:
                 new_leg_distance = drone._distance_to_leg(new_pos, current_leg)
-                if current_leg_start is not None:
-                    new_start_distance = chebyshev_distance(new_pos, current_leg_start)
-                    if current_leg_start_distance is not None and current_leg_start_distance > 0:
-                        delta_start = current_leg_start_distance - new_start_distance
-                        if delta_start > 0:
-                            score += leg_start_progress_reward
-                            _add_component("leg_start_progress", leg_start_progress_reward)
-                            notes.append("closing distance to leg start")
-                        elif delta_start < 0:
-                            score += leg_start_regression_penalty
-                            _add_component("leg_start_regression", leg_start_regression_penalty)
-                            notes.append("drifting from leg start")
                 if current_leg_distance is not None and new_leg_distance is not None:
                     delta_leg = current_leg_distance - new_leg_distance
                     if delta_leg > 0:
@@ -1250,50 +1158,6 @@ class _Drone_Decision_Support:
                         notes.append("drifting from coverage leg")
                     if current_leg_distance and current_leg_distance > 0 and new_leg_distance == 0:
                         notes.append("entered coverage leg corridor")
-                    orientation = (current_leg.get("orientation") or "").lower()
-                    dx = new_pos[0] - drone.position[0]
-                    dy = new_pos[1] - drone.position[1]
-                    if current_leg_distance and current_leg_distance > 0:
-                        if orientation == "vertical":
-                            if abs(dx) == 1 and abs(dy) == 0 and new_leg_distance < current_leg_distance:
-                                score += leg_sideways_reward
-                                _add_component("leg_sideways_reward", leg_sideways_reward)
-                                notes.append("sidestep toward vertical leg")
-                            if abs(dx) == 0 and abs(dy) == 1 and delta_leg <= 0:
-                                score += leg_along_penalty
-                                _add_component("leg_along_penalty", leg_along_penalty)
-                                notes.append("slide along vertical leg before aligning")
-                        elif orientation == "horizontal":
-                            if abs(dy) == 1 and abs(dx) == 0 and new_leg_distance < current_leg_distance:
-                                score += leg_sideways_reward
-                                _add_component("leg_sideways_reward", leg_sideways_reward)
-                                notes.append("sidestep toward horizontal leg")
-                            if abs(dy) == 0 and abs(dx) == 1 and delta_leg <= 0:
-                                score += leg_along_penalty
-                                _add_component("leg_along_penalty", leg_along_penalty)
-                                notes.append("slide along horizontal leg before aligning")
-                if current_leg_distance == 0 and new_leg_distance == 1:
-                    score += leg_sideways_probe_bonus
-                    _add_component("leg_sideways_probe", leg_sideways_probe_bonus)
-                    notes.append("sideways probe off leg")
-                if new_leg_distance == 0 and current_leg_end_distance is not None:
-                    if new_start_distance is not None and new_start_distance > 0:
-                        if current_leg_start_distance is not None and current_leg_start_distance > 0:
-                            score += leg_start_regression_penalty
-                            _add_component("leg_start_regression", leg_start_regression_penalty)
-                            notes.append("skipping leg start")
-                    else:
-                        new_end_distance = drone._distance_to_leg_end(new_pos, current_leg)
-                        if new_end_distance is not None:
-                            delta_end = current_leg_end_distance - new_end_distance
-                            if delta_end > 0:
-                                score += leg_travel_reward
-                                _add_component("leg_travel", leg_travel_reward)
-                                notes.append("progress along current leg")
-                            elif delta_end < 0:
-                                score += leg_travel_penalty
-                                _add_component("leg_travel", leg_travel_penalty)
-                                notes.append("retreat along current leg")
 
             if target_pos:
                 current_dist = chebyshev_distance(drone.position, target_pos)
@@ -1306,22 +1170,16 @@ class _Drone_Decision_Support:
                         turns_remaining = None
                 slack = turns_remaining - new_dist if turns_remaining is not None else None
 
-                if slack is not None and slack < 0:
-                    delta = current_dist - new_dist
-                    if delta > 0:
-                        score += waypoint_progress_reward
-                        _add_component("waypoint_progress", waypoint_progress_reward)
-                        notes.append("closer to waypoint (late)")
-                    elif delta < 0:
-                        regression_penalty = waypoint_regression_penalty + late_penalty_multiplier * abs(slack)
-                        score += regression_penalty
-                        _add_component("waypoint_regression", regression_penalty)
-                        notes.append("farther from waypoint (late)")
+                if new_dist <= current_dist:
+                    score += waypoint_progress_reward
+                    _add_component("waypoint_progress", waypoint_progress_reward)
+                    notes.append("not farther from waypoint")
 
-                    slack_penalty = deadline_slack_penalty * max(1.0, late_penalty_multiplier)
-                    score += slack_penalty
-                    _add_component("deadline_penalty", slack_penalty)
-                    notes.append("missing deadline")
+                if slack is not None and slack < 0:
+                    regression_penalty = waypoint_regression_penalty + late_penalty_multiplier * abs(slack)
+                    score += regression_penalty
+                    _add_component("waypoint_regression", regression_penalty)
+                    notes.append("late for waypoint")
 
                 if next_wp.get("duration_turns", 0) > 0 and slack is not None:
                     buffer_turns = max(0, slack)
@@ -1330,23 +1188,9 @@ class _Drone_Decision_Support:
                     if buffer_turns == 0 and slack < 0:
                         notes.append("rendezvous already overdue - move immediately")
 
-                if new_dist <= 0:
-                    score += tolerance_bonus
-                    _add_component("tolerance_bonus", tolerance_bonus)
-
-                if sector_unknown_tiles and sector_unknown_probe_bonus and slack is not None:
-                    if slack >= sector_unknown_probe_min_slack:
-                        if closest_probe_distance is not None and slack >= closest_probe_distance:
-                            score += sector_unknown_probe_bonus
-                            _add_component("sector_unknown_probe", sector_unknown_probe_bonus)
-                            notes.append(
-                                "sector probe feasible (nearest unknown "
-                                f"{closest_probe_distance} steps away without delaying leg)"
-                            )
-
             if tile_info["type"] == "unknown":
                 score += unknown_tile_bonus
-                _add_component("discover_type", unknown_tile_bonus)
+                _add_component("unknown_tile_bonus", unknown_tile_bonus)
                 notes.append("unidentified tile")
             elif tile_info["type"] == "a possible target":
                 score += possible_target_bonus
@@ -1356,34 +1200,18 @@ class _Drone_Decision_Support:
                 score += figure_hint_bonus
                 _add_component("figure_hint", figure_hint_bonus)
                 notes.append("figure nearby")
-            elif tile_info["type"] in FIGURE_TYPES and known_figure_penalty:
-                score += known_figure_penalty
-                _add_component("known_figure", known_figure_penalty)
-                notes.append("known figure tile")
-            elif tile_info["type"] == "n/a" and known_empty_penalty:
-                score += known_empty_penalty
-                _add_component("known_empty", known_empty_penalty)
-                notes.append("known empty tile")
-
-            if tile_info["color"] == "unknown":
-                score += unknown_color_bonus
-                _add_component("discover_color", unknown_color_bonus)
 
             if new_pos in visited_tiles:
                 score += revisit_penalty
                 _add_component("revisit_penalty", revisit_penalty)
                 notes.append("revisiting tile")
-            elif novel_tile_bonus:
-                score += novel_tile_bonus
-                _add_component("new_tile", novel_tile_bonus)
-                notes.append("new tile")
 
-            unknown_neighbors = self._count_unknown_neighbors(new_pos)
-            if unknown_neighbors:
-                neighbor_bonus = unknown_neighbors * unknown_neighbor_bonus
+            neighborhood_potential = self._compute_neighborhood_potential(new_pos, border_bonus)
+            if neighborhood_potential and neighborhood_potential_factor:
+                neighbor_bonus = neighborhood_potential * neighborhood_potential_factor
                 score += neighbor_bonus
-                _add_component("unknown_neighbors", neighbor_bonus)
-                notes.append(f"{unknown_neighbors} unknown neighbors")
+                _add_component("neighborhood_potential", neighbor_bonus)
+                notes.append(f"neighborhood potential {neighborhood_potential:.2f}")
 
             if sector_bounds:
                 new_sector_distance = self._distance_to_sector(new_pos, sector_bounds)
@@ -1392,24 +1220,7 @@ class _Drone_Decision_Support:
                         score += sector_alignment_reward
                         _add_component("sector_alignment", sector_alignment_reward)
                         notes.append("moving toward assigned sector")
-                    if sector_inside_bonus and new_sector_distance == 0:
-                        score += sector_inside_bonus
-                        _add_component("sector_inside", sector_inside_bonus)
-                        notes.append("within assigned sector")
 
-            if border_edge_bonus and border_edge_range >= 0:
-                border_distance = min(
-                    new_pos[0],
-                    board_w - 1 - new_pos[0],
-                    new_pos[1],
-                    board_h - 1 - new_pos[1],
-                )
-                if border_distance <= border_edge_range:
-                    bias_strength = max(1, border_edge_range - border_distance + 1)
-                    bonus = border_edge_bonus * bias_strength
-                    score += bonus
-                    _add_component("border_bias", bonus)
-                    notes.append("nudged toward board edge")
 
             scores.append(
                 {

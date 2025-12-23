@@ -17,41 +17,22 @@ Notes:
 | `slack` | `turns_remaining - new_dist` (computed per candidate move). |
 | `current_leg_distance` | Distance from current position to the leg corridor. |
 | `new_leg_distance` | Distance from candidate position to the leg corridor. |
-| `current_leg_start_distance` | Distance from current position to leg_start. |
-| `current_leg_end_distance` | Distance from current position to leg_end. |
-| `new_end_distance` | Distance from candidate position to leg_end. |
 | `visited_tiles` | Set of positions in `drone.mission_report`. |
-| `unknown_neighbors` | Count of adjacent tiles where local_board type is `unknown` or `a possible target`, or color is `unknown`. |
-| `border_distance` | `min(x, w-1-x, y, h-1-y)` for candidate position. |
+| `neighborhood_potential_sum` | Sum of neighbor weights around the candidate tile: `any figure` = 3, `a possible target` = 1, off-board neighbor = `border_bonus`, all other types = 0. |
 
 ## Movement scoring components (log column keys)
 
 | Component key | Config key(s) | Current value(s) | Adds to score when... |
 | --- | --- | --- | --- |
-| `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_reward_per_step` | `1.1390557352137365` | `slack < 0` **after the move** and `new_dist < current_dist`. Adds the reward once (not multiplied by delta). |
-| `waypoint_regression` | `decision_support.scoring.move.waypoint_regression_penalty_per_step`, `decision_support.scoring.move.late_penalty_multiplier` | `-0.316352144799844`, `2.0` | `slack < 0` and `new_dist > current_dist`. Adds `waypoint_regression_penalty_per_step + late_penalty_multiplier * abs(slack)`. |
-| `deadline_penalty` | `decision_support.scoring.move.deadline_slack_penalty`, `decision_support.scoring.move.late_penalty_multiplier` | `-1.2848331439337206`, `2.0` | `slack < 0`. Adds `deadline_slack_penalty * max(1.0, late_penalty_multiplier)`. |
-| `tolerance_bonus` | `decision_support.scoring.move.tolerance_bonus` | `0.21237937241286878` | `new_dist <= 0` (candidate move reaches the target). |
-| `leg_start_progress` | `decision_support.scoring.move.leg_start_progress_reward` | `1.1733817270595754` | `current_leg_start_distance > 0` and the move reduces distance to `leg_start`. |
-| `leg_start_regression` | `decision_support.scoring.move.leg_start_regression_penalty` | `-0.2581200428311292` | Move increases distance to `leg_start`, or the move enters the leg corridor (`new_leg_distance == 0`) while still not at `leg_start` ("skipping leg start"). |
+| `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_reward_per_step` | `1.1390557352137365` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
+| `waypoint_regression` | `decision_support.scoring.move.waypoint_regression_penalty_per_step`, `decision_support.scoring.move.late_penalty_multiplier` | `-0.316352144799844`, `2.0` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_regression_penalty_per_step + late_penalty_multiplier * abs(slack)`. |
 | `leg_alignment` | `decision_support.scoring.move.leg_alignment_reward`, `decision_support.scoring.move.leg_alignment_penalty` | `0.6`, `-0.6` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds reward, negative delta adds penalty. |
-| `leg_travel` | `decision_support.scoring.move.leg_travel_reward`, `decision_support.scoring.move.leg_travel_penalty` | `0.3682416522100012`, `-0.299138984543186` | When on the leg corridor (`new_leg_distance == 0`) and not skipping leg start: compares `current_leg_end_distance - new_end_distance` to reward progress or penalize retreat. |
-| `leg_sideways_reward` | `decision_support.scoring.move.leg_sideways_reward` | `0.5973113343180227` | If off the leg corridor and a perpendicular move (relative to leg orientation) reduces distance to the leg corridor. |
-| `leg_sideways_probe` | `decision_support.scoring.move.leg_sideways_inspection_bonus` | `0.7519634110819631` | If currently on the leg corridor and the move steps off it (`current_leg_distance == 0` and `new_leg_distance == 1`). |
-| `leg_along_penalty` | `decision_support.scoring.move.leg_along_penalty` | `-0.5662462252883823` | If off the leg corridor and a move along the leg axis does **not** reduce leg distance (`delta_leg <= 0`). |
 | `sector_alignment` | `decision_support.scoring.move.sector_alignment_reward` | `0.7850850533649799` | If sector bounds exist and the move reduces distance to the sector bounds. |
-| `sector_inside` | `decision_support.scoring.move.sector_inside_bonus` | `0.959147417154021` | If sector bounds exist and the candidate move is inside them (`new_sector_distance == 0`). |
-| `sector_unknown_probe` | `decision_support.scoring.move.sector_unknown_probe_bonus`, `decision_support.scoring.move.sector_unknown_probe_min_slack` | `0.6`, `1.1676590478688627` | Sector bounds exist, there are unknown tiles in the sector, `slack >= min_slack`, and `slack >= closest_probe_distance`. |
-| `discover_type` | `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | Destination tile has local_board type `unknown`. |
+| `unknown_tile_bonus` | `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | Destination tile has local_board type `unknown`. |
 | `possible_target` | `decision_support.scoring.move.possible_target_bonus` | `1.2` | Destination tile has local_board type `a possible target`. |
 | `figure_hint` | `decision_support.scoring.move.figure_hint_bonus` | `3.0` | Destination tile has local_board type `any figure`. |
-| `known_figure` | `decision_support.scoring.move.known_figure_penalty` | `-0.4` | Destination tile has a known figure type and penalty is non-zero. |
-| `known_empty` | `decision_support.scoring.move.known_empty_penalty` | `-0.8` | Destination tile has local_board type `n/a` and penalty is non-zero. |
-| `discover_color` | `decision_support.scoring.move.unknown_color_bonus` | `0.5` | Destination tile has local_board color `unknown`. |
 | `revisit_penalty` | `decision_support.scoring.move.revisit_penalty` | `-1.2` | Destination tile is in `visited_tiles`. |
-| `new_tile` | `decision_support.scoring.move.novel_tile_bonus` | `0.9` | Destination tile is **not** in `visited_tiles` and `novel_tile_bonus` is non-zero. |
-| `unknown_neighbors` | `decision_support.scoring.move.unknown_neighbor_bonus_per_tile` | `0.45` | Adds `unknown_neighbor_bonus_per_tile * unknown_neighbors` when `unknown_neighbors > 0`. |
-| `border_bias` | `decision_support.scoring.move.board_edge_bias_bonus`, `decision_support.scoring.move.board_edge_bias_range` | `0.05`, `1` | If `border_distance <= board_edge_bias_range`, adds `board_edge_bias_bonus * max(1, board_edge_bias_range - border_distance + 1)`. |
+| `neighborhood_potential` | `decision_support.scoring.move.neighborhood_potential`, `decision_support.scoring.move.border_bonus` | `0.45`, `0.05` | Adds `neighborhood_potential * neighborhood_potential_sum` when `neighborhood_potential_sum > 0`. |
 
 ## Move parameter values (config -> log column keys)
 
@@ -59,33 +40,16 @@ Notes:
 | --- | --- | --- |
 | `decision_support.scoring.move.waypoint_progress_reward_per_step` | `1.1390557352137365` | `waypoint_progress` |
 | `decision_support.scoring.move.waypoint_regression_penalty_per_step` | `-0.316352144799844` | `waypoint_regression` |
-| `decision_support.scoring.move.late_penalty_multiplier` | `2.0` | `waypoint_regression`, `deadline_penalty` |
-| `decision_support.scoring.move.deadline_slack_penalty` | `-1.2848331439337206` | `deadline_penalty` |
-| `decision_support.scoring.move.tolerance_bonus` | `0.21237937241286878` | `tolerance_bonus` |
-| `decision_support.scoring.move.leg_start_progress_reward` | `1.1733817270595754` | `leg_start_progress` |
-| `decision_support.scoring.move.leg_start_regression_penalty` | `-0.2581200428311292` | `leg_start_regression` |
+| `decision_support.scoring.move.late_penalty_multiplier` | `2.0` | `waypoint_regression` |
 | `decision_support.scoring.move.leg_alignment_reward` | `0.6` | `leg_alignment` |
 | `decision_support.scoring.move.leg_alignment_penalty` | `-0.6` | `leg_alignment` |
-| `decision_support.scoring.move.leg_travel_reward` | `0.3682416522100012` | `leg_travel` |
-| `decision_support.scoring.move.leg_travel_penalty` | `-0.299138984543186` | `leg_travel` |
-| `decision_support.scoring.move.leg_sideways_reward` | `0.5973113343180227` | `leg_sideways_reward` |
-| `decision_support.scoring.move.leg_sideways_inspection_bonus` | `0.7519634110819631` | `leg_sideways_probe` |
-| `decision_support.scoring.move.leg_along_penalty` | `-0.5662462252883823` | `leg_along_penalty` |
 | `decision_support.scoring.move.sector_alignment_reward` | `0.7850850533649799` | `sector_alignment` |
-| `decision_support.scoring.move.sector_inside_bonus` | `0.959147417154021` | `sector_inside` |
-| `decision_support.scoring.move.sector_unknown_probe_bonus` | `0.6` | `sector_unknown_probe` |
-| `decision_support.scoring.move.sector_unknown_probe_min_slack` | `1.1676590478688627` | `sector_unknown_probe` |
-| `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | `discover_type` |
+| `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | `unknown_tile_bonus` |
 | `decision_support.scoring.move.possible_target_bonus` | `1.2` | `possible_target` |
 | `decision_support.scoring.move.figure_hint_bonus` | `3.0` | `figure_hint` |
-| `decision_support.scoring.move.known_figure_penalty` | `-0.4` | `known_figure` |
-| `decision_support.scoring.move.known_empty_penalty` | `-0.8` | `known_empty` |
-| `decision_support.scoring.move.unknown_color_bonus` | `0.5` | `discover_color` |
 | `decision_support.scoring.move.revisit_penalty` | `-1.2` | `revisit_penalty` |
-| `decision_support.scoring.move.novel_tile_bonus` | `0.9` | `new_tile` |
-| `decision_support.scoring.move.unknown_neighbor_bonus_per_tile` | `0.45` | `unknown_neighbors` |
-| `decision_support.scoring.move.board_edge_bias_bonus` | `0.05` | `border_bias` |
-| `decision_support.scoring.move.board_edge_bias_range` | `1` | `border_bias` |
+| `decision_support.scoring.move.neighborhood_potential` | `0.45` | `neighborhood_potential` |
+| `decision_support.scoring.move.border_bonus` | `0.05` | `neighborhood_potential` |
 
 ## Broadcast scoring components (log column keys)
 

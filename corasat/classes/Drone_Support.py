@@ -746,8 +746,8 @@ class _Drone_Decision_Support:
         move_component_keys = [
             "waypoint_progress",
             "waypoint_regression",
-            "leg_alignment",
-            "sector_alignment",
+            "leg_approach_bonus",
+            "sector_compliance_bonus",
             "unknown_tile_bonus",
             "possible_target",
             "figure_hint",
@@ -756,12 +756,10 @@ class _Drone_Decision_Support:
         ]
 
         move_param_map = [
-            ("waypoint_progress_reward_per_step", "waypoint_progress"),
-            ("waypoint_regression_penalty_per_step", "waypoint_regression"),
-            ("late_penalty_multiplier", "waypoint_regression"),
-            ("leg_alignment_reward", "leg_alignment"),
-            ("leg_alignment_penalty", "leg_alignment"),
-            ("sector_alignment_reward", "sector_alignment"),
+            ("waypoint_progress_bonus", "waypoint_progress"),
+            ("waypoint_delay_penalty", "waypoint_regression"),
+            ("leg_alignment_bonus_per_step", "leg_approach_bonus"),
+            ("sector_compliance_bonus", "sector_compliance_bonus"),
             ("unknown_tile_bonus", "unknown_tile_bonus"),
             ("possible_target_bonus", "possible_target"),
             ("figure_hint_bonus", "figure_hint"),
@@ -1038,46 +1036,38 @@ class _Drone_Decision_Support:
         broadcast_cfg = scoring_cfg.get("broadcast", {})
         wait_cfg = scoring_cfg.get("wait", {})
 
-        waypoint_progress_reward = move_cfg.get("waypoint_progress_reward_per_step", 1.0)
-        waypoint_regression_penalty = move_cfg.get("waypoint_regression_penalty_per_step", -1.0)
+        waypoint_progress_bonus = move_cfg.get("waypoint_progress_bonus", 1.0)
+        waypoint_delay_penalty = move_cfg.get("waypoint_delay_penalty", -1.0)
         unknown_tile_bonus = move_cfg.get("unknown_tile_bonus", 1.0)
         possible_target_bonus = move_cfg.get("possible_target_bonus", 1.2)
         figure_hint_bonus = move_cfg.get("figure_hint_bonus", 0.6)
         neighborhood_potential_factor = move_cfg.get("neighborhood_potential", 0.2)
         border_bonus = move_cfg.get("border_bonus", 0.0)
         revisit_penalty = move_cfg.get("revisit_penalty", -1.0)
-        leg_alignment_reward = move_cfg.get("leg_alignment_reward", 0.6)
-        leg_alignment_penalty = move_cfg.get("leg_alignment_penalty", -0.6)
-        sector_alignment_reward = move_cfg.get("sector_alignment_reward", 0.8)
-        late_penalty_multiplier = move_cfg.get("late_penalty_multiplier", 2.0)
+        leg_alignment_bonus_per_step = move_cfg.get("leg_alignment_bonus_per_step", 0.6)
+        sector_compliance_bonus = move_cfg.get("sector_compliance_bonus", 0.8)
 
         move_params = {
-            "waypoint_progress_reward_per_step": waypoint_progress_reward,
-            "waypoint_regression_penalty_per_step": waypoint_regression_penalty,
+            "waypoint_progress_bonus": waypoint_progress_bonus,
+            "waypoint_delay_penalty": waypoint_delay_penalty,
             "unknown_tile_bonus": unknown_tile_bonus,
             "possible_target_bonus": possible_target_bonus,
             "figure_hint_bonus": figure_hint_bonus,
             "neighborhood_potential": neighborhood_potential_factor,
             "border_bonus": border_bonus,
             "revisit_penalty": revisit_penalty,
-            "leg_alignment_reward": leg_alignment_reward,
-            "leg_alignment_penalty": leg_alignment_penalty,
-            "sector_alignment_reward": sector_alignment_reward,
-            "late_penalty_multiplier": late_penalty_multiplier,
+            "leg_alignment_bonus_per_step": leg_alignment_bonus_per_step,
+            "sector_compliance_bonus": sector_compliance_bonus,
         }
 
-        broadcast_base_penalty = broadcast_cfg.get("base_penalty", -0.5)
-        broadcast_recipient_factor = broadcast_cfg.get("recipient_factor", 0.8)
-        broadcast_staleness_factor = broadcast_cfg.get("staleness_factor", 0.4)
+        broadcast_base_value = broadcast_cfg.get("base_broadcast_value", -0.5)
         coordination_broadcast_bonus = broadcast_cfg.get("first_turn_coordination_bonus", 2.5)
         is_first_coordination_turn = (
             drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1
         )
 
-        wait_default_score = wait_cfg.get("default_score", -1.0)
-        wait_idle_component = wait_cfg.get("idle_penalty_component", -1.0)
-        wait_holding_score = wait_cfg.get("holding_position_score", -0.2)
-        wait_holding_component = wait_cfg.get("holding_pattern_component", 0.3)
+        wait_base_value = wait_cfg.get("base_wait_value", -1.0)
+        planned_waiting_bonus = wait_cfg.get("planned_waiting_bonus", -0.2)
 
         scores: List[Dict[str, object]] = []
         current_round = drone.sim.round
@@ -1149,13 +1139,10 @@ class _Drone_Decision_Support:
                 if current_leg_distance is not None and new_leg_distance is not None:
                     delta_leg = current_leg_distance - new_leg_distance
                     if delta_leg > 0:
-                        score += leg_alignment_reward
-                        _add_component("leg_alignment", leg_alignment_reward)
+                        bonus = leg_alignment_bonus_per_step * delta_leg
+                        score += bonus
+                        _add_component("leg_approach_bonus", bonus)
                         notes.append("aligning with coverage leg")
-                    elif delta_leg < 0:
-                        score += leg_alignment_penalty
-                        _add_component("leg_alignment", leg_alignment_penalty)
-                        notes.append("drifting from coverage leg")
                     if current_leg_distance and current_leg_distance > 0 and new_leg_distance == 0:
                         notes.append("entered coverage leg corridor")
 
@@ -1171,12 +1158,12 @@ class _Drone_Decision_Support:
                 slack = turns_remaining - new_dist if turns_remaining is not None else None
 
                 if new_dist <= current_dist:
-                    score += waypoint_progress_reward
-                    _add_component("waypoint_progress", waypoint_progress_reward)
+                    score += waypoint_progress_bonus
+                    _add_component("waypoint_progress", waypoint_progress_bonus)
                     notes.append("not farther from waypoint")
 
                 if slack is not None and slack < 0:
-                    regression_penalty = waypoint_regression_penalty + late_penalty_multiplier * abs(slack)
+                    regression_penalty = waypoint_delay_penalty * abs(slack)
                     score += regression_penalty
                     _add_component("waypoint_regression", regression_penalty)
                     notes.append("late for waypoint")
@@ -1216,9 +1203,9 @@ class _Drone_Decision_Support:
             if sector_bounds:
                 new_sector_distance = self._distance_to_sector(new_pos, sector_bounds)
                 if new_sector_distance is not None:
-                    if sector_alignment_reward and current_sector_distance is not None and new_sector_distance < current_sector_distance:
-                        score += sector_alignment_reward
-                        _add_component("sector_alignment", sector_alignment_reward)
+                    if sector_compliance_bonus and current_sector_distance is not None and new_sector_distance < current_sector_distance:
+                        score += sector_compliance_bonus
+                        _add_component("sector_compliance_bonus", sector_compliance_bonus)
                         notes.append("moving toward assigned sector")
 
 
@@ -1236,7 +1223,7 @@ class _Drone_Decision_Support:
         recipients = [d for d in tile.drones if d.id != drone.id]
         broadcast_components: Dict[str, float] = {}
         broadcast_notes: List[str] = []
-        broadcast_score = broadcast_base_penalty
+        broadcast_score = broadcast_base_value
         if recipients:
             ages: List[int] = []
             for target in recipients:
@@ -1244,15 +1231,12 @@ class _Drone_Decision_Support:
                 age = current_round - last_round if last_round is not None else current_round
                 ages.append(max(age, 0))
             avg_age = sum(ages) / len(ages) if ages else 0.0
-            recipient_score = len(recipients) * broadcast_recipient_factor
-            staleness_score = avg_age * broadcast_staleness_factor
-            broadcast_components["broadcast_recipients"] = recipient_score
-            broadcast_components["broadcast_staleness"] = staleness_score
-            broadcast_score = recipient_score + staleness_score
+            broadcast_score = 0.0
+            broadcast_notes.append(f"{len(recipients)} co-located drones")
             if avg_age > 0:
                 broadcast_notes.append("recipients have stale intel")
         else:
-            broadcast_components["broadcast_base"] = broadcast_base_penalty
+            broadcast_components["broadcast_base"] = broadcast_base_value
             broadcast_notes.append("no co-located drones")
 
         if is_first_coordination_turn and coordination_broadcast_bonus:
@@ -1270,15 +1254,15 @@ class _Drone_Decision_Support:
             }
         )
 
-        wait_score = wait_default_score
+        wait_score = wait_base_value
         wait_notes: List[str] = ["no progress"]
-        wait_components: Dict[str, float] = {"wait_idle": wait_default_score}
+        wait_components: Dict[str, float] = {"wait_base": wait_base_value}
         if target_pos:
             dist_to_target = chebyshev_distance(drone.position, target_pos)
             if dist_to_target == 0 and next_wp and current_round < next_wp["turn"]:
-                wait_score = wait_holding_score
+                wait_score = planned_waiting_bonus
                 wait_notes = ["holding position at waypoint"]
-                wait_components = {"wait_holding": wait_holding_score}
+                wait_components = {"wait_planned": planned_waiting_bonus}
         scores.append(
             {
                 "action": "wait",

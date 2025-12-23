@@ -46,32 +46,24 @@
   "decision_support": {
     "scoring": {
       "move": {
-        "waypoint_progress_reward_per_step": 1.1390557352137365,
-        "waypoint_regression_penalty_per_step": -0.316352144799844,
+        "waypoint_progress_bonus": 0.5,
+        "waypoint_delay_penalty": -0.5,
         "unknown_tile_bonus": 1.0,
-        "possible_target_bonus": 1.2,
-        "figure_hint_bonus": 3.0,
-        "neighborhood_potential": 0.45,
-        "border_bonus": 0.05,
-        "leg_alignment_reward": 0.6,
-        "leg_alignment_penalty": -0.6,
-        "sector_alignment_reward": 0.7850850533649799,
-        "late_penalty_multiplier": 2.0,
-        "revisit_penalty": -1.2
+        "possible_target_bonus": 1.0,
+        "figure_hint_bonus": 1.0,
+        "neighborhood_potential": 0.5,
+        "border_bonus": 0.5,
+        "leg_alignment_bonus_per_step": 0.5,
+        "sector_compliance_bonus": 0.5,
+        "revisit_penalty": -1.0
       },
       "broadcast": {
-        "base_penalty": -0.5,
-        "recipient_factor": 0.8,
-        "staleness_factor": 0.4,
-        "first_turn_coordination_bonus": 2.5,
-        "min_staleness_rounds": 2,
-        "fresh_penalty": -2.0
+        "base_broadcast_value": -0.5,
+        "first_turn_coordination_bonus": 2.5
       },
       "wait": {
-        "default_score": -1.4,
-        "idle_penalty_component": -1.0,
-        "holding_position_score": -0.2,
-        "holding_pattern_component": 0.3
+        "base_wait_value": -1.4,
+        "planned_waiting_bonus": -0.2
       }
     }
   },

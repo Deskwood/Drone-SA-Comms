@@ -24,10 +24,10 @@ Notes:
 
 | Component key | Config key(s) | Current value(s) | Adds to score when... |
 | --- | --- | --- | --- |
-| `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_reward_per_step` | `1.1390557352137365` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
-| `waypoint_regression` | `decision_support.scoring.move.waypoint_regression_penalty_per_step`, `decision_support.scoring.move.late_penalty_multiplier` | `-0.316352144799844`, `2.0` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_regression_penalty_per_step + late_penalty_multiplier * abs(slack)`. |
-| `leg_alignment` | `decision_support.scoring.move.leg_alignment_reward`, `decision_support.scoring.move.leg_alignment_penalty` | `0.6`, `-0.6` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds reward, negative delta adds penalty. |
-| `sector_alignment` | `decision_support.scoring.move.sector_alignment_reward` | `0.7850850533649799` | If sector bounds exist and the move reduces distance to the sector bounds. |
+| `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_bonus` | `1.1390557352137365` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
+| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `-0.316352144799844` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty * abs(slack)`. |
+| `leg_approach_bonus` | `decision_support.scoring.move.leg_alignment_bonus_per_step` | `0.6` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds `leg_alignment_bonus_per_step * delta_leg` (highest when the new tile is on the leg). |
+| `sector_compliance_bonus` | `decision_support.scoring.move.sector_compliance_bonus` | `0.7850850533649799` | If sector bounds exist and the move reduces distance to the sector bounds. |
 | `unknown_tile_bonus` | `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | Destination tile has local_board type `unknown`. |
 | `possible_target` | `decision_support.scoring.move.possible_target_bonus` | `1.2` | Destination tile has local_board type `a possible target`. |
 | `figure_hint` | `decision_support.scoring.move.figure_hint_bonus` | `3.0` | Destination tile has local_board type `any figure`. |
@@ -38,12 +38,10 @@ Notes:
 
 | Config key | Current value | Log column(s) |
 | --- | --- | --- |
-| `decision_support.scoring.move.waypoint_progress_reward_per_step` | `1.1390557352137365` | `waypoint_progress` |
-| `decision_support.scoring.move.waypoint_regression_penalty_per_step` | `-0.316352144799844` | `waypoint_regression` |
-| `decision_support.scoring.move.late_penalty_multiplier` | `2.0` | `waypoint_regression` |
-| `decision_support.scoring.move.leg_alignment_reward` | `0.6` | `leg_alignment` |
-| `decision_support.scoring.move.leg_alignment_penalty` | `-0.6` | `leg_alignment` |
-| `decision_support.scoring.move.sector_alignment_reward` | `0.7850850533649799` | `sector_alignment` |
+| `decision_support.scoring.move.waypoint_progress_bonus` | `1.1390557352137365` | `waypoint_progress` |
+| `decision_support.scoring.move.waypoint_delay_penalty` | `-0.316352144799844` | `waypoint_regression` |
+| `decision_support.scoring.move.leg_alignment_bonus_per_step` | `0.6` | `leg_approach_bonus` |
+| `decision_support.scoring.move.sector_compliance_bonus` | `0.7850850533649799` | `sector_compliance_bonus` |
 | `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | `unknown_tile_bonus` |
 | `decision_support.scoring.move.possible_target_bonus` | `1.2` | `possible_target` |
 | `decision_support.scoring.move.figure_hint_bonus` | `3.0` | `figure_hint` |
@@ -55,17 +53,15 @@ Notes:
 
 | Component key | Config key(s) | Current value(s) | Adds to score when... |
 | --- | --- | --- | --- |
-| `broadcast_base` | `decision_support.scoring.broadcast.base_penalty` | `-0.5` | No co-located drones; score starts at this base penalty. |
-| `broadcast_recipients` | `decision_support.scoring.broadcast.recipient_factor` | `0.8` | Co-located drones exist; adds `count(recipients) * recipient_factor`. |
-| `broadcast_staleness` | `decision_support.scoring.broadcast.staleness_factor` | `0.4` | Co-located drones exist; adds `avg_age * staleness_factor` (age since last exchange). |
+| `broadcast_base` | `decision_support.scoring.broadcast.base_broadcast_value` | `-0.5` | No co-located drones; score starts at this base value. |
 | `coordination_bonus` | `decision_support.scoring.broadcast.first_turn_coordination_bonus` | `2.5` | Drone 1 on round 1, turn 1; adds once. |
 
 ## Wait scoring components (log column keys)
 
 | Component key | Config key(s) | Current value(s) | Adds to score when... |
 | --- | --- | --- | --- |
-| `wait_idle` | `decision_support.scoring.wait.default_score` | `-1.4` | Default wait score when not holding position at a waypoint. |
-| `wait_holding` | `decision_support.scoring.wait.holding_position_score` | `-0.2` | If at `target_pos` **and** `current_round < next_wp["turn"]`, replaces `wait_idle`. |
+| `wait_base` | `decision_support.scoring.wait.base_wait_value` | `-1.4` | Default wait score when not holding position at a waypoint. |
+| `wait_planned` | `decision_support.scoring.wait.planned_waiting_bonus` | `-0.2` | If at `target_pos` **and** `current_round < next_wp["turn"]`, replaces `wait_base`. |
 
 ## Non-score directives shown in Decision Support
 
@@ -78,7 +74,3 @@ Notes:
 
 | Config key | Current value | Status |
 | --- | --- | --- |
-| `decision_support.scoring.broadcast.min_staleness_rounds` | `2` | Not referenced in code. |
-| `decision_support.scoring.broadcast.fresh_penalty` | `-2.0` | Not referenced in code. |
-| `decision_support.scoring.wait.idle_penalty_component` | `-1.0` | Read but not used in scoring. |
-| `decision_support.scoring.wait.holding_pattern_component` | `0.3` | Read but not used in scoring. |

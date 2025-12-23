@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
 from typing import Any, Dict, List, Optional
@@ -58,6 +59,39 @@ def _resolve_log_dir(log_dir: str) -> Path:
     except NameError:
         base = Path.cwd()
     return base / path
+
+
+def _next_run_log_path(log_dir: Path, date_tag: str) -> Path:
+    """Return a new log file path for the date using the next run number."""
+    base_name = f"simulation_{date_tag}"
+    pattern = re.compile(rf"^{re.escape(base_name)}_(\d+)\.log$")
+    run_numbers: List[int] = []
+    try:
+        for existing in log_dir.glob(f"{base_name}_*.log"):
+            match = pattern.match(existing.name)
+            if match:
+                run_numbers.append(int(match.group(1)))
+    except Exception:
+        run_numbers = []
+    next_run = max(run_numbers, default=0) + 1
+    candidate = log_dir / f"{base_name}_{next_run:02d}.log"
+    while candidate.exists():
+        next_run += 1
+        candidate = log_dir / f"{base_name}_{next_run:02d}.log"
+    return candidate
+
+
+def _format_logfile_entry(logfile: Optional[Path]) -> Optional[str]:
+    """Return logfile path relative to the Code directory when possible."""
+    if logfile is None:
+        return None
+    try:
+        log_path = Path(logfile)
+        base = RESULTS_PATH.parent
+        rel_root = base.parent if base.parent.exists() else base
+        return os.path.relpath(str(log_path), start=str(rel_root))
+    except Exception:
+        return str(logfile)
 
 
 def _safe_commit_sha() -> Optional[str]:
@@ -147,6 +181,7 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
         return
     commit_sha = _safe_commit_sha()
     logfile = getattr(LOGGER, "log_path", None)
+    logfile_entry = _format_logfile_entry(logfile)
     rows: List[Dict[str, Any]] = []
     for entry in run_exports:
         sim = entry.get("sim")
@@ -175,7 +210,7 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
                 else None
             ),
             "runtime_s": round(runtime_s, 2) if isinstance(runtime_s, (int, float)) else None,
-            "logfile": logfile,
+            "logfile": logfile_entry,
         }
         rows.append(row)
     _append_results_rows(rows)
@@ -187,10 +222,9 @@ class TimestampedLogger:
 
     def __init__(self, log_dir: str = "logs", log_file: str = "simulation.log"):
         date_tag = datetime.now().strftime("%Y-%m-%d")
-        log_file = f"simulation_{date_tag}.log"
         log_dir_path = _resolve_log_dir(log_dir)
         log_dir_path.mkdir(parents=True, exist_ok=True)
-        self.log_path = log_dir_path / log_file
+        self.log_path = _next_run_log_path(log_dir_path, date_tag)
 
         root = logging.getLogger()
         for handler in list(root.handlers):
@@ -199,12 +233,6 @@ class TimestampedLogger:
             except Exception:
                 pass
             root.removeHandler(handler)
-
-        try:
-            if os.path.exists(self.log_path):
-                os.remove(self.log_path)
-        except Exception:
-            pass
 
         file_handler = logging.FileHandler(self.log_path, mode="a", encoding="utf-8", delay=False)
         console_handler = logging.StreamHandler()

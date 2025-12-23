@@ -308,7 +308,21 @@ class Simulation:
                         duration = entry.get("duration_turns", 0)
                         LOGGER.log(f"    Leg {leg_label}: {start} -> {end} (turn {turn}, duration {duration})")
 
-                for line in pprint.pformat(plan, indent=2, width=120).splitlines():
+                def _format_plan_entry(item: object) -> object:
+                    if not isinstance(item, dict):
+                        return item
+                    formatted = dict(item)
+                    for key in ("leg_start", "leg_end"):
+                        value = formatted.get(key)
+                        if isinstance(value, (list, tuple)) and len(value) == 2:
+                            try:
+                                formatted[key] = cartesian_to_chess((int(value[0]), int(value[1])))
+                            except (TypeError, ValueError):
+                                pass
+                    return formatted
+
+                plan_log = [_format_plan_entry(entry) for entry in plan]
+                for line in pprint.pformat(plan_log, indent=2, width=120).splitlines():
                     LOGGER.log(f"    {line}")
         except Exception as exc:
             LOGGER.log(f"Error logging mission plans: {exc}")

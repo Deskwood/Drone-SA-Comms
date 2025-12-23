@@ -628,6 +628,59 @@ class _Drone_Decision_Support:
         lines: List[str] = []
         ledger_lines: List[str] = []
 
+        max_rounds = CONFIG["simulation"]["max_rounds"]
+        lines.append(f"Round: {drone.sim.round}/{max_rounds}")
+        lines.append(f"Position: {cartesian_to_chess(drone.position)}")
+
+        same_tile_drones = [
+            f"Drone {other.id}"
+            for other in drone.sim.board[drone.position[0]][drone.position[1]].drones
+            if other.id != drone.id
+        ]
+        visible_drones = ", ".join(same_tile_drones) if same_tile_drones else "None"
+        fig_here = "None"
+        tile_here = drone.sim.board[drone.position[0]][drone.position[1]]
+        if tile_here.figure:
+            fig_here = tile_here.figure.figure_type
+        lines.append(f"Visible: drones={visible_drones}; figure={fig_here}")
+
+        legal_entries: List[str] = []
+        for step in drone._legal_movement_steps():
+            new_pos = step["new_position"]
+            tile = cartesian_to_chess(new_pos)
+            figure_label = None
+            tile_state = drone.sim.board[new_pos[0]][new_pos[1]]
+            if tile_state.figure:
+                color = tile_state.figure.color or "unknown"
+                info = drone.local_board.get(tile, {})
+                figure_type = info.get("type")
+                if figure_type in FIGURE_TYPES:
+                    figure_label = f"{color} {figure_type}"
+                else:
+                    figure_label = f"{color} unknown"
+            if figure_label:
+                legal_entries.append(f"{step['direction']} to {tile} ({figure_label})")
+            else:
+                legal_entries.append(f"{step['direction']} to {tile}")
+        legal_moves = ", ".join(legal_entries) or "none"
+        lines.append(f"Legal moves: {legal_moves}")
+
+        memory_text = drone.memory.strip()
+        memory_text = memory_text.replace("\n", " | ") if memory_text else "None"
+        lines.append(f"Memory: {memory_text}")
+
+        if getattr(drone, "rendezvous_directive", None):
+            rv = drone.rendezvous_directive
+            lines.append(f"Rendezvous: {rv['target']} on turn {rv['turn']}")
+
+        if drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1:
+            total_drones = CONFIG["simulation"].get("num_drones", len(getattr(drone.sim, "drones", [])))
+            lines.append(
+                "Special directive: Drone 1 must broadcast a coverage plan on the opening turn "
+                f"(JSON plan->assignments for all {total_drones} drones) before other actions; "
+                "overrides decision support ranking."
+            )
+
         waypoint = snapshot.get("next_waypoint")
         if waypoint:
             if waypoint.get("leg_start") and waypoint.get("leg_end"):
@@ -672,6 +725,7 @@ class _Drone_Decision_Support:
             key=lambda entry: entry.get("score", float("-inf")),
             reverse=True,
         )
+        rank_lookup = {id(entry): idx for idx, entry in enumerate(sorted_scores)}
 
         def _qualitative_label(rank: int, score: float) -> str:
             if rank == 0:
@@ -687,35 +741,108 @@ class _Drone_Decision_Support:
             return "Bad choice"
 
         def _format_score(value: float) -> str:
-            formatted = f"{value:.2f}"
-            if "." in formatted:
-                formatted = formatted.rstrip("0").rstrip(".")
-            return formatted
+            return f"{value:.2f}"
 
-        for idx, entry in enumerate(sorted_scores):
-            components = entry.get("components", {})
-            if components:
-                sorted_components = sorted(components.items(), key=lambda item: (-abs(item[1]), item[0]))
-                component_text = ", ".join(
-                    f"{name} ({value:+.2f})" for name, value in sorted_components[:3]
+        move_component_keys = [
+            "waypoint_progress",
+            "waypoint_regression",
+            "deadline_penalty",
+            "tolerance_bonus",
+            "leg_start_progress",
+            "leg_start_regression",
+            "leg_alignment",
+            "leg_travel",
+            "leg_sideways_reward",
+            "leg_sideways_probe",
+            "leg_along_penalty",
+            "sector_alignment",
+            "sector_inside",
+            "sector_unknown_probe",
+            "discover_type",
+            "possible_target",
+            "figure_hint",
+            "known_figure",
+            "known_empty",
+            "discover_color",
+            "revisit_penalty",
+            "new_tile",
+            "unknown_neighbors",
+            "border_bias",
+        ]
+
+        def _build_score_table(
+            entries: List[Dict[str, object]],
+            title: str,
+            component_order: Optional[List[str]] = None,
+        ) -> List[str]:
+            if not entries:
+                return []
+            seen_keys = {key for entry in entries for key in (entry.get("components") or {}).keys()}
+            component_keys = sorted(seen_keys)
+            if component_order:
+                extras = sorted(key for key in seen_keys if key not in component_order)
+                component_keys = list(component_order) + extras
+            headers = ["Action", "Choice", "Score"] + component_keys + ["Notes"]
+            rows: List[List[str]] = []
+            max_note_len = 120
+            for entry in entries:
+                components = entry.get("components") or {}
+                action = (entry.get("action") or "-").strip()
+                label = (entry.get("label") or "").strip()
+                if action == "move" and label:
+                    action_text = f"{action} {label}"
+                elif action in {"broadcast", "wait"}:
+                    action_text = action
+                elif label and label != "-":
+                    action_text = f"{action} {label}"
+                else:
+                    action_text = action
+                rank = rank_lookup.get(id(entry), 0)
+                qualitative = _qualitative_label(rank, entry.get("score", 0.0))
+                score_text = _format_score(entry.get("score", 0.0))
+                comp_values = [f"{components.get(key, 0.0):+.2f}" for key in component_keys]
+                notes = "; ".join(entry.get("notes") or [])
+                if not notes:
+                    notes = "n/a"
+                elif len(notes) > max_note_len:
+                    notes = notes[:max_note_len - 3].rstrip() + "..."
+                rows.append([action_text, qualitative, score_text] + comp_values + [notes])
+
+            widths = []
+            for col_idx, header in enumerate(headers):
+                width = len(header)
+                for row in rows:
+                    width = max(width, len(row[col_idx]))
+                widths.append(width)
+
+            aligns = ["left", "left", "right"] + ["right"] * len(component_keys) + ["left"]
+
+            def _pad(text: str, width: int, align: str) -> str:
+                return text.rjust(width) if align == "right" else text.ljust(width)
+
+            header_line = " | ".join(
+                _pad(headers[idx], widths[idx], aligns[idx]) for idx in range(len(headers))
+            )
+            divider_line = "-+-".join("-" * widths[idx] for idx in range(len(headers)))
+            table_lines = []
+            if title:
+                table_lines.append(title)
+            table_lines.append(header_line)
+            table_lines.append(divider_line)
+            for row in rows:
+                table_lines.append(
+                    " | ".join(
+                        _pad(row[idx], widths[idx], aligns[idx]) for idx in range(len(headers))
+                    )
                 )
-            else:
-                component_text = "n/a"
-            notes = entry.get("notes") or []
-            note_text = " | notes: " + "; ".join(notes) if notes else ""
-            action = (entry.get("action") or "-").strip()
-            label = (entry.get("label") or "").strip()
-            if action == "move" and label:
-                action_text = f"{action} {label}"
-            elif action in {"broadcast", "wait"}:
-                action_text = action
-            elif label and label != "-":
-                action_text = f"{action} {label}"
-            else:
-                action_text = action
-            qualitative = _qualitative_label(idx, entry.get("score", 0.0))
-            score_text = _format_score(entry.get("score", 0.0))
-            lines.append(f"{action_text} -> {qualitative} ({score_text}) | factors: {component_text}{note_text}")
+            return table_lines
+
+        if sorted_scores:
+            move_entries = [entry for entry in sorted_scores if entry.get("action") == "move"]
+            other_entries = [entry for entry in sorted_scores if entry.get("action") != "move"]
+            lines.extend(_build_score_table(move_entries, "Movement scoring:", move_component_keys))
+            if other_entries:
+                lines.extend(_build_score_table(other_entries, "Other actions scoring:"))
 
         for ledger in snapshot.get("intel_ledger", []):
             last_round = ledger.get("last_round")
@@ -730,73 +857,16 @@ class _Drone_Decision_Support:
     def build_situation(self, snapshot: Dict[str, object]) -> str:
         """Assemble the situation text that fuels the language model prompt."""
         drone = self.drone
-        same_tile_drones = [
-            f"Drone {other.id}"
-            for other in drone.sim.board[drone.position[0]][drone.position[1]].drones
-            if other.id != drone.id
-        ]
-
-        fig_here = "None"
-        if drone.sim.board[drone.position[0]][drone.position[1]].figure:
-            fig_here = drone.sim.board[drone.position[0]][drone.position[1]].figure.figure_type
-
-        neighbor_figures = drone.knowledge.visible_neighbor_figures()
-        legal_steps = drone._legal_movement_steps()
-        legal_entries: List[str] = []
-        for step in legal_steps:
-            new_pos = step["new_position"]
-            tile = cartesian_to_chess(new_pos)
-            figure_label = None
-            try:
-                tile_state = drone.sim.board[new_pos[0]][new_pos[1]]
-            except Exception:
-                tile_state = None
-            if tile_state and tile_state.figure:
-                color = tile_state.figure.color or "unknown"
-                info = drone.local_board.get(tile, {})
-                figure_type = info.get("type")
-                if figure_type in FIGURE_TYPES:
-                    figure_label = f"{color} {figure_type}"
-                else:
-                    figure_label = f"{color} unknown"
-            if figure_label:
-                legal_entries.append(f"{step['direction']} to {tile} ({figure_label})")
-            else:
-                legal_entries.append(f"{step['direction']} to {tile}")
-        legal_movements = ", ".join(legal_entries) or "none"
         collected_figure_information = drone.knowledge.collected_figure_information_text()
 
         lines: List[str] = []
-        lines.append(f"Current round number: {drone.sim.round} of {CONFIG['simulation']['max_rounds']} rounds.")
-        lines.append(f"Current position: {cartesian_to_chess(drone.position)}")
-        lines.append("AllowedActions: wait, move, broadcast")
-        lines.append(f"Legal movements: {legal_movements}")
-        lines.append(f"Visible drones at position: {', '.join(same_tile_drones) if same_tile_drones else 'None'}")
-        lines.append(f"Visible figure at position: {fig_here}")
-        lines.append(f"Visible neighbor figures: {neighbor_figures or 'None'}")
-        lines.append(f"Memory: {drone.memory}")
-        lines.append(f"Collected figure information: {collected_figure_information}")
-        if getattr(drone, "assigned_sector", None):
-            lines.append(f"Assigned coverage sector: {drone.sector_summary()}")
-        if getattr(drone, "rendezvous_directive", None):
-            rv = drone.rendezvous_directive
-            lines.append(f"Rendezvous directive: {rv['target']} on turn {rv['turn']}")
+        lines.append(f"Collected figure information: {collected_figure_information or 'None'}")
         rx_buffer = drone.mission_support.consume_rx_buffer().strip()
         if rx_buffer:
             rx_buffer = rx_buffer.replace("\n", " | ")
             if len(rx_buffer) > 300:
                 rx_buffer = rx_buffer[:300].rstrip() + "...(truncated)"
         lines.append(f"Broadcast Rx Buffer: {rx_buffer or 'None'}")
-        if drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1:
-            total_drones = CONFIG["simulation"].get("num_drones", len(getattr(drone.sim, "drones", [])))
-            lines.append(
-                "Special directive (MANDATORY): As Drone 1 on the opening turn, broadcast a coverage plan assigning "
-                "every drone their sector before taking other actions."
-            )
-            lines.append(
-                f"Ensure the broadcast is valid JSON with plan->assignments entries for all {total_drones} drones "
-                "and describe each sector clearly. This overrides decision support ranking."
-            )
 
         ds_lines, ledger_lines = self.format_lines(snapshot)
         if ds_lines:
@@ -1031,27 +1101,34 @@ class _Drone_Decision_Support:
             notes: List[str] = []
             new_start_distance: Optional[int] = None
 
+            def _add_component(name: str, value: float) -> None:
+                if not value:
+                    return
+                score_components[name] = score_components.get(name, 0.0) + value
+
             if current_leg:
                 new_leg_distance = drone._distance_to_leg(new_pos, current_leg)
                 if current_leg_start is not None:
                     new_start_distance = chebyshev_distance(new_pos, current_leg_start)
                     if current_leg_start_distance is not None and current_leg_start_distance > 0:
                         delta_start = current_leg_start_distance - new_start_distance
-                        score_components["leg_start_focus"] = round(delta_start, 2)
                         if delta_start > 0:
                             score += leg_start_progress_reward
+                            _add_component("leg_start_progress", leg_start_progress_reward)
                             notes.append("closing distance to leg start")
                         elif delta_start < 0:
                             score += leg_start_regression_penalty
+                            _add_component("leg_start_regression", leg_start_regression_penalty)
                             notes.append("drifting from leg start")
                 if current_leg_distance is not None and new_leg_distance is not None:
                     delta_leg = current_leg_distance - new_leg_distance
-                    score_components["leg_alignment"] = round(delta_leg, 2)
                     if delta_leg > 0:
                         score += leg_alignment_reward
+                        _add_component("leg_alignment", leg_alignment_reward)
                         notes.append("aligning with coverage leg")
                     elif delta_leg < 0:
                         score += leg_alignment_penalty
+                        _add_component("leg_alignment", leg_alignment_penalty)
                         notes.append("drifting from coverage leg")
                     if current_leg_distance and current_leg_distance > 0 and new_leg_distance == 0:
                         notes.append("entered coverage leg corridor")
@@ -1062,25 +1139,30 @@ class _Drone_Decision_Support:
                         if orientation == "vertical":
                             if abs(dx) == 1 and abs(dy) == 0 and new_leg_distance < current_leg_distance:
                                 score += leg_sideways_reward
+                                _add_component("leg_sideways_reward", leg_sideways_reward)
                                 notes.append("sidestep toward vertical leg")
                             if abs(dx) == 0 and abs(dy) == 1 and delta_leg <= 0:
                                 score += leg_along_penalty
+                                _add_component("leg_along_penalty", leg_along_penalty)
                                 notes.append("slide along vertical leg before aligning")
                         elif orientation == "horizontal":
                             if abs(dy) == 1 and abs(dx) == 0 and new_leg_distance < current_leg_distance:
                                 score += leg_sideways_reward
+                                _add_component("leg_sideways_reward", leg_sideways_reward)
                                 notes.append("sidestep toward horizontal leg")
                             if abs(dy) == 0 and abs(dx) == 1 and delta_leg <= 0:
                                 score += leg_along_penalty
+                                _add_component("leg_along_penalty", leg_along_penalty)
                                 notes.append("slide along horizontal leg before aligning")
                 if current_leg_distance == 0 and new_leg_distance == 1:
                     score += leg_sideways_probe_bonus
-                    score_components["leg_sideways_probe"] = round(leg_sideways_probe_bonus, 2)
+                    _add_component("leg_sideways_probe", leg_sideways_probe_bonus)
                     notes.append("sideways probe off leg")
                 if new_leg_distance == 0 and current_leg_end_distance is not None:
                     if new_start_distance is not None and new_start_distance > 0:
                         if current_leg_start_distance is not None and current_leg_start_distance > 0:
                             score += leg_start_regression_penalty
+                            _add_component("leg_start_regression", leg_start_regression_penalty)
                             notes.append("skipping leg start")
                     else:
                         new_end_distance = drone._distance_to_leg_end(new_pos, current_leg)
@@ -1088,10 +1170,11 @@ class _Drone_Decision_Support:
                             delta_end = current_leg_end_distance - new_end_distance
                             if delta_end > 0:
                                 score += leg_travel_reward
-                                score_components["leg_travel"] = round(delta_end, 2)
+                                _add_component("leg_travel", leg_travel_reward)
                                 notes.append("progress along current leg")
                             elif delta_end < 0:
                                 score += leg_travel_penalty
+                                _add_component("leg_travel", leg_travel_penalty)
                                 notes.append("retreat along current leg")
 
             if target_pos:
@@ -1107,23 +1190,23 @@ class _Drone_Decision_Support:
 
                 if slack is not None and slack < 0:
                     delta = current_dist - new_dist
-                    score_components["plan_progress"] = delta
                     if delta > 0:
                         score += waypoint_progress_reward
+                        _add_component("waypoint_progress", waypoint_progress_reward)
                         notes.append("closer to waypoint (late)")
                     elif delta < 0:
                         regression_penalty = waypoint_regression_penalty + late_penalty_multiplier * abs(slack)
                         score += regression_penalty
+                        _add_component("waypoint_regression", regression_penalty)
                         notes.append("farther from waypoint (late)")
 
-                    score_components["deadline_margin"] = float(slack)
                     slack_penalty = deadline_slack_penalty * max(1.0, late_penalty_multiplier)
                     score += slack_penalty
+                    _add_component("deadline_penalty", slack_penalty)
                     notes.append("missing deadline")
 
                 if next_wp.get("duration_turns", 0) > 0 and slack is not None:
                     buffer_turns = max(0, slack)
-                    score_components["rendezvous_buffer"] = float(buffer_turns)
                     suffix = "turn" if buffer_turns == 1 else "turns"
                     notes.append(f"{buffer_turns} {suffix} left to reach rendezvous on time")
                     if buffer_turns == 0 and slack < 0:
@@ -1131,13 +1214,13 @@ class _Drone_Decision_Support:
 
                 if new_dist <= 0:
                     score += tolerance_bonus
-                    score_components["within_tolerance"] = 1.0
+                    _add_component("tolerance_bonus", tolerance_bonus)
 
                 if sector_unknown_tiles and sector_unknown_probe_bonus and slack is not None:
                     if slack >= sector_unknown_probe_min_slack:
                         if closest_probe_distance is not None and slack >= closest_probe_distance:
                             score += sector_unknown_probe_bonus
-                            score_components["sector_unknown_probe"] = round(sector_unknown_probe_bonus, 2)
+                            _add_component("sector_unknown_probe", sector_unknown_probe_bonus)
                             notes.append(
                                 "sector probe feasible (nearest unknown "
                                 f"{closest_probe_distance} steps away without delaying leg)"
@@ -1145,42 +1228,43 @@ class _Drone_Decision_Support:
 
             if tile_info["type"] == "unknown":
                 score += unknown_tile_bonus
-                score_components["discover_type"] = unknown_tile_bonus
+                _add_component("discover_type", unknown_tile_bonus)
                 notes.append("unidentified tile")
             elif tile_info["type"] == "a possible target":
                 score += possible_target_bonus
-                score_components["possible_target"] = possible_target_bonus
+                _add_component("possible_target", possible_target_bonus)
                 notes.append("possible blocker")
             elif tile_info["type"] == "any figure":
                 score += figure_hint_bonus
-                score_components["figure_hint"] = figure_hint_bonus
+                _add_component("figure_hint", figure_hint_bonus)
                 notes.append("figure nearby")
             elif tile_info["type"] in FIGURE_TYPES and known_figure_penalty:
                 score += known_figure_penalty
-                score_components["known_figure"] = known_figure_penalty
+                _add_component("known_figure", known_figure_penalty)
                 notes.append("known figure tile")
             elif tile_info["type"] == "n/a" and known_empty_penalty:
                 score += known_empty_penalty
-                score_components["known_empty"] = known_empty_penalty
+                _add_component("known_empty", known_empty_penalty)
                 notes.append("known empty tile")
 
             if tile_info["color"] == "unknown":
                 score += unknown_color_bonus
-                score_components["discover_color"] = unknown_color_bonus
+                _add_component("discover_color", unknown_color_bonus)
 
             if new_pos in visited_tiles:
                 score += revisit_penalty
-                score_components["revisit_penalty"] = revisit_penalty
+                _add_component("revisit_penalty", revisit_penalty)
                 notes.append("revisiting tile")
             elif novel_tile_bonus:
                 score += novel_tile_bonus
-                score_components["new_tile"] = novel_tile_bonus
+                _add_component("new_tile", novel_tile_bonus)
                 notes.append("new tile")
 
             unknown_neighbors = self._count_unknown_neighbors(new_pos)
             if unknown_neighbors:
-                score += unknown_neighbors * unknown_neighbor_bonus
-                score_components["unknown_neighbors"] = float(unknown_neighbors)
+                neighbor_bonus = unknown_neighbors * unknown_neighbor_bonus
+                score += neighbor_bonus
+                _add_component("unknown_neighbors", neighbor_bonus)
                 notes.append(f"{unknown_neighbors} unknown neighbors")
 
             if sector_bounds:
@@ -1188,11 +1272,11 @@ class _Drone_Decision_Support:
                 if new_sector_distance is not None:
                     if sector_alignment_reward and current_sector_distance is not None and new_sector_distance < current_sector_distance:
                         score += sector_alignment_reward
-                        score_components["sector_alignment"] = round(current_sector_distance - new_sector_distance, 2)
+                        _add_component("sector_alignment", sector_alignment_reward)
                         notes.append("moving toward assigned sector")
                     if sector_inside_bonus and new_sector_distance == 0:
                         score += sector_inside_bonus
-                        score_components["sector_inside"] = round(sector_inside_bonus, 2)
+                        _add_component("sector_inside", sector_inside_bonus)
                         notes.append("within assigned sector")
 
             if border_edge_bonus and border_edge_range >= 0:
@@ -1206,7 +1290,7 @@ class _Drone_Decision_Support:
                     bias_strength = max(1, border_edge_range - border_distance + 1)
                     bonus = border_edge_bonus * bias_strength
                     score += bonus
-                    score_components["border_bias"] = round(bonus, 2)
+                    _add_component("border_bias", bonus)
                     notes.append("nudged toward board edge")
 
             scores.append(
@@ -1214,14 +1298,14 @@ class _Drone_Decision_Support:
                     "action": "move",
                     "label": direction,
                     "score": round(score, 2),
-                    "components": {k: round(v, 2) for k, v in score_components.items() if abs(v) >= 0.01},
+                    "components": dict(score_components),
                     "notes": notes,
                 }
             )
 
         tile = drone.sim.board[drone.position[0]][drone.position[1]]
         recipients = [d for d in tile.drones if d.id != drone.id]
-        broadcast_components: Dict[str, float] = {"recipients": float(len(recipients))}
+        broadcast_components: Dict[str, float] = {}
         broadcast_notes: List[str] = []
         broadcast_score = broadcast_base_penalty
         if recipients:
@@ -1231,17 +1315,20 @@ class _Drone_Decision_Support:
                 age = current_round - last_round if last_round is not None else current_round
                 ages.append(max(age, 0))
             avg_age = sum(ages) / len(ages) if ages else 0.0
-            broadcast_components["avg_staleness"] = round(avg_age, 2)
-            broadcast_components["max_staleness"] = float(max(ages) if ages else 0)
-            broadcast_score = len(recipients) * broadcast_recipient_factor + avg_age * broadcast_staleness_factor
+            recipient_score = len(recipients) * broadcast_recipient_factor
+            staleness_score = avg_age * broadcast_staleness_factor
+            broadcast_components["broadcast_recipients"] = recipient_score
+            broadcast_components["broadcast_staleness"] = staleness_score
+            broadcast_score = recipient_score + staleness_score
             if avg_age > 0:
                 broadcast_notes.append("recipients have stale intel")
         else:
+            broadcast_components["broadcast_base"] = broadcast_base_penalty
             broadcast_notes.append("no co-located drones")
 
         if is_first_coordination_turn and coordination_broadcast_bonus:
             broadcast_score += coordination_broadcast_bonus
-            broadcast_components["coordination_bonus"] = float(coordination_broadcast_bonus)
+            broadcast_components["coordination_bonus"] = coordination_broadcast_bonus
             broadcast_notes.append("first-turn coverage assignment priority")
 
         scores.append(
@@ -1256,19 +1343,19 @@ class _Drone_Decision_Support:
 
         wait_score = wait_default_score
         wait_notes: List[str] = ["no progress"]
-        wait_components: Dict[str, float] = {"idle_penalty": wait_idle_component}
+        wait_components: Dict[str, float] = {"wait_idle": wait_default_score}
         if target_pos:
             dist_to_target = chebyshev_distance(drone.position, target_pos)
             if dist_to_target == 0 and next_wp and current_round < next_wp["turn"]:
                 wait_score = wait_holding_score
                 wait_notes = ["holding position at waypoint"]
-                wait_components["holding_pattern"] = wait_holding_component
+                wait_components = {"wait_holding": wait_holding_score}
         scores.append(
             {
                 "action": "wait",
                 "label": "hold",
                 "score": round(wait_score, 2),
-                "components": {k: round(v, 2) for k, v in wait_components.items()},
+                "components": {k: v for k, v in wait_components.items()},
                 "notes": wait_notes,
             }
         )
@@ -1379,6 +1466,31 @@ class _Drone_Aftermath:
     def __init__(self, drone: "_Drone"):
         self.drone = drone
 
+    def _normalize_token(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            if not value:
+                return ""
+            return str(value[0])
+        return str(value)
+
+    def _normalize_text(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            return "\n".join(str(item) for item in value)
+        if isinstance(value, dict):
+            try:
+                return json.dumps(value)
+            except Exception:
+                return str(value)
+        return str(value)
+
     @contextmanager
     def _state_guard(self):
         lock = getattr(self.drone.sim, "state_lock", None)
@@ -1425,15 +1537,15 @@ class _Drone_Aftermath:
                     if not result.get("rationale"):
                         result["rationale"] = "Auto broadcast coverage plan."
 
-        action = (result.get("action") or "wait").strip().lower()
-        rationale = (result.get("rationale") or "").strip()
+        action = self._normalize_token(result.get("action") or "wait").strip().lower()
+        rationale = self._normalize_text(result.get("rationale")).strip()
         moved = False
         direction = None
         broadcast_message = ""
         broadcast_payload = None
 
         if action == "move":
-            direction = (result.get("direction") or "").strip().lower()
+            direction = self._normalize_token(result.get("direction")).strip().lower()
             moved, move_error = self._execute_move(direction)
             if move_error:
                 errors.append(move_error)
@@ -1616,7 +1728,7 @@ class _Drone_Aftermath:
         return joined
 
     def _update_memory(self, result: Dict[str, Any]) -> None:
-        mem_txt = (result.get("memory") or "").strip()
+        mem_txt = self._normalize_text(result.get("memory")).strip()
         if mem_txt:
             self.drone.memory = self._sanitize_memory(mem_txt, self.drone.memory)
         self.drone.memory = self._sanitize_memory(self.drone.memory, self.drone.memory)

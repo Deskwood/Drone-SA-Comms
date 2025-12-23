@@ -20,7 +20,7 @@ On your turn, choose exactly one:
 
 Movement Rules:
 - Valid directions (lowercase): north, south, east, west, northeast, northwest, southeast, southwest.
-- You MUST pick "direction" only from the "AllowedDirections" listed in the situation.
+- You MUST pick "direction" only from the "Legal moves" listed in the situation.
 - You may move onto any on-board tile (occupied or not), but never outside the board.
 - Invalid moves are ignored and treated as "wait".
 

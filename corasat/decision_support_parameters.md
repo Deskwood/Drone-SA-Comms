@@ -6,6 +6,7 @@ Notes:
 - Move scores start at 0.0 and add each component; the final score is rounded to 2 decimals in the log.
 - All movement components use the drone's `local_board` knowledge (not ground truth).
 - Chebyshev distance is used for all distance calculations.
+- Neighborhood potential notes include per-direction bonuses (n, ne, e, se, s, sw, w, nw) scaled by `neighborhood_potential`, plus the total.
 
 ## Derived terms used below
 
@@ -18,36 +19,38 @@ Notes:
 | `current_leg_distance` | Distance from current position to the leg corridor. |
 | `new_leg_distance` | Distance from candidate position to the leg corridor. |
 | `visited_tiles` | Set of positions in `drone.mission_report`. |
-| `neighborhood_potential_sum` | Sum of neighbor weights around the candidate tile: `any figure` = 3, `a possible target` = 1, off-board neighbor = `border_bonus`, all other types = 0. |
+| `neighborhood_potential_sum` | Sum of neighbor weights around the candidate tile: `any figure` = `neighborhood_weight_any_figure`, `a possible target` = `neighborhood_weight_possible_target`, `unknown` = `unknown_tile_bonus`, off-board neighbor = `border_bonus`, all other types = 0. |
 
 ## Movement scoring components (log column keys)
 
 | Component key | Config key(s) | Current value(s) | Adds to score when... |
 | --- | --- | --- | --- |
-| `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_bonus` | `1.1390557352137365` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
-| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `-0.316352144799844` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty * abs(slack)`. |
-| `leg_approach_bonus` | `decision_support.scoring.move.leg_alignment_bonus_per_step` | `0.6` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds `leg_alignment_bonus_per_step * delta_leg` (highest when the new tile is on the leg). |
-| `sector_compliance_bonus` | `decision_support.scoring.move.sector_compliance_bonus` | `0.7850850533649799` | If sector bounds exist and the move reduces distance to the sector bounds. |
+| `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_bonus` | `0.5` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
+| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `-0.5` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty * abs(slack)`. |
+| `leg_approach_bonus` | `decision_support.scoring.move.leg_alignment_bonus_per_step` | `0.5` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds `leg_alignment_bonus_per_step * delta_leg` (highest when the new tile is on the leg). |
+| `sector_compliance_bonus` | `decision_support.scoring.move.sector_compliance_bonus` | `0.5` | If sector bounds exist and the candidate move is inside them (`new_sector_distance == 0`) or reduces distance to the sector. |
 | `unknown_tile_bonus` | `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | Destination tile has local_board type `unknown`. |
-| `possible_target` | `decision_support.scoring.move.possible_target_bonus` | `1.2` | Destination tile has local_board type `a possible target`. |
-| `figure_hint` | `decision_support.scoring.move.figure_hint_bonus` | `3.0` | Destination tile has local_board type `any figure`. |
-| `revisit_penalty` | `decision_support.scoring.move.revisit_penalty` | `-1.2` | Destination tile is in `visited_tiles`. |
-| `neighborhood_potential` | `decision_support.scoring.move.neighborhood_potential`, `decision_support.scoring.move.border_bonus` | `0.45`, `0.05` | Adds `neighborhood_potential * neighborhood_potential_sum` when `neighborhood_potential_sum > 0`. |
+| `possible_target` | `decision_support.scoring.move.possible_target_bonus` | `1.0` | Destination tile has local_board type `a possible target`. |
+| `figure_hint` | `decision_support.scoring.move.figure_hint_bonus` | `1.0` | Destination tile has local_board type `any figure`. |
+| `revisit_penalty` | `decision_support.scoring.move.revisit_penalty` | `-1.0` | Destination tile is in `visited_tiles`. |
+| `neighborhood_potential` | `decision_support.scoring.move.neighborhood_potential`, `decision_support.scoring.move.border_bonus`, `decision_support.scoring.move.neighborhood_weight_any_figure`, `decision_support.scoring.move.neighborhood_weight_possible_target`, `decision_support.scoring.move.unknown_tile_bonus` | `0.5`, `0.5`, `3.0`, `1.0`, `1.0` | Adds `neighborhood_potential * neighborhood_potential_sum` when `neighborhood_potential_sum > 0`. Log notes show per-direction bonuses (n, ne, e, se, s, sw, w, nw). |
 
 ## Move parameter values (config -> log column keys)
 
 | Config key | Current value | Log column(s) |
 | --- | --- | --- |
-| `decision_support.scoring.move.waypoint_progress_bonus` | `1.1390557352137365` | `waypoint_progress` |
-| `decision_support.scoring.move.waypoint_delay_penalty` | `-0.316352144799844` | `waypoint_regression` |
-| `decision_support.scoring.move.leg_alignment_bonus_per_step` | `0.6` | `leg_approach_bonus` |
-| `decision_support.scoring.move.sector_compliance_bonus` | `0.7850850533649799` | `sector_compliance_bonus` |
-| `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | `unknown_tile_bonus` |
-| `decision_support.scoring.move.possible_target_bonus` | `1.2` | `possible_target` |
-| `decision_support.scoring.move.figure_hint_bonus` | `3.0` | `figure_hint` |
-| `decision_support.scoring.move.revisit_penalty` | `-1.2` | `revisit_penalty` |
-| `decision_support.scoring.move.neighborhood_potential` | `0.45` | `neighborhood_potential` |
-| `decision_support.scoring.move.border_bonus` | `0.05` | `neighborhood_potential` |
+| `decision_support.scoring.move.waypoint_progress_bonus` | `0.5` | `waypoint_progress` |
+| `decision_support.scoring.move.waypoint_delay_penalty` | `-0.5` | `waypoint_regression` |
+| `decision_support.scoring.move.leg_alignment_bonus_per_step` | `0.5` | `leg_approach_bonus` |
+| `decision_support.scoring.move.sector_compliance_bonus` | `0.5` | `sector_compliance_bonus` |
+| `decision_support.scoring.move.unknown_tile_bonus` | `1.0` | `unknown_tile_bonus`, `neighborhood_potential` |
+| `decision_support.scoring.move.possible_target_bonus` | `1.0` | `possible_target` |
+| `decision_support.scoring.move.figure_hint_bonus` | `1.0` | `figure_hint` |
+| `decision_support.scoring.move.revisit_penalty` | `-1.0` | `revisit_penalty` |
+| `decision_support.scoring.move.neighborhood_potential` | `0.5` | `neighborhood_potential` |
+| `decision_support.scoring.move.neighborhood_weight_any_figure` | `3.0` | `neighborhood_potential` |
+| `decision_support.scoring.move.neighborhood_weight_possible_target` | `1.0` | `neighborhood_potential` |
+| `decision_support.scoring.move.border_bonus` | `0.5` | `neighborhood_potential` |
 
 ## Broadcast scoring components (log column keys)
 

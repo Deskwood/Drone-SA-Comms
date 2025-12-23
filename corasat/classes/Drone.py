@@ -110,5 +110,9 @@ class _Drone:
 
     def take_turn(self) -> Dict[str, object]:
         """Run the full turn pipeline and return an outcome for Simulation."""
+        try:
+            self.knowledge.update_board_report()
+        except Exception:
+            pass
         messages = self.generate_full_model_response()
         return self.aftermath.execute_turn(messages)

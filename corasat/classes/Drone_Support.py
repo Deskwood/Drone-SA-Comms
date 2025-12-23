@@ -755,70 +755,6 @@ class _Drone_Decision_Support:
             "neighborhood_potential",
         ]
 
-        move_param_map = [
-            ("waypoint_progress_bonus", "waypoint_progress"),
-            ("waypoint_delay_penalty", "waypoint_regression"),
-            ("leg_alignment_bonus_per_step", "leg_approach_bonus"),
-            ("sector_compliance_bonus", "sector_compliance_bonus"),
-            ("unknown_tile_bonus", "unknown_tile_bonus"),
-            ("possible_target_bonus", "possible_target"),
-            ("figure_hint_bonus", "figure_hint"),
-            ("revisit_penalty", "revisit_penalty"),
-            ("neighborhood_potential", "neighborhood_potential"),
-            ("border_bonus", "neighborhood_potential"),
-        ]
-
-        def _format_param_value(value: object) -> str:
-            if value is None:
-                return "n/a"
-            return str(value)
-
-        def _build_param_table(
-            param_specs: List[Tuple[str, str]],
-            params: Dict[str, object],
-            title: str,
-        ) -> List[str]:
-            if not param_specs or not params:
-                return []
-            headers = ["Parameter", "Value", "Log columns"]
-            rows: List[List[str]] = []
-            for key, columns in param_specs:
-                if key not in params:
-                    continue
-                value_text = _format_param_value(params.get(key))
-                rows.append([key, value_text, columns])
-            if not rows:
-                return []
-
-            widths = []
-            for col_idx, header in enumerate(headers):
-                width = len(header)
-                for row in rows:
-                    width = max(width, len(row[col_idx]))
-                widths.append(width)
-
-            aligns = ["left", "right", "left"]
-
-            def _pad(text: str, width: int, align: str) -> str:
-                return text.rjust(width) if align == "right" else text.ljust(width)
-
-            table_lines = []
-            if title:
-                table_lines.append(title)
-            header_line = " | ".join(
-                _pad(headers[idx], widths[idx], aligns[idx]) for idx in range(len(headers))
-            )
-            divider_line = "-+-".join("-" * widths[idx] for idx in range(len(headers)))
-            table_lines.append(header_line)
-            table_lines.append(divider_line)
-            for row in rows:
-                table_lines.append(
-                    " | ".join(
-                        _pad(row[idx], widths[idx], aligns[idx]) for idx in range(len(headers))
-                    )
-                )
-            return table_lines
-
         def _build_score_table(
             entries: List[Dict[str, object]],
             title: str,
@@ -886,16 +822,26 @@ class _Drone_Decision_Support:
                 )
             return table_lines
 
-        move_params = snapshot.get("move_params") or {}
-        if move_params:
-            lines.extend(_build_param_table(move_param_map, move_params, "Move parameters:"))
-
         if sorted_scores:
             move_entries = [entry for entry in sorted_scores if entry.get("action") == "move"]
             other_entries = [entry for entry in sorted_scores if entry.get("action") != "move"]
             lines.extend(_build_score_table(move_entries, "Movement scoring:", move_component_keys))
             if other_entries:
-                lines.extend(_build_score_table(other_entries, "Other actions scoring:"))
+                lines.append("Other actions scoring:")
+                for entry in other_entries:
+                    action = (entry.get("action") or "-").strip()
+                    label = (entry.get("label") or "").strip()
+                    if label and action not in {"broadcast", "wait"}:
+                        action_text = f"{action} {label}"
+                    else:
+                        action_text = action
+                    score_text = _format_score(entry.get("score", 0.0))
+                    components = entry.get("components") or {}
+                    comp_text = ", ".join(
+                        f"{key}={value:+.2f}" for key, value in components.items()
+                    ) or "n/a"
+                    notes = "; ".join(entry.get("notes") or []) or "n/a"
+                    lines.append(f"{action_text}: score {score_text}; components: {comp_text}; notes: {notes}")
 
         for ledger in snapshot.get("intel_ledger", []):
             last_round = ledger.get("last_round")
@@ -962,25 +908,45 @@ class _Drone_Decision_Support:
             "user_content": user_content,
         }
 
-    def _compute_neighborhood_potential(self, pos: Tuple[int, int], border_bonus: float) -> float:
+    def _compute_neighborhood_potential(
+        self,
+        pos: Tuple[int, int],
+        border_bonus: float,
+        any_figure_weight: float,
+        possible_target_weight: float,
+        unknown_weight: float,
+    ) -> Tuple[float, Dict[str, float]]:
         drone = self.drone
         weights = {
-            "any figure": 3.0,
-            "a possible target": 1.0,
+            "any figure": any_figure_weight,
+            "a possible target": possible_target_weight,
+            "unknown": unknown_weight,
+            "border": border_bonus,
         }
         total = 0.0
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx == 0 and dy == 0:
-                    continue
-                nx, ny = pos[0] + dx, pos[1] + dy
-                if not on_board(nx, ny):
-                    total += border_bonus
-                    continue
+        contributions: Dict[str, float] = {}
+        directions = [
+            (0, 1, "n"),
+            (1, 1, "ne"),
+            (1, 0, "e"),
+            (1, -1, "se"),
+            (0, -1, "s"),
+            (-1, -1, "sw"),
+            (-1, 0, "w"),
+            (-1, 1, "nw"),
+        ]
+        for dx, dy, label in directions:
+            nx, ny = pos[0] + dx, pos[1] + dy
+            if not on_board(nx, ny):
+                neighbor_type = "border"
+            else:
                 key = cartesian_to_chess((nx, ny))
                 info = drone.local_board.get(key, {"type": "unknown"})
-                total += weights.get(info.get("type"), 0.0)
-        return total
+                neighbor_type = info.get("type")
+            weight = weights.get(neighbor_type, 0.0)
+            contributions[label] = weight
+            total += weight
+        return total, contributions
 
     def _distance_to_sector(self, point: Tuple[int, int], bounds: Tuple[int, int, int, int]) -> Optional[int]:
         if point is None or bounds is None:
@@ -1042,6 +1008,8 @@ class _Drone_Decision_Support:
         possible_target_bonus = move_cfg.get("possible_target_bonus", 1.2)
         figure_hint_bonus = move_cfg.get("figure_hint_bonus", 0.6)
         neighborhood_potential_factor = move_cfg.get("neighborhood_potential", 0.2)
+        neighborhood_weight_any_figure = move_cfg.get("neighborhood_weight_any_figure", 3.0)
+        neighborhood_weight_possible_target = move_cfg.get("neighborhood_weight_possible_target", 1.0)
         border_bonus = move_cfg.get("border_bonus", 0.0)
         revisit_penalty = move_cfg.get("revisit_penalty", -1.0)
         leg_alignment_bonus_per_step = move_cfg.get("leg_alignment_bonus_per_step", 0.6)
@@ -1054,6 +1022,8 @@ class _Drone_Decision_Support:
             "possible_target_bonus": possible_target_bonus,
             "figure_hint_bonus": figure_hint_bonus,
             "neighborhood_potential": neighborhood_potential_factor,
+            "neighborhood_weight_any_figure": neighborhood_weight_any_figure,
+            "neighborhood_weight_possible_target": neighborhood_weight_possible_target,
             "border_bonus": border_bonus,
             "revisit_penalty": revisit_penalty,
             "leg_alignment_bonus_per_step": leg_alignment_bonus_per_step,
@@ -1193,20 +1163,41 @@ class _Drone_Decision_Support:
                 _add_component("revisit_penalty", revisit_penalty)
                 notes.append("revisiting tile")
 
-            neighborhood_potential = self._compute_neighborhood_potential(new_pos, border_bonus)
+            neighborhood_potential, neighborhood_breakdown = self._compute_neighborhood_potential(
+                new_pos,
+                border_bonus,
+                neighborhood_weight_any_figure,
+                neighborhood_weight_possible_target,
+                unknown_tile_bonus,
+            )
             if neighborhood_potential and neighborhood_potential_factor:
                 neighbor_bonus = neighborhood_potential * neighborhood_potential_factor
                 score += neighbor_bonus
                 _add_component("neighborhood_potential", neighbor_bonus)
-                notes.append(f"neighborhood potential {neighborhood_potential:.2f}")
+                if neighborhood_breakdown:
+                    bonus_parts = {
+                        label: value * neighborhood_potential_factor
+                        for label, value in neighborhood_breakdown.items()
+                    }
+                    bonus_detail = ", ".join(f"{label}:{value:.2f}" for label, value in bonus_parts.items())
+                    notes.append(f"neighbor bonuses {bonus_detail} (total {neighbor_bonus:.2f})")
 
             if sector_bounds:
                 new_sector_distance = self._distance_to_sector(new_pos, sector_bounds)
                 if new_sector_distance is not None:
-                    if sector_compliance_bonus and current_sector_distance is not None and new_sector_distance < current_sector_distance:
+                    if sector_compliance_bonus and (
+                        new_sector_distance == 0
+                        or (
+                            current_sector_distance is not None
+                            and new_sector_distance < current_sector_distance
+                        )
+                    ):
                         score += sector_compliance_bonus
                         _add_component("sector_compliance_bonus", sector_compliance_bonus)
-                        notes.append("moving toward assigned sector")
+                        if new_sector_distance == 0:
+                            notes.append("within assigned sector")
+                        else:
+                            notes.append("moving toward assigned sector")
 
 
             scores.append(

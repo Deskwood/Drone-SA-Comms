@@ -22,8 +22,8 @@
     "sector_compliance_bonus": 0.8090586104004454,
     "revisit_penalty": -1.151560062117551
   },
-  "final_score_full_seeds": 0.85836,
-  "final_log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_23.log",
+  "final_score_full_seeds": null,
+  "final_log": null,
   "history": [
     {
       "iter": 1,
@@ -403,6 +403,766 @@
         "leg_alignment_bonus_per_step": 0.3,
         "sector_compliance_bonus": 0.8090586104004454,
         "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 21,
+      "score": 0.8254,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_45.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.350085601132827,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.23919767532488284,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.2982035738748368,
+        "sector_compliance_bonus": 0.8449817984680051,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 22,
+      "score": 0.7619,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_46.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.0807566266697273,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.25005784922691127,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.7984969442629835,
+        "border_bonus": 0.4477675038294685,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 23,
+      "score": 0.69841,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_47.log",
+      "params": {
+        "waypoint_progress_bonus": 0.4194478135846248,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.7761177415092146,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.907143029548069,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3156113230687009,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 24,
+      "score": 0.80952,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_48.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.3515992650718522,
+        "unknown_tile_bonus": 1.4128232657319588,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.25961472007239966,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.48820953778570225,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 25,
+      "score": 0.77778,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_49.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.405321095555071,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.46046766447818505,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.809761900500802,
+        "revisit_penalty": -1.3042702167959508
+      }
+    },
+    {
+      "iter": 26,
+      "score": 0.77778,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_50.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.2831193284034605,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3385967022178151,
+        "sector_compliance_bonus": 0.8643089421035827,
+        "revisit_penalty": -1.3132891303491556
+      }
+    },
+    {
+      "iter": 27,
+      "score": 0.77778,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_51.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.073628938892594,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2063736075848946,
+        "neighborhood_weight_any_figure": 0.4712622339596629,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.31202355916569413,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 28,
+      "score": 0.85714,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_52.log",
+      "params": {
+        "waypoint_progress_bonus": 0.4002424012250525,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.17874754189965264,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.812215676996453,
+        "border_bonus": 0.42981176140468547,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 29,
+      "score": 0.71429,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_53.log",
+      "params": {
+        "waypoint_progress_bonus": 0.4584499765562966,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.4097132815327127,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.746873392986733,
+        "neighborhood_potential": 0.21929435539807413,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 30,
+      "score": 0.88889,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_54.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.420565818939098,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.9433750911190972,
+        "neighborhood_potential": 0.17116427421992444,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.25246274369103505,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 31,
+      "score": 0.74603,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_55.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6119290385956173,
+        "possible_target_bonus": 1.052806467667742,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.2740287967233462,
+        "sector_compliance_bonus": 0.7604709920543771,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 32,
+      "score": 0.87302,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_56.log",
+      "params": {
+        "waypoint_progress_bonus": 0.43408078464417077,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.2450297952528286,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.20730197375900933,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3093333966083759,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 33,
+      "score": 0.87302,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_57.log",
+      "params": {
+        "waypoint_progress_bonus": 0.29722124100069286,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.3314316932671693,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8500848171996482,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8211443458437631,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 34,
+      "score": 0.80952,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_58.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.02716232007554,
+        "unknown_tile_bonus": 1.7300926745809293,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.21714350782817188,
+        "neighborhood_weight_any_figure": 0.548357054995366,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 35,
+      "score": 0.77778,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_59.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.4174028205904865,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8754099669046179,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8557368684770423,
+        "revisit_penalty": -0.9748588363098492
+      }
+    },
+    {
+      "iter": 36,
+      "score": 0.92063,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_60.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.7883532912806044,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5224936365730403,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.507269116402052,
+        "leg_alignment_bonus_per_step": 0.30475603473487095,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 37,
+      "score": 0.79365,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_61.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3531186064566242,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6061215645651465,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8635731881711972,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8431539467309355,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 38,
+      "score": 0.90476,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_62.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8566654007278467,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.47841335370052657,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.4646967581994421,
+        "leg_alignment_bonus_per_step": 0.34338894771062956,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 39,
+      "score": 0.69841,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_63.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.5736093510943485,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.25980054638410044,
+        "neighborhood_weight_any_figure": 0.6081235214402371,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.0302788676801118
+      }
+    },
+    {
+      "iter": 40,
+      "score": 0.88889,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_64.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.3067106432047986,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.21625423033167773,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5302422645217273,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -0.9603438016719887
+      }
+    },
+    {
+      "iter": 41,
+      "score": 0.88889,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_66.log",
+      "params": {
+        "waypoint_progress_bonus": 0.34424964784297757,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6534428308357785,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.46520599699878523,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8373139259693352,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 42,
+      "score": 0.79365,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_67.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.419996008527712,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.7498602638664068,
+        "border_bonus": 0.5679513686824198,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -0.8722878735937636
+      }
+    },
+    {
+      "iter": 43,
+      "score": 0.84127,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_68.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.3542852181731604,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.1762626035798274,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.19626643691938792,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5300033883468999,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 44,
+      "score": 0.84127,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_69.log",
+      "params": {
+        "waypoint_progress_bonus": 0.4092993349972526,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8007159160130194,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8617736651240389,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.3319041496501143
+      }
+    },
+    {
+      "iter": 45,
+      "score": 0.80952,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_70.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -2.9364427851501365,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.3489676908336201,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.4666813005185914,
+        "leg_alignment_bonus_per_step": 0.25279760174784455,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 46,
+      "score": 0.87302,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_71.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.777503855373043,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.16195921531053448,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.2520354931977511,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.3946000882407321
+      }
+    },
+    {
+      "iter": 47,
+      "score": 0.80952,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_72.log",
+      "params": {
+        "waypoint_progress_bonus": 0.2825768572926973,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 1.0309013663136444,
+        "neighborhood_potential": 0.2593930139246017,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -0.8607017546490243
+      }
+    },
+    {
+      "iter": 48,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_75.log",
+      "params": {
+        "waypoint_progress_bonus": 0.31981648528292494,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.7126073351583477,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.27617179979885975,
+        "sector_compliance_bonus": 0.9067674660880994,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 49,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_77.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.0432889916525958,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.17632495553084565,
+        "neighborhood_weight_any_figure": 0.5183307452242101,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -0.9555584368583572
+      }
+    },
+    {
+      "iter": 50,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_78.log",
+      "params": {
+        "waypoint_progress_bonus": 0.28065804865578114,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.7700995344081261,
+        "neighborhood_potential": 0.19205274146595128,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.6143212223439615,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 51,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_79.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.138574565507474,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 1.0938315928475624,
+        "neighborhood_potential": 0.20973591180387635,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.9013342812632821,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 52,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_80.log",
+      "params": {
+        "waypoint_progress_bonus": 0.4675323957125333,
+        "waypoint_delay_penalty": -2.895852747013146,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.2603040317300406,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.103087771115641
+      }
+    },
+    {
+      "iter": 53,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_81.log",
+      "params": {
+        "waypoint_progress_bonus": 0.2928975493576738,
+        "waypoint_delay_penalty": -3.1908213960689515,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.7193411650665011,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5751762927132278,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 54,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_82.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2600883127646684,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.29224397788804013,
+        "sector_compliance_bonus": 0.7393295922390078,
+        "revisit_penalty": -1.3495773400101605
+      }
+    },
+    {
+      "iter": 55,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_83.log",
+      "params": {
+        "waypoint_progress_bonus": 0.47465878204485684,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.0463172346638532,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.21321532671377202,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8068363606580046,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 56,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_84.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.098708161917064,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.17739785782311074,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8921015109267678,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.7966946571077557,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 57,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_85.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.0229975226182733,
+        "figure_hint_bonus": 0.8308276678615445,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.29506548338560934,
+        "sector_compliance_bonus": 0.7291477775837448,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 58,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_86.log",
+      "params": {
+        "waypoint_progress_bonus": 0.2869610440742322,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6278714338241043,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.22880888804906702,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.9380717332046455,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 59,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_86.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.138000701661673,
+        "figure_hint_bonus": 0.8914632982393591,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.6421725919859618,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.2520387075544404,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
+      }
+    },
+    {
+      "iter": 60,
+      "score": null,
+      "log": "C:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2025-12-24_86.log",
+      "params": {
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.322289669093877,
+        "unknown_tile_bonus": 1.6,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.7572483457083935,
+        "border_bonus": 0.5259970894963063,
+        "leg_alignment_bonus_per_step": 0.3233002561639404,
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.2335000430689471
       }
     }
   ]

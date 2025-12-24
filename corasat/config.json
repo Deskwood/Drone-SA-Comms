@@ -6,7 +6,7 @@
   "rules_path": "rules.txt",
   "simulation": {
     "create_py_export": false,
-    "use_gui": false,
+    "use_gui": true,
     "model_index": 4,
     "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
     "num_drones": 2,

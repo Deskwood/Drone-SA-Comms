@@ -453,8 +453,15 @@ class Simulation:
             pass
         try:
             if self.gui:
-                self.gui.draw_field()
-                self.gui.save_screenshot()
+                surface = None
+                if pygame and pygame.display.get_init():
+                    try:
+                        surface = pygame.display.get_surface()
+                    except Exception:
+                        surface = None
+                if surface is not None:
+                    self.gui.draw_field()
+                    self.gui.save_screenshot()
         except Exception as exc:
             LOGGER.log(f"Error during final GUI draw: {exc}")
         if pygame:

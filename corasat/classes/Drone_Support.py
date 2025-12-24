@@ -413,13 +413,15 @@ class _Drone_Mission_Support:
         start_pos = tuple(self.drone.position)
 
         max_rounds = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1))
-        rv_turn = max_rounds - 1
+        rv_turn_limit = max(1, max_rounds - 1)
+        rv_turn = rv_turn_limit
         rv_cart = None
         if self.drone.rendezvous_directive:
             rv_cart = self.drone.rendezvous_directive.get("target_cartesian")
             if rv_cart is None and self.drone.rendezvous_directive.get("target"):
                 rv_cart = list(chess_to_cartesian(self.drone.rendezvous_directive["target"]))
-            rv_turn = max(1, self.drone.rendezvous_directive.get("turn") or rv_turn)
+            requested_turn = self.drone.rendezvous_directive.get("turn") or rv_turn
+            rv_turn = max(1, min(requested_turn, rv_turn_limit))
         if rv_cart is None:
             rv_cart = start_pos
 
@@ -586,8 +588,9 @@ class _Drone_Mission_Support:
                         LOGGER.log(f"Drone {self.drone.id} received out-of-bounds rendezvous '{tile}'")
                         return
                     max_rounds = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1))
-                    requested_turn = int(turn) if turn is not None else max_rounds - 1
-                    rv_turn = max(1, min(requested_turn, max_rounds))
+                    rv_turn_limit = max(1, max_rounds - 1)
+                    requested_turn = int(turn) if turn is not None else rv_turn_limit
+                    rv_turn = max(1, min(requested_turn, rv_turn_limit))
                     if rv_turn != requested_turn:
                         LOGGER.log(
                             f"Drone {self.drone.id} clamped rendezvous turn {requested_turn} -> {rv_turn}"
@@ -1032,15 +1035,17 @@ class _Drone_Decision_Support:
 
         broadcast_base_value = broadcast_cfg.get("base_broadcast_value", -0.5)
         coordination_broadcast_bonus = broadcast_cfg.get("first_turn_coordination_bonus", 2.5)
+        last_turn_coordination_bonus = broadcast_cfg.get("last_turn_coordination_bonus", 0.0)
         is_first_coordination_turn = (
             drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1
         )
 
         wait_base_value = wait_cfg.get("base_wait_value", -1.0)
-        planned_waiting_bonus = wait_cfg.get("planned_waiting_bonus", -0.2)
 
         scores: List[Dict[str, object]] = []
+        max_rounds = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1))
         current_round = drone.sim.round
+        is_last_round = current_round == max_rounds
         try:
             drone._advance_leg_progress()
         except Exception:
@@ -1235,6 +1240,11 @@ class _Drone_Decision_Support:
             broadcast_components["coordination_bonus"] = coordination_broadcast_bonus
             broadcast_notes.append("first-turn coverage assignment priority")
 
+        if recipients and is_last_round and last_turn_coordination_bonus:
+            broadcast_score += last_turn_coordination_bonus
+            broadcast_components["last_turn_coordination_bonus"] = last_turn_coordination_bonus
+            broadcast_notes.append("last-round coordination priority")
+
         scores.append(
             {
                 "action": "broadcast",
@@ -1248,12 +1258,6 @@ class _Drone_Decision_Support:
         wait_score = wait_base_value
         wait_notes: List[str] = ["no progress"]
         wait_components: Dict[str, float] = {"wait_base": wait_base_value}
-        if target_pos:
-            dist_to_target = chebyshev_distance(drone.position, target_pos)
-            if dist_to_target == 0 and next_wp and current_round < next_wp["turn"]:
-                wait_score = planned_waiting_bonus
-                wait_notes = ["holding position at waypoint"]
-                wait_components = {"wait_planned": planned_waiting_bonus}
         scores.append(
             {
                 "action": "wait",

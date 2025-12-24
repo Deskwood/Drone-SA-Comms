@@ -61,11 +61,11 @@
       },
       "broadcast": {
         "base_broadcast_value": -0.5,
-        "first_turn_coordination_bonus": 2.5
+        "first_turn_coordination_bonus": 2.5,
+        "last_turn_coordination_bonus": 2.5
       },
       "wait": {
-        "base_wait_value": -1.4,
-        "planned_waiting_bonus": -0.2
+        "base_wait_value": -1.4
       }
     }
   },

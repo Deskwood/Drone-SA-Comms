@@ -59,13 +59,13 @@ Notes:
 | --- | --- | --- |
 | `broadcast_base` | `decision_support.scoring.broadcast.base_broadcast_value` | No co-located drones; score starts at this base value. |
 | `coordination_bonus` | `decision_support.scoring.broadcast.first_turn_coordination_bonus` | Drone 1 on round 1, turn 1; adds once. |
+| `last_turn_coordination_bonus` | `decision_support.scoring.broadcast.last_turn_coordination_bonus` | Any drone on the last round with at least one co-located drone; adds once. |
 
 ## Wait scoring components (log column keys)
 
 | Component key | Config key(s) | Adds to score when... |
 | --- | --- | --- |
-| `wait_base` | `decision_support.scoring.wait.base_wait_value` | Default wait score when not holding position at a waypoint. |
-| `wait_planned` | `decision_support.scoring.wait.planned_waiting_bonus` | If at `target_pos` **and** `current_round < next_wp["turn"]`, replaces `wait_base`. |
+| `wait_base` | `decision_support.scoring.wait.base_wait_value` | Default wait score. |
 
 ## Non-score directives shown in Decision Support
 

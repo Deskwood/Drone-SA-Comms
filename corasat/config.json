@@ -6,14 +6,14 @@
   "rules_path": "rules.txt",
   "simulation": {
     "create_py_export": false,
-    "use_gui": true,
+    "use_gui": false,
     "model_index": 4,
     "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
     "num_drones": 2,
     "max_rounds": 32,
     "temperature": 0.0,
     "randomize_figures": true,
-    "seed_list": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    "seed_list": [1, 2, 3]
   },
   "gui": {
     "cell_size": 80,
@@ -46,18 +46,18 @@
   "decision_support": {
     "scoring": {
       "move": {
-        "waypoint_progress_bonus": 0.6,
-        "waypoint_delay_penalty": -0.9,
+        "waypoint_progress_bonus": 0.3773373064545108,
+        "waypoint_delay_penalty": -3.1297425233109606,
         "unknown_tile_bonus": 1.6,
-        "possible_target_bonus": 1.0,
-        "figure_hint_bonus": 0.9,
-        "neighborhood_potential": 0.2,
-        "neighborhood_weight_any_figure": 0.5,
-        "neighborhood_weight_possible_target": 0.9,
-        "border_bonus": 0.5,
+        "possible_target_bonus": 1.176106401783271,
+        "figure_hint_bonus": 0.8952272236141643,
+        "neighborhood_potential": 0.2113228222813541,
+        "neighborhood_weight_any_figure": 0.5598749261072147,
+        "neighborhood_weight_possible_target": 0.8429396361671324,
+        "border_bonus": 0.5259970894963063,
         "leg_alignment_bonus_per_step": 0.3,
-        "sector_compliance_bonus": 0.8,
-        "revisit_penalty": -1.3
+        "sector_compliance_bonus": 0.8090586104004454,
+        "revisit_penalty": -1.151560062117551
       },
       "broadcast": {
         "base_broadcast_value": -0.5,

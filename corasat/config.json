@@ -13,7 +13,7 @@
     "max_rounds": 32,
     "temperature": 0.0,
     "randomize_figures": true,
-    "seed_list": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    "seed_list": [1, 2, 3]
   },
   "gui": {
     "cell_size": 80,
@@ -55,7 +55,7 @@
         "neighborhood_weight_any_figure": 0.447899940886,
         "neighborhood_weight_possible_target": 0.674351708934,
         "border_bonus": 0.420797671597,
-        "cross_track_penalty_per_step_squared": 0.0,
+        "cross_track_penalty_per_step_squared": 0.5,
         "sector_compliance_bonus": 0.8,
         "revisit_penalty": -1.0
       },

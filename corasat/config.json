@@ -13,7 +13,7 @@
     "max_rounds": 32,
     "temperature": 0.0,
     "randomize_figures": true,
-    "seed_list": [1, 2, 3]
+    "seed_list": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
   },
   "gui": {
     "cell_size": 80,
@@ -47,7 +47,7 @@
     "scoring": {
       "move": {
         "waypoint_progress_bonus": 0.301869845164,
-        "waypoint_delay_penalty": -3.755691027973,
+        "waypoint_delay_penalty": -3.0,
         "unknown_tile_bonus": 1.28,
         "neighborhood_potential": 0.2113228222813541,
         "figure_hint_bonus": 0.716181778891,
@@ -55,9 +55,9 @@
         "neighborhood_weight_any_figure": 0.447899940886,
         "neighborhood_weight_possible_target": 0.674351708934,
         "border_bonus": 0.420797671597,
-        "cross_track_penalty_per_step_squared": -0.3,
-        "sector_compliance_bonus": 0.64724688832,
-        "revisit_penalty": -1.381872074541
+        "cross_track_penalty_per_step_squared": 0.0,
+        "sector_compliance_bonus": 0.8,
+        "revisit_penalty": -1.0
       },
       "broadcast": {
         "base_broadcast_value": -0.6,

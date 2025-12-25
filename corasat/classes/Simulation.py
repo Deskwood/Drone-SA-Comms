@@ -435,6 +435,9 @@ class Simulation:
             self.shutdown()
 
     def shutdown(self) -> None:
+        if getattr(self, "_shutdown_complete", False):
+            return
+        self._shutdown_complete = True
         try:
             if getattr(self, "_current_future", None) and not self._current_future.done():
                 self._current_future.cancel()

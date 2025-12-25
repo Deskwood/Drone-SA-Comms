@@ -30,7 +30,8 @@ class Simulation:
     """Run a full Corasat game, coordinating drones, board state, and GUI."""
 
     def __init__(self, game_index: int = 1, total_games: int = 1):
-        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        if not CONFIG["simulation"].get("use_gui", True):
+            os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
         self.turn = 1
         self.round = 1

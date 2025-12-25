@@ -5,9 +5,10 @@ Source of truth: `Code/corasat/config.json` and `Code/corasat/classes/Drone_Supp
 Notes:
 - Move scores start at 0.0 and add each component; the final score is rounded to 2 decimals in the log.
 - All movement components use the drone's `local_board` knowledge (not ground truth).
-- Chebyshev distance is used for all distance calculations.
+- Chebyshev distance is used for waypoint timing and sector distance; leg corridor distance uses Euclidean distance.
 - Neighborhood potential notes include per-direction bonuses (n, ne, e, se, s, sw, w, nw) scaled by `neighborhood_potential`, plus the total.
 - Parameter values live in `Code/corasat/config.json` under `decision_support.scoring`.
+- When a config key is missing, the default in `Drone_Support.py` is used (see "Config keys expected by code but missing").
 
 ## Derived terms used below
 
@@ -19,6 +20,7 @@ Notes:
 | `slack` | `turns_remaining - new_dist` (computed per candidate move). |
 | `current_leg_distance` | Distance from current position to the leg corridor. |
 | `new_leg_distance` | Distance from candidate position to the leg corridor. |
+| `delta_leg_distance` | `new_leg_distance - current_leg_distance`. |
 | `visited_tiles` | Set of positions in `drone.mission_report`. |
 | `neighborhood_potential_sum` | Sum of neighbor weights around the candidate tile: `any figure` = `neighborhood_weight_any_figure`, `a possible target` = `neighborhood_weight_possible_target`, `unknown` = `unknown_tile_bonus`, off-board neighbor = `border_bonus`, all other types = 0. |
 
@@ -27,14 +29,14 @@ Notes:
 | Component key | Config key(s) | Adds to score when... |
 | --- | --- | --- |
 | `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_bonus` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
-| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty`. |
-| `leg_approach_bonus` | `decision_support.scoring.move.cross_track_penalty_per_step_squared` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds `cross_track_penalty_per_step_squared * delta_leg` (highest when the new tile is on the leg). |
+| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty * abs(slack)`. |
+| `leg_approach_bonus` | `decision_support.scoring.move.cross_track_penalty_per_step_squared` | Uses `delta_leg_distance` when a current leg exists. Adds `cross_track_penalty_per_step_squared * (delta_leg_distance ** 2)` (sign depends on config). |
 | `sector_compliance_bonus` | `decision_support.scoring.move.sector_compliance_bonus` | If sector bounds exist and the candidate move is inside them (`new_sector_distance == 0`) or reduces distance to the sector. |
 | `unknown_tile_bonus` | `decision_support.scoring.move.unknown_tile_bonus` | Destination tile has local_board type `unknown`. |
 | `possible_target` | `decision_support.scoring.move.possible_target_bonus` | Destination tile has local_board type `a possible target`. |
 | `figure_hint` | `decision_support.scoring.move.figure_hint_bonus` | Destination tile has local_board type `any figure`. |
 | `revisit_penalty` | `decision_support.scoring.move.revisit_penalty` | Destination tile is in `visited_tiles`. |
-| `neighborhood_potential` | `decision_support.scoring.move.neighborhood_potential`, `decision_support.scoring.move.border_bonus`, `decision_support.scoring.move.neighborhood_weight_any_figure`, `decision_support.scoring.move.neighborhood_weight_possible_target`, `decision_support.scoring.move.unknown_tile_bonus` | Adds `neighborhood_potential * neighborhood_potential_sum` when `neighborhood_potential_sum > 0`. Log notes show per-direction bonuses (n, ne, e, se, s, sw, w, nw). |
+| `neighborhood_potential` | `decision_support.scoring.move.neighborhood_potential`, `decision_support.scoring.move.border_bonus`, `decision_support.scoring.move.neighborhood_weight_any_figure`, `decision_support.scoring.move.neighborhood_weight_possible_target`, `decision_support.scoring.move.unknown_tile_bonus` | Adds `neighborhood_potential * neighborhood_potential_sum` when both are non-zero. Log notes show per-direction bonuses (n, ne, e, se, s, sw, w, nw). |
 
 ## Move parameter mapping (config -> log column keys)
 
@@ -77,3 +79,7 @@ Notes:
 ## Config keys currently unused in scoring
 
 None documented here. If you add unused keys, list them without values and reference the config key.
+
+## Config keys expected by code but missing in config.json
+
+None documented here. If you remove keys, list them without values and reference the config key.

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import colorsys
+import difflib
 import json
 import os
 import random
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -41,6 +43,139 @@ def _log(message: str) -> None:
         except Exception:
             pass
     print(message)
+
+
+_MISSING = object()
+
+
+def _warn(message: str) -> None:
+    """Log a warning via shared logger when available, otherwise print."""
+    if LOGGER is not None:
+        try:
+            warn_logger = getattr(LOGGER, "warn", None)
+            if callable(warn_logger):
+                warn_logger(message)
+                return
+            LOGGER.log(f"WARNING: {message}")
+            return
+        except Exception:
+            pass
+    print(f"WARNING: {message}")
+
+
+def _short_repr(value: Any, max_len: int = 160) -> str:
+    """Return a short, single-line repr for logging."""
+    text = repr(value).replace("\n", "\\n").replace("\r", "\\r")
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text
+
+
+def _format_config_path(path: Tuple[Any, ...]) -> str:
+    """Format a config path tuple into a dotted path string."""
+    base = "config"
+    if not path:
+        return base
+    parts: List[str] = [base]
+    for segment in path:
+        if isinstance(segment, int):
+            parts[-1] = f"{parts[-1]}[{segment}]"
+        else:
+            parts.append(str(segment))
+    return ".".join(parts)
+
+
+def _format_key_list(keys: List[Any], limit: int = 8) -> str:
+    """Format key lists for warning messages."""
+    if not keys:
+        return "[]"
+    text_items = [str(key) for key in keys]
+    if len(text_items) > limit:
+        extra = len(text_items) - limit
+        return "[" + ", ".join(text_items[:limit]) + f", ... +{extra} more]"
+    return "[" + ", ".join(text_items) + "]"
+
+
+def _caller_location(frame: Optional[Any]) -> str:
+    """Return a human-friendly caller location for warnings."""
+    if frame is None:
+        return "unknown"
+    filename = frame.f_code.co_filename
+    line = frame.f_lineno
+    try:
+        filename = os.path.relpath(filename, start=Path.cwd())
+    except Exception:
+        pass
+    return f"{filename}:{line}"
+
+
+def _suggest_keys(requested: Any, keys: List[Any], limit: int = 3) -> List[str]:
+    """Return close matches for requested config keys."""
+    try:
+        requested_text = str(requested)
+    except Exception:
+        requested_text = repr(requested)
+    candidates = [str(key) for key in keys]
+    return difflib.get_close_matches(requested_text, candidates, n=limit, cutoff=0.6)
+
+
+def _warn_missing_config(cfg: "ConfigDict", key: Any, default_value: Any, caller_frame: Optional[Any]) -> None:
+    """Log a detailed warning when a config key is missing."""
+    missing_path = f"{_format_config_path(cfg._path)}.{key}"
+    parts = [
+        f"Config default used for missing key {missing_path}",
+        f"default={_short_repr(default_value)}",
+        f"caller={_caller_location(caller_frame)}",
+    ]
+    if CONFIG_SOURCE:
+        parts.append(f"config_file={CONFIG_SOURCE}")
+    keys = list(cfg.keys())
+    if keys:
+        parts.append(f"available_keys={_format_key_list(keys)}")
+        suggestions = _suggest_keys(key, keys)
+        if suggestions:
+            parts.append(f"suggestions={_format_key_list(suggestions, limit=len(suggestions))}")
+    _warn(" | ".join(parts))
+
+
+def _wrap_config_value(value: Any, path: Tuple[Any, ...]) -> Any:
+    """Wrap nested config mappings for warning-enabled access."""
+    if isinstance(value, ConfigDict):
+        value = dict(value)
+    if isinstance(value, dict):
+        return ConfigDict(value, _path=path)
+    if isinstance(value, list):
+        return [_wrap_config_value(item, path + (index,)) for index, item in enumerate(value)]
+    return value
+
+
+class ConfigDict(dict):
+    """Config dict wrapper that warns when defaults are used."""
+
+    def __init__(self, *args: Any, _path: Tuple[Any, ...] = (), **kwargs: Any) -> None:
+        super().__init__()
+        self._path = tuple(_path)
+        if args or kwargs:
+            self.update(*args, **kwargs)
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        super().__setitem__(key, _wrap_config_value(value, self._path + (key,)))
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        data = dict(*args, **kwargs)
+        for key, value in data.items():
+            super().__setitem__(key, _wrap_config_value(value, self._path + (key,)))
+
+    def get(self, key: Any, default: Any = _MISSING) -> Any:
+        if key in self:
+            return super().get(key)
+        default_value = None if default is _MISSING else default
+        try:
+            caller_frame = sys._getframe(1)
+        except Exception:
+            caller_frame = None
+        _warn_missing_config(self, key, default_value, caller_frame)
+        return _wrap_config_value(default_value, self._path + (key,))
 
 
 def _resolve_config_path(config_path: str) -> Optional[Path]:
@@ -88,13 +223,17 @@ def load_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:
         global CONFIG_SOURCE
         CONFIG_SOURCE = resolved
         with open(resolved, "r", encoding="utf-8") as file_handle:
-            return json.load(file_handle)
+            data = json.load(file_handle)
+        if not isinstance(data, dict):
+            _log(f"Config root should be a JSON object, got {type(data).__name__}.")
+            return ConfigDict()
+        return ConfigDict(data, _path=())
     except FileNotFoundError:
         _log(f"Missing config file: {config_path}")
-        return {}
+        return ConfigDict()
     except Exception as exc:
         _log(f"Failed to load config: {exc}")
-        return {}
+        return ConfigDict()
 
 
 def reload_config(config_path: str = CONFIG_PATH) -> Dict[str, Any]:

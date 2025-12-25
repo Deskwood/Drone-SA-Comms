@@ -998,8 +998,6 @@ class _Drone_Decision_Support:
         drone = self.drone
         ds_cfg = CONFIG.get("decision_support", {})
         scoring_cfg = ds_cfg.get("scoring", {})
-        board_w = int(CONFIG.get("board", {}).get("width", 8))
-        board_h = int(CONFIG.get("board", {}).get("height", 8))
 
         move_cfg = scoring_cfg.get("move", {})
         broadcast_cfg = scoring_cfg.get("broadcast", {})
@@ -1015,7 +1013,7 @@ class _Drone_Decision_Support:
         neighborhood_weight_possible_target = move_cfg.get("neighborhood_weight_possible_target", 1.0)
         border_bonus = move_cfg.get("border_bonus", 0.0)
         revisit_penalty = move_cfg.get("revisit_penalty", -1.0)
-        leg_alignment_bonus_per_step = move_cfg.get("leg_alignment_bonus_per_step", 0.6)
+        cross_track_penalty_per_step_squared = move_cfg.get("cross_track_penalty_per_step_squared", 0.6)
         sector_compliance_bonus = move_cfg.get("sector_compliance_bonus", 0.8)
 
         move_params = {
@@ -1029,7 +1027,7 @@ class _Drone_Decision_Support:
             "neighborhood_weight_possible_target": neighborhood_weight_possible_target,
             "border_bonus": border_bonus,
             "revisit_penalty": revisit_penalty,
-            "leg_alignment_bonus_per_step": leg_alignment_bonus_per_step,
+            "cross_track_penalty_per_step_squared": cross_track_penalty_per_step_squared,
             "sector_compliance_bonus": sector_compliance_bonus,
         }
 
@@ -1109,18 +1107,22 @@ class _Drone_Decision_Support:
                     return
                 score_components[name] = score_components.get(name, 0.0) + value
 
+            # Cross-track penalty relative to current mission leg
             if current_leg:
                 new_leg_distance = drone._distance_to_leg(new_pos, current_leg)
                 if current_leg_distance is not None and new_leg_distance is not None:
-                    delta_leg = current_leg_distance - new_leg_distance
-                    if delta_leg > 0:
-                        bonus = leg_alignment_bonus_per_step * delta_leg
-                        score += bonus
-                        _add_component("leg_approach_bonus", bonus)
-                        notes.append("aligning with coverage leg")
-                    if current_leg_distance and current_leg_distance > 0 and new_leg_distance == 0:
-                        notes.append("entered coverage leg corridor")
+                    delta_leg_distance = new_leg_distance - current_leg_distance
+                    cross_track_penalty = cross_track_penalty_per_step_squared * delta_leg_distance**2
+                    score += cross_track_penalty
+                    _add_component("leg_approach_bonus", cross_track_penalty)
+                    if new_leg_distance != 0:
+                        notes.append(f"not on current leg (dist {new_leg_distance})")
+                    if delta_leg_distance < 0:
+                        notes.append("approaching current leg")
+                    elif delta_leg_distance > 0:
+                        notes.append("diverting from current leg")
 
+            # Waypoint timing evaluation
             if target_pos:
                 current_dist = chebyshev_distance(drone.position, target_pos)
                 new_dist = chebyshev_distance(new_pos, target_pos)
@@ -1150,6 +1152,7 @@ class _Drone_Decision_Support:
                     if buffer_turns == 0 and slack < 0:
                         notes.append("rendezvous already overdue - move immediately")
 
+            # Tile type bonuses
             if tile_info["type"] == "unknown":
                 score += unknown_tile_bonus
                 _add_component("unknown_tile_bonus", unknown_tile_bonus)
@@ -1163,11 +1166,13 @@ class _Drone_Decision_Support:
                 _add_component("figure_hint", figure_hint_bonus)
                 notes.append("figure nearby")
 
+            # Revisit penalty
             if new_pos in visited_tiles:
                 score += revisit_penalty
                 _add_component("revisit_penalty", revisit_penalty)
                 notes.append("revisiting tile")
 
+            # Neighborhood potential
             neighborhood_potential, neighborhood_breakdown = self._compute_neighborhood_potential(
                 new_pos,
                 border_bonus,
@@ -1187,6 +1192,7 @@ class _Drone_Decision_Support:
                     bonus_detail = ", ".join(f"{label}:{value:.2f}" for label, value in bonus_parts.items())
                     notes.append(f"neighbor bonuses {bonus_detail} (total {neighbor_bonus:.2f})")
 
+            # Sector compliance bonus
             if sector_bounds:
                 new_sector_distance = self._distance_to_sector(new_pos, sector_bounds)
                 if new_sector_distance is not None:
@@ -1445,6 +1451,34 @@ class _Drone_Aftermath:
                     result["message"] = coordination_payload
                     if not result.get("rationale"):
                         result["rationale"] = "Auto broadcast coverage plan."
+
+        current_round = max(1, int(getattr(self.drone.sim, "round", 1) or 1))
+        max_rounds = max(1, int(CONFIG.get("simulation", {}).get("max_rounds", 1)))
+        rv_directive = getattr(self.drone, "rendezvous_directive", None)
+        if isinstance(rv_directive, dict):
+            rv_turn = rv_directive.get("turn")
+            rv_cart = rv_directive.get("target_cartesian")
+            if rv_cart is None and rv_directive.get("target"):
+                try:
+                    rv_cart = list(chess_to_cartesian(rv_directive["target"]))
+                except Exception:
+                    rv_cart = None
+            try:
+                rv_turn = int(rv_turn) if rv_turn is not None else None
+            except (TypeError, ValueError):
+                rv_turn = None
+            if rv_turn and rv_cart and tuple(rv_cart) == tuple(self.drone.position) and current_round >= rv_turn:
+                result["direction"] = None
+                if current_round >= max_rounds:
+                    result["action"] = "broadcast"
+                    if not result.get("message"):
+                        result["message"] = "Final rendezvous broadcast."
+                    if not result.get("rationale"):
+                        result["rationale"] = "Holding rendezvous for final coordination."
+                else:
+                    result["action"] = "wait"
+                    if not result.get("rationale"):
+                        result["rationale"] = "Holding rendezvous for final coordination."
 
         action = self._normalize_token(result.get("action") or "wait").strip().lower()
         rationale = self._normalize_text(result.get("rationale")).strip()

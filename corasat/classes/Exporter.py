@@ -265,6 +265,10 @@ class TimestampedLogger:
         """Log a message with timestamp and delta."""
         logging.info(f"[{self._now()}] (+{self._duration()}) {message}")
 
+    def warn(self, message: str) -> None:
+        """Log a warning message with timestamp and delta."""
+        logging.warning(f"[{self._now()}] (+{self._duration()}) {message}")
+
 
 LOGGER = TimestampedLogger()
 

@@ -23,7 +23,7 @@
     "drone_color": [0, 200, 255],
     "text_color": [255, 255, 255],
     "figure_image_dir": "./img",
-    "sidebar_width": 1200
+    "sidebar_width": 600
   },
   "figures": {
     "white": {
@@ -46,26 +46,26 @@
   "decision_support": {
     "scoring": {
       "move": {
-        "waypoint_progress_bonus": 0.3773373064545108,
-        "waypoint_delay_penalty": -3.1297425233109606,
-        "unknown_tile_bonus": 1.6,
-        "possible_target_bonus": 1.176106401783271,
-        "figure_hint_bonus": 0.8952272236141643,
+        "waypoint_progress_bonus": 0.301869845164,
+        "waypoint_delay_penalty": -3.755691027973,
+        "unknown_tile_bonus": 1.28,
         "neighborhood_potential": 0.2113228222813541,
-        "neighborhood_weight_any_figure": 0.5598749261072147,
-        "neighborhood_weight_possible_target": 0.8429396361671324,
-        "border_bonus": 0.5259970894963063,
-        "leg_alignment_bonus_per_step": 0.3,
-        "sector_compliance_bonus": 0.8090586104004454,
-        "revisit_penalty": -1.151560062117551
+        "figure_hint_bonus": 0.716181778891,
+        "possible_target_bonus": 0.940885121427,
+        "neighborhood_weight_any_figure": 0.447899940886,
+        "neighborhood_weight_possible_target": 0.674351708934,
+        "border_bonus": 0.420797671597,
+        "cross_track_penalty_per_step_squared": -0.3,
+        "sector_compliance_bonus": 0.64724688832,
+        "revisit_penalty": -1.381872074541
       },
       "broadcast": {
-        "base_broadcast_value": -0.5,
+        "base_broadcast_value": -0.6,
         "first_turn_coordination_bonus": 2.5,
-        "last_turn_coordination_bonus": 2.5
+        "last_turn_coordination_bonus": 8.0
       },
       "wait": {
-        "base_wait_value": -1.4
+        "base_wait_value": -1.68
       }
     }
   },

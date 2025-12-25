@@ -6,13 +6,9 @@ import os
 import pprint
 import random
 import threading
+import pygame
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, List, Optional
-
-try:
-    import pygame
-except Exception:
-    pygame = None
 
 from classes.Core import (
     CONFIG,
@@ -34,8 +30,7 @@ class Simulation:
     """Run a full Corasat game, coordinating drones, board state, and GUI."""
 
     def __init__(self, game_index: int = 1, total_games: int = 1):
-        if CONFIG["simulation"].get("headless", False) and pygame:
-            os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
         self.turn = 1
         self.round = 1
@@ -53,7 +48,6 @@ class Simulation:
         self.game_index = self._normalize_game_index(game_index, self.total_games)
         self.gui = self._create_gui()
 
-        self.planning_rounds = int(CONFIG["simulation"].get("planning_rounds", 2))
         self.plans: Dict[int, List[str]] = {}
         self._last_logged_plans: Dict[int, str] = {}
         self.state_lock = threading.Lock()

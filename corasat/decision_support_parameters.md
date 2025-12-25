@@ -27,8 +27,8 @@ Notes:
 | Component key | Config key(s) | Adds to score when... |
 | --- | --- | --- |
 | `waypoint_progress` | `decision_support.scoring.move.waypoint_progress_bonus` | `new_dist <= current_dist` (candidate move is not farther from the waypoint). Adds the reward once (not multiplied by delta). |
-| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty * abs(slack)`. |
-| `leg_approach_bonus` | `decision_support.scoring.move.leg_alignment_bonus_per_step` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds `leg_alignment_bonus_per_step * delta_leg` (highest when the new tile is on the leg). |
+| `waypoint_regression` | `decision_support.scoring.move.waypoint_delay_penalty` | `turns_remaining` available and `slack < 0` (i.e., `new_dist > turns_remaining`). Adds `waypoint_delay_penalty`. |
+| `leg_approach_bonus` | `decision_support.scoring.move.cross_track_penalty_per_step_squared` | Compares `current_leg_distance - new_leg_distance`. Positive delta adds `cross_track_penalty_per_step_squared * delta_leg` (highest when the new tile is on the leg). |
 | `sector_compliance_bonus` | `decision_support.scoring.move.sector_compliance_bonus` | If sector bounds exist and the candidate move is inside them (`new_sector_distance == 0`) or reduces distance to the sector. |
 | `unknown_tile_bonus` | `decision_support.scoring.move.unknown_tile_bonus` | Destination tile has local_board type `unknown`. |
 | `possible_target` | `decision_support.scoring.move.possible_target_bonus` | Destination tile has local_board type `a possible target`. |
@@ -42,7 +42,7 @@ Notes:
 | --- | --- |
 | `decision_support.scoring.move.waypoint_progress_bonus` | `waypoint_progress` |
 | `decision_support.scoring.move.waypoint_delay_penalty` | `waypoint_regression` |
-| `decision_support.scoring.move.leg_alignment_bonus_per_step` | `leg_approach_bonus` |
+| `decision_support.scoring.move.cross_track_penalty_per_step_squared` | `leg_approach_bonus` |
 | `decision_support.scoring.move.sector_compliance_bonus` | `sector_compliance_bonus` |
 | `decision_support.scoring.move.unknown_tile_bonus` | `unknown_tile_bonus`, `neighborhood_potential` |
 | `decision_support.scoring.move.possible_target_bonus` | `possible_target` |

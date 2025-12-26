@@ -768,9 +768,10 @@ class _Drone_Decision_Support:
         move_component_keys = [
             "waypoint_progress",
             "waypoint_regression",
-            "leg_approach_bonus",
+            "cross_track_penalty",
             "sector_compliance_bonus",
             "unknown_tile_bonus",
+            "no_figures_left_behind",
             "possible_target",
             "figure_hint",
             "revisit_penalty",
@@ -1025,6 +1026,7 @@ class _Drone_Decision_Support:
         waypoint_progress_bonus = move_cfg.get("waypoint_progress_bonus", 1.0)
         waypoint_delay_penalty = move_cfg.get("waypoint_delay_penalty", -1.0)
         unknown_tile_bonus = move_cfg.get("unknown_tile_bonus", 1.0)
+        no_figures_left_behind_bonus = move_cfg.get("no_figures_left_behind_bonus", 1.0)
         possible_target_bonus = move_cfg.get("possible_target_bonus", 1.2)
         figure_hint_bonus = move_cfg.get("figure_hint_bonus", 0.6)
         neighborhood_potential_factor = move_cfg.get("neighborhood_potential", 0.2)
@@ -1039,6 +1041,7 @@ class _Drone_Decision_Support:
             "waypoint_progress_bonus": waypoint_progress_bonus,
             "waypoint_delay_penalty": waypoint_delay_penalty,
             "unknown_tile_bonus": unknown_tile_bonus,
+            "no_figures_left_behind_bonus": no_figures_left_behind_bonus,
             "possible_target_bonus": possible_target_bonus,
             "figure_hint_bonus": figure_hint_bonus,
             "neighborhood_potential": neighborhood_potential_factor,
@@ -1118,6 +1121,27 @@ class _Drone_Decision_Support:
                 except (TypeError, ValueError):
                     continue
 
+        unidentified_neighbors: List[Tuple[int, int]] = []
+        if target_pos:
+            sx, sy = drone.position
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if dx == 0 and dy == 0:
+                        continue
+                    nx, ny = sx + dx, sy + dy
+                    if not on_board(nx, ny):
+                        continue
+                    tile_key = cartesian_to_chess((nx, ny))
+                    tile_info = drone.local_board.get(tile_key, {"type": "unknown"})
+                    if tile_info.get("type") == "any figure":
+                        unidentified_neighbors.append((nx, ny))
+
+        def _adjacent_to_unidentified(pos: Tuple[int, int]) -> bool:
+            for ux, uy in unidentified_neighbors:
+                if max(abs(pos[0] - ux), abs(pos[1] - uy)) <= 1:
+                    return True
+            return False
+
         for step in drone._legal_movement_steps():
             direction = step["direction"]
             new_pos = tuple(step["new_position"])
@@ -1140,7 +1164,7 @@ class _Drone_Decision_Support:
                     delta_leg_distance = new_leg_distance - current_leg_distance
                     cross_track_penalty = cross_track_penalty_per_step_squared * delta_leg_distance**2
                     score += cross_track_penalty
-                    _add_component("leg_approach_bonus", cross_track_penalty)
+                    _add_component("cross_track_penalty", cross_track_penalty)
                     if new_leg_distance != 0:
                         notes.append(f"not on current leg (dist {new_leg_distance})")
                     if delta_leg_distance < 0:
@@ -1170,6 +1194,18 @@ class _Drone_Decision_Support:
                     score += regression_penalty
                     _add_component("waypoint_regression", regression_penalty)
                     notes.append("late for waypoint")
+
+                if (
+                    no_figures_left_behind_bonus
+                    and unidentified_neighbors
+                    and slack is not None
+                    and slack > 0
+                    and new_dist == current_dist
+                    and _adjacent_to_unidentified(new_pos)
+                ):
+                    score += no_figures_left_behind_bonus
+                    _add_component("no_figures_left_behind", no_figures_left_behind_bonus)
+                    notes.append("holding progress to inspect nearby unknown figure")
 
                 if next_wp.get("duration_turns", 0) > 0 and slack is not None:
                     buffer_turns = max(0, slack)

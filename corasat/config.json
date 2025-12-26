@@ -55,7 +55,7 @@
         "neighborhood_weight_any_figure": 0.447899940886,
         "neighborhood_weight_possible_target": 0.674351708934,
         "border_bonus": 0.420797671597,
-        "cross_track_penalty_per_step_squared": 0.5,
+        "cross_track_penalty_per_step_squared": 1.0,
         "sector_compliance_bonus": 0.8,
         "revisit_penalty": -1.0
       },

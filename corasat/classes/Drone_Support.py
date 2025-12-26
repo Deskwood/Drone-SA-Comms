@@ -23,6 +23,14 @@ if TYPE_CHECKING:
     from classes.Drone import _Drone
 
 
+def _board_center_cartesian() -> Tuple[int, int]:
+    width = max(1, int(CONFIG.get("board", {}).get("width", 8)))
+    height = max(1, int(CONFIG.get("board", {}).get("height", 8)))
+    center_x = min(width - 1, width // 2)
+    center_y = min(height - 1, height // 2)
+    return (center_x, center_y)
+
+
 class _Drone_Knowledge:
     """Local board knowledge, memory, and intel sharing helpers."""
 
@@ -423,28 +431,39 @@ class _Drone_Mission_Support:
             requested_turn = self.drone.rendezvous_directive.get("turn") or rv_turn
             rv_turn = max(1, min(requested_turn, rv_turn_limit))
         if rv_cart is None:
-            rv_cart = start_pos
+            rv_cart = _board_center_cartesian()
 
         waypoints = self._build_sector_perimeter_waypoints(bounds, start_pos)
         if tuple(rv_cart) != waypoints[-1]:
             waypoints.append(tuple(rv_cart))
         legs = list(zip(waypoints[:-1], waypoints[1:]))
         distances = [chebyshev_distance(a, b) for a, b in legs]
-        total_dist = sum(distances)
-        available_turns = max(0, rv_turn - current_turn)
-        slack = max(0, available_turns - total_dist)
+        min_total_steps = sum(distances)
+        remaining_turns = max(0, rv_turn - current_turn + 1)
+        available_turns = max(0, remaining_turns - 1)
+        slack_turns = max(0, available_turns - min_total_steps)
 
-        cumulative = 0
+        slack_by_leg = [0] * len(distances)
+        if min_total_steps > 0 and slack_turns > 0:
+            raw_slack = [slack_turns * (dist / min_total_steps) for dist in distances]
+            slack_by_leg = [int(math.floor(value)) for value in raw_slack]
+            remainder = slack_turns - sum(slack_by_leg)
+            if remainder:
+                fractions = [raw - base for raw, base in zip(raw_slack, slack_by_leg)]
+                order = sorted(
+                    range(len(fractions)),
+                    key=lambda idx: (-fractions[idx], -distances[idx], idx),
+                )
+                for idx in order[:remainder]:
+                    slack_by_leg[idx] += 1
+
+        cumulative_dist = 0
+        cumulative_slack = 0
         last_arrival = current_turn
         for idx, ((wp_start, wp_end), dist) in enumerate(zip(legs, distances)):
-            cumulative += dist
-            if total_dist > 0 and available_turns >= total_dist:
-                extra = int(round(slack * (cumulative / total_dist)))
-                arrival_turn = current_turn + cumulative + extra
-            else:
-                arrival_turn = current_turn + cumulative
-            if idx == len(legs) - 1 and available_turns >= total_dist:
-                arrival_turn = rv_turn
+            cumulative_dist += dist
+            cumulative_slack += slack_by_leg[idx] if slack_by_leg else 0
+            arrival_turn = current_turn + cumulative_dist + cumulative_slack
             arrival_turn = max(arrival_turn, last_arrival)
             last_arrival = arrival_turn
 
@@ -986,7 +1005,7 @@ class _Drone_Decision_Support:
                 }
             )
         rendezvous_turn = max(1, CONFIG.get("simulation", {}).get("max_rounds", 1) - 1)
-        rendezvous_tile = cartesian_to_chess(sim.drone_base)
+        rendezvous_tile = cartesian_to_chess(_board_center_cartesian())
         return {
             "plan": {
                 "assignments": assignments,
@@ -1052,6 +1071,13 @@ class _Drone_Decision_Support:
         target_pos = tuple(next_wp["leg_end"]) if next_wp else None
         current_leg = next_wp if next_wp and next_wp.get("leg_start") else None
         current_leg_distance = drone._distance_to_leg(drone.position, current_leg) if current_leg else None
+        final_leg_active = False
+        mission_plan = getattr(drone, "mission_plan", None)
+        if isinstance(mission_plan, list) and mission_plan:
+            try:
+                final_leg_active = int(drone.current_leg_index) >= len(mission_plan) - 1
+            except (TypeError, ValueError):
+                final_leg_active = False
         timing_turns_remaining: Optional[int] = None
         timing_distance: Optional[int] = None
         timing_slack: Optional[int] = None
@@ -1108,7 +1134,7 @@ class _Drone_Decision_Support:
                 score_components[name] = score_components.get(name, 0.0) + value
 
             # Cross-track penalty relative to current mission leg
-            if current_leg:
+            if current_leg and not final_leg_active:
                 new_leg_distance = drone._distance_to_leg(new_pos, current_leg)
                 if current_leg_distance is not None and new_leg_distance is not None:
                     delta_leg_distance = new_leg_distance - current_leg_distance
@@ -1193,7 +1219,7 @@ class _Drone_Decision_Support:
                     notes.append(f"neighbor bonuses {bonus_detail} (total {neighbor_bonus:.2f})")
 
             # Sector compliance bonus
-            if sector_bounds:
+            if sector_bounds and not final_leg_active:
                 new_sector_distance = self._distance_to_sector(new_pos, sector_bounds)
                 if new_sector_distance is not None:
                     if sector_compliance_bonus and (
@@ -1577,15 +1603,18 @@ class _Drone_Aftermath:
     def _execute_broadcast(self, raw_message) -> Tuple[str, Optional[object], Optional[str]]:
         drone = self.drone
         msg, payload = self._parse_broadcast_message(raw_message)
+        new_edges = 0
         if not msg:
             with self._state_guard():
                 try:
                     drone.sim.broadcast_count += 1
                 except Exception:
                     pass
+            LOGGER.log(f"Broadcast by Drone {drone.id} added {new_edges} new edge(s).")
             return "", payload, "ERROR: Empty broadcast."
 
         with self._state_guard():
+            pre_edges = set(getattr(drone.sim, "reported_edges", []) or [])
             try:
                 drone.sim.broadcast_count += 1
             except Exception:
@@ -1598,9 +1627,12 @@ class _Drone_Aftermath:
             for target_drone in tile.drones:
                 if target_drone.id != drone.id:
                     target_drone.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
-                    if payload:
-                        target_drone.mission_support.apply_plan_directive(payload)
-                    drone.knowledge.provide_intelligence_to(target_drone)
+                if payload:
+                    target_drone.mission_support.apply_plan_directive(payload)
+                drone.knowledge.provide_intelligence_to(target_drone)
+            post_edges = set(getattr(drone.sim, "reported_edges", []) or [])
+            new_edges = len(post_edges - pre_edges)
+        LOGGER.log(f"Broadcast by Drone {drone.id} added {new_edges} new edge(s).")
         return msg, payload, None
 
     def _sanitize_memory(self, mem_txt: str, prior_mem: str) -> str:

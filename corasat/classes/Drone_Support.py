@@ -353,9 +353,11 @@ class _Drone_Mission_Support:
             else:
                 for offset in range(len(unique_corners)):
                     perimeter.append(unique_corners[(start_idx - offset) % len(unique_corners)])
-            perimeter.append(perimeter[0])
 
-        waypoints = [start_pos] + perimeter + [start_pos]
+        if len(perimeter) > 1 and perimeter[-1] != perimeter[0]:
+            perimeter = perimeter + [perimeter[0]]
+
+        waypoints = [start_pos] + perimeter
         cleaned: List[Tuple[int, int]] = []
         for wp in waypoints:
             if not cleaned or cleaned[-1] != wp:
@@ -516,7 +518,23 @@ class _Drone_Mission_Support:
             arrival_turn = max(1, int(leg.get("turn", 0) or 1))
             duration = max(0, int(leg.get("duration_turns", 0) or 0))
             current_round = max(1, int(getattr(self.drone.sim, "round", 1) or 1))
-            if current_round >= arrival_turn + duration:
+            leg_end = leg.get("leg_end")
+            tolerance = int(leg.get("tolerance_steps", 0) or 0)
+            at_leg_end = False
+            if isinstance(leg_end, (list, tuple)) and len(leg_end) == 2:
+                try:
+                    end_pos = (int(leg_end[0]), int(leg_end[1]))
+                    at_leg_end = chebyshev_distance(self.drone.position, end_pos) <= tolerance
+                except (TypeError, ValueError):
+                    at_leg_end = False
+            leg_expired = current_round > arrival_turn + duration
+            if leg_expired and not at_leg_end:
+                if self.drone.current_leg_index < len(self.drone.mission_plan) - 1:
+                    self.drone.current_leg_index += 1
+                    continue
+                self.drone.current_leg_index = len(self.drone.mission_plan) - 1
+                return
+            if at_leg_end and (duration == 0 or current_round >= arrival_turn + duration):
                 if self.drone.current_leg_index < len(self.drone.mission_plan) - 1:
                     self.drone.current_leg_index += 1
                     continue
@@ -689,7 +707,7 @@ class _Drone_Decision_Support:
 
         memory_text = drone.memory.strip()
         memory_text = memory_text.replace("\n", " | ") if memory_text else "None"
-        lines.append(f"Memory: {memory_text}")
+        lines.append(f"Memory (previous rounds): {memory_text}")
 
         if getattr(drone, "rendezvous_directive", None):
             rv = drone.rendezvous_directive
@@ -722,7 +740,9 @@ class _Drone_Decision_Support:
             turns_left = timing.get("turns_remaining")
             slack = timing.get("slack")
             if dist is not None and turns_left is not None:
-                lines.append(f"Waypoint timing: {dist} steps away, {turns_left} turns left (slack {slack}).")
+                lines.append(
+                    f"Waypoint timing: {dist} steps away, {turns_left} turns left (slack {slack}, incl. current turn)."
+                )
                 if slack is not None:
                     if slack < 0:
                         lines.append(
@@ -765,14 +785,14 @@ class _Drone_Decision_Support:
         def _format_score(value: float) -> str:
             return f"{value:.2f}"
 
+        excluded_component_keys = {"unknown_tile_bonus", "possible_target"}
+
         move_component_keys = [
             "waypoint_progress",
             "waypoint_regression",
             "cross_track_penalty",
             "sector_compliance_bonus",
-            "unknown_tile_bonus",
             "no_figures_left_behind",
-            "possible_target",
             "figure_hint",
             "revisit_penalty",
             "neighborhood_potential",
@@ -785,9 +805,12 @@ class _Drone_Decision_Support:
         ) -> List[str]:
             if not entries:
                 return []
-            seen_keys = {key for entry in entries for key in (entry.get("components") or {}).keys()}
+            seen_keys = {
+                key for entry in entries for key in (entry.get("components") or {}).keys()
+            } - excluded_component_keys
             component_keys = sorted(seen_keys)
             if component_order:
+                component_order = [key for key in component_order if key not in excluded_component_keys]
                 extras = sorted(key for key in seen_keys if key not in component_order)
                 component_keys = list(component_order) + extras
             headers = ["Action", "Choice", "Score"] + component_keys + ["Notes"]
@@ -865,6 +888,36 @@ class _Drone_Decision_Support:
                     ) or "n/a"
                     notes = "; ".join(entry.get("notes") or []) or "n/a"
                     lines.append(f"{action_text}: score {score_text}; components: {comp_text}; notes: {notes}")
+
+            best_entry = sorted_scores[0]
+            best_action = (best_entry.get("action") or "-").strip()
+            best_label = (best_entry.get("label") or "").strip()
+            if best_action == "move" and best_label:
+                best_action_text = f"{best_action} {best_label}"
+            elif best_label and best_action not in {"broadcast", "wait"}:
+                best_action_text = f"{best_action} {best_label}"
+            else:
+                best_action_text = best_action
+            best_score_text = _format_score(best_entry.get("score", 0.0))
+            summary_notes = "; ".join(best_entry.get("notes") or [])
+            if not summary_notes:
+                reason_text = "highest score"
+            else:
+                max_reason_len = 140
+                reason_text = summary_notes
+                if len(reason_text) > max_reason_len:
+                    reason_text = reason_text[: max_reason_len - 3].rstrip() + "..."
+            if reason_text.endswith("."):
+                summary_line = (
+                    f"Decision Support Summary: best choice {best_action_text} "
+                    f"(score {best_score_text}) because {reason_text}"
+                )
+            else:
+                summary_line = (
+                    f"Decision Support Summary: best choice {best_action_text} "
+                    f"(score {best_score_text}) because {reason_text}."
+                )
+            lines.append(summary_line)
 
         for ledger in snapshot.get("intel_ledger", []):
             last_round = ledger.get("last_round")
@@ -1086,7 +1139,7 @@ class _Drone_Decision_Support:
         timing_slack: Optional[int] = None
         if target_pos and next_wp and next_wp.get("turn") is not None:
             try:
-                timing_turns_remaining = max(0, int(next_wp["turn"]) - current_round)
+                timing_turns_remaining = max(0, int(next_wp["turn"]) - current_round + 1)
                 timing_distance = chebyshev_distance(drone.position, target_pos)
                 timing_slack = timing_turns_remaining - timing_distance
             except (TypeError, ValueError):
@@ -1162,7 +1215,7 @@ class _Drone_Decision_Support:
                 new_leg_distance = drone._distance_to_leg(new_pos, current_leg)
                 if current_leg_distance is not None and new_leg_distance is not None:
                     delta_leg_distance = new_leg_distance - current_leg_distance
-                    cross_track_penalty = cross_track_penalty_per_step_squared * delta_leg_distance**2
+                    cross_track_penalty = cross_track_penalty_per_step_squared * new_leg_distance**2
                     score += cross_track_penalty
                     _add_component("cross_track_penalty", cross_track_penalty)
                     if new_leg_distance != 0:
@@ -1179,15 +1232,25 @@ class _Drone_Decision_Support:
                 turns_remaining = timing_turns_remaining
                 if turns_remaining is None and next_wp and next_wp.get("turn") is not None:
                     try:
-                        turns_remaining = max(0, int(next_wp["turn"]) - current_round)
+                        turns_remaining = max(0, int(next_wp["turn"]) - current_round + 1)
                     except (TypeError, ValueError):
                         turns_remaining = None
-                slack = turns_remaining - new_dist if turns_remaining is not None else None
+                turns_remaining_after_move = (
+                    max(0, turns_remaining - 1) if turns_remaining is not None else None
+                )
+                slack = (
+                    turns_remaining_after_move - new_dist if turns_remaining_after_move is not None else None
+                )
 
-                if new_dist <= current_dist:
+                if new_dist < current_dist:
                     score += waypoint_progress_bonus
                     _add_component("waypoint_progress", waypoint_progress_bonus)
-                    notes.append("not farther from waypoint")
+                    notes.append("closer to waypoint")
+                elif new_dist > current_dist:
+                    progress_penalty = -abs(waypoint_progress_bonus)
+                    score += progress_penalty
+                    _add_component("waypoint_progress", progress_penalty)
+                    notes.append("farther from waypoint")
 
                 if slack is not None and slack < 0:
                     regression_penalty = waypoint_delay_penalty * abs(slack)

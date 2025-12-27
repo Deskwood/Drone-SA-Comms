@@ -46,27 +46,27 @@
   "decision_support": {
     "scoring": {
       "move": {
-        "waypoint_progress_bonus": 0.31,
-        "waypoint_delay_penalty": -4.85,
-        "unknown_tile_bonus": 2.09,
-        "no_figures_left_behind_bonus": 0.66,
-        "neighborhood_potential": 0.05,
-        "figure_hint_bonus": 0.71,
-        "possible_target_bonus": 1.7,
-        "neighborhood_weight_any_figure": 1.76,
-        "neighborhood_weight_possible_target": 0.78,
-        "border_bonus": 0.69,
+        "waypoint_progress_bonus": 0.11,
+        "waypoint_delay_penalty": -4.69,
+        "unknown_tile_bonus": 2.12,
+        "no_figures_left_behind_bonus": 0.43,
+        "neighborhood_potential": 0.04,
+        "figure_hint_bonus": 0.87,
+        "possible_target_bonus": 1.73,
+        "neighborhood_weight_any_figure": 1.56,
+        "neighborhood_weight_possible_target": 0.59,
+        "border_bonus": 0.81,
         "cross_track_penalty_per_step_squared": 0.0,
-        "sector_compliance_bonus": 1.49,
-        "revisit_penalty": -1.04
+        "sector_compliance_bonus": 1.37,
+        "revisit_penalty": -1.24
       },
       "broadcast": {
-        "base_broadcast_value": -1.09,
-        "first_turn_coordination_bonus": 5.0,
-        "last_turn_coordination_bonus": 3.94
+        "base_broadcast_value": -0.89,
+        "first_turn_coordination_bonus": 4.6,
+        "last_turn_coordination_bonus": 2.86
       },
       "wait": {
-        "base_wait_value": -0.31
+        "base_wait_value": 0.0
       }
     }
   },

@@ -1,0 +1,4 @@
+timestamp,label,mean,stddev,mean_plus_minus,seed_range,seed_count,rules_enabled,config_hash,logfile,notes
+2025-12-29T11:04:41.672790+01:00,Before Optuna Optimizing,0.75150,0.09534,0.75150 +/- 0.09534,1-100,100,true,3c123c76ae,corasat\\logs\\simulation_2025-12-28_173.log,baseline pre-optuna
+2025-12-29T11:04:41.672790+01:00,After Optuna Optimizing,0.94729,0.05074,0.94729 +/- 0.05074,1-100,100,true,e093748daf,corasat\\logs\\simulation_2025-12-28_172.log,rules enabled
+2025-12-29T11:04:41.672790+01:00,After Optuna Optimizing without Rules.txt,0.57001,0.17703,0.57001 +/- 0.17703,1-100,100,false,e093748daf,corasat\\logs\\simulation_2025-12-29_04.log,rules omitted

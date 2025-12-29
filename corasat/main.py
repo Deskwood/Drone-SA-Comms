@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import time
+import traceback
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from classes.Simulation import Simulation
 
@@ -139,6 +140,7 @@ def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Op
         raise
     except Exception as exc:
         _log(f"Simulation error: {exc}")
+        _log(traceback.format_exc())
     finally:
         _safe_shutdown(sim)
 

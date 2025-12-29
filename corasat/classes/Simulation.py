@@ -388,7 +388,12 @@ class Simulation:
         try:
             while running:
                 if use_gui and pygame:
-                    for event in pygame.event.get():
+                    try:
+                        events = pygame.event.get()
+                    except Exception as exc:
+                        LOGGER.log(f"GUI event handling error: {exc}")
+                        events = []
+                    for event in events:
                         if event.type == pygame.QUIT:
                             running = False
                             self._abort_requested = True

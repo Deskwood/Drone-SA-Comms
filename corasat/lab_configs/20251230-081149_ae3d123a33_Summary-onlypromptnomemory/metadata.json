@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-12-30T08:11:49.681348+01:00",
+  "label": "Summary-only prompt no memory",
+  "config_hash": "ae3d123a33",
+  "commit_sha": "49d42371aa72d7700616562277e254e401ac4105",
+  "logfile": "corasat\\logs\\simulation_2025-12-30_06.log",
+  "seed_range": "1-100",
+  "seed_count": 100,
+  "rules_enabled": "true",
+  "mean": 0.876,
+  "stddev": 0.14286,
+  "missing_files": [
+    "classes\\Drone_Support.py"
+  ],
+  "rules_used": "true",
+  "config_items": [
+    "config.json",
+    "rules.txt",
+    "classes\\Drone_Support.py"
+  ],
+  "files_copied": [
+    "config.json",
+    "rules.txt"
+  ],
+  "global_docs": [
+    "decision_support_parameters.md"
+  ],
+  "global_items": [
+    "main.py",
+    "classes\\Core.py",
+    "classes\\Drone.py",
+    "classes\\Exporter.py",
+    "classes\\GUI.py",
+    "classes\\Simulation.py"
+  ]
+}

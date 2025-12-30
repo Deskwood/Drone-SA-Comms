@@ -6,7 +6,7 @@
   "rules_path": "rules.txt",
   "simulation": {
     "create_py_export": false,
-    "use_gui": true,
+    "use_gui": false,
     "model_index": 4,
     "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
     "num_drones": 2,
@@ -46,38 +46,35 @@
   "decision_support": {
     "scoring": {
       "move": {
-        "waypoint_progress_bonus": 0.2,
-        "waypoint_delay_penalty": -0.75,
-        "unknown_tile_bonus": 2.1,
-        "no_figures_left_behind_bonus": 1.05,
-        "neighborhood_potential": 0.0,
-        "figure_hint_bonus": 1.45,
-        "possible_target_bonus": 2.5,
-        "neighborhood_weight_any_figure": 0.05,
-        "neighborhood_weight_possible_target": 0.1,
-        "border_bonus": 0.55,
-        "cross_track_penalty_per_step_squared": -0.1,
-        "sector_compliance_bonus": 0.1,
-        "revisit_penalty": -2.9
+        "waypoint_progress_bonus": 0.5,
+        "waypoint_delay_penalty": -3.0,
+        "unknown_tile_bonus": 1.3,
+        "no_figures_left_behind_bonus": 1.5,
+        "neighborhood_potential": 0.1,
+        "figure_hint_bonus": 1.0,
+        "possible_target_bonus": 0.9,
+        "neighborhood_weight_any_figure": 0.4,
+        "neighborhood_weight_possible_target": 0.7,
+        "border_bonus": 1.0,
+        "cross_track_penalty_per_step_squared": -1.0,
+        "sector_compliance_bonus": 0.8,
+        "revisit_penalty": -1.0
       },
       "broadcast": {
-        "base_broadcast_value": -1.35,
-        "first_turn_coordination_bonus": 2.65,
-        "last_turn_coordination_bonus": 0.65
+        "base_broadcast_value": -0.6,
+        "first_turn_coordination_bonus": 2.5,
+        "last_turn_coordination_bonus": 8.0
       },
       "wait": {
-        "base_wait_value": -1.35
+        "base_wait_value": -1.68
       }
-    },
-    "prompt": {
-      "debug_dump_path": "Code/corasat/debug_model_inputs.jsonl"
     }
   },
   "prompt_requests": {
-    "rationale": "",
-    "action": "",
-    "action_move": "",
-    "action_broadcast": "",
-    "memory_update": ""
+    "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s) or the mandatory rule you are following.",
+    "action": "Action: choose one of wait, move, broadcast. Follow rules; if Special directive says Drone 1 on round 1, you MUST broadcast.",
+    "action_move": "Direction: choose ONLY from Legal moves.",
+    "action_broadcast": "Message: If broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
+    "memory_update": "Memory: <=6 short lines. Use tags PLAN:, SECTOR:, RV:, FIG:, POSSIBLE:, NOTE:, VISITED:. Keep existing VISITED lines. Do NOT copy Decision Support, Legal movements, or Broadcast Rx Buffer."
   }
 }

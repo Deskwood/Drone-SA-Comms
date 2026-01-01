@@ -96,10 +96,10 @@ def _safe_shutdown(sim: Simulation) -> None:
         pass
 
 
-def _create_simulation(game_index: int, total_games: int):
+def _create_simulation(game_index: int, total_games: int, seed: Optional[int]):
     """Construct a Simulation instance, returning None on failure."""
     try:
-        return Simulation(game_index=game_index, total_games=total_games)
+        return Simulation(game_index=game_index, total_games=total_games, seed=seed)
     except Exception as exc:
         _log(f"Simulation init failed: {exc}")
         return None
@@ -125,7 +125,7 @@ def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Op
     _set_global_seed(seed)
     config = _reload_config(core.CONFIG_PATH)
 
-    sim = _create_simulation(game_index=game_index, total_games=total_games)
+    sim = _create_simulation(game_index=game_index, total_games=total_games, seed=seed)
     if sim is None:
         return None, False
 

@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import shutil
 import statistics
-import subprocess
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -22,9 +21,7 @@ LAB_RESULTS_FIELDS = [
     "mean_plus_minus",
     "seed_range",
     "seed_count",
-    "rules_enabled",
-    "config_hash",
-    "commit_sha",
+    "lab_config_hash_SHA-256",
     "lab_config_path",
     "logfile",
     "notes",
@@ -33,6 +30,10 @@ LAB_RESULTS_FIELDS = [
 GLOBAL_DOCS = [
     "decision_support_parameters.md",
 ]
+
+LAB_CONFIG_HASH_SHORT_LEN = 16
+LAB_CONFIG_HASH_IGNORE_NAMES = {"metadata.json"}
+LAB_CONFIG_HASH_IGNORE_DIRS = {"__pycache__"}
 
 
 def _global_items(base_dir: Path) -> List[str]:
@@ -57,20 +58,36 @@ def _load_json(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _config_hash(cfg: Dict[str, Any]) -> str:
-    payload = json.dumps(cfg, sort_keys=True, ensure_ascii=True)
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
+def _iter_lab_hash_files(base_dir: Path) -> List[Path]:
+    files: List[Path] = []
+    for path in sorted(base_dir.rglob("*")):
+        if path.is_dir():
+            if path.name in LAB_CONFIG_HASH_IGNORE_DIRS:
+                continue
+            continue
+        if path.name in LAB_CONFIG_HASH_IGNORE_NAMES:
+            continue
+        files.append(path)
+    return files
 
 
-def _safe_commit_sha(repo_root: Path) -> str:
-    try:
-        return (
-            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(repo_root), stderr=subprocess.DEVNULL)
-            .decode("utf-8")
-            .strip()
-        )
-    except Exception:
-        return ""
+def _lab_config_hash_from_payloads(payloads: List[Tuple[str, bytes]]) -> str:
+    hasher = hashlib.sha256()
+    for rel_path, data in sorted(payloads, key=lambda item: item[0]):
+        hasher.update(rel_path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(str(len(data)).encode("ascii"))
+        hasher.update(b"\0")
+        hasher.update(data)
+    return hasher.hexdigest()[:LAB_CONFIG_HASH_SHORT_LEN]
+
+
+def _lab_config_hash_from_dir(lab_dir: Path) -> str:
+    payloads: List[Tuple[str, bytes]] = []
+    for path in _iter_lab_hash_files(lab_dir):
+        rel_path = path.relative_to(lab_dir).as_posix()
+        payloads.append((rel_path, path.read_bytes()))
+    return _lab_config_hash_from_payloads(payloads)
 
 
 def _normalize_path(value: str) -> str:
@@ -141,10 +158,10 @@ def _write_lab_results(path: Path, rows: List[Dict[str, str]]) -> None:
             writer.writerow(row)
 
 
-def _build_snapshot_dir(base_dir: Path, config_hash: str, label: str) -> Path:
+def _build_snapshot_dir(base_dir: Path, label: str) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_label = "".join(ch for ch in label if ch.isalnum() or ch in ("-", "_")).strip("_-")
-    suffix = f"{timestamp}_{config_hash}"
+    suffix = timestamp
     if safe_label:
         suffix = f"{suffix}_{safe_label[:32]}"
     return base_dir / "lab_configs" / suffix
@@ -170,10 +187,8 @@ def _snapshot_configs(
     rules_enabled: str,
     mean: Optional[float],
     stddev: Optional[float],
-    commit_sha: str,
-    config_hash: str,
 ) -> Path:
-    snapshot_dir = _build_snapshot_dir(base_dir, config_hash, label)
+    snapshot_dir = _build_snapshot_dir(base_dir, label)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
     missing: List[str] = []
@@ -198,8 +213,6 @@ def _snapshot_configs(
     metadata = {
         "timestamp": datetime.now().astimezone().isoformat(),
         "label": label,
-        "config_hash": config_hash,
-        "commit_sha": commit_sha,
         "logfile": logfile,
         "seed_range": seed_range,
         "seed_count": seed_count,
@@ -224,11 +237,9 @@ def _update_lab_results(
     logfile: str,
     seed_range: str,
     seed_count: int,
-    rules_enabled: str,
     mean: Optional[float],
     stddev: Optional[float],
-    config_hash: str,
-    commit_sha: str,
+    lab_config_hash: str,
     lab_config_path: str,
     notes: str,
 ) -> None:
@@ -245,9 +256,7 @@ def _update_lab_results(
         "mean_plus_minus": mean_pm,
         "seed_range": seed_range,
         "seed_count": seed_count if seed_count else "",
-        "rules_enabled": rules_enabled,
-        "config_hash": config_hash,
-        "commit_sha": commit_sha,
+        "lab_config_hash_SHA-256": lab_config_hash,
         "lab_config_path": lab_config_path,
         "logfile": logfile,
         "notes": notes,
@@ -288,10 +297,8 @@ def main() -> int:
     args = parser.parse_args()
 
     base_dir = Path(__file__).resolve().parent.parent
-    repo_root = base_dir.parent
     cfg_path = (base_dir / args.config).resolve()
     cfg = _load_json(cfg_path)
-    config_hash = _config_hash(cfg) if cfg else ""
 
     rules_path = cfg.get("rules_path") if isinstance(cfg, dict) else ""
     rules_path = rules_path or "rules.txt"
@@ -314,7 +321,6 @@ def main() -> int:
         if not seed_range and calc_range:
             seed_range = calc_range
 
-    commit_sha = _safe_commit_sha(repo_root)
     snapshot_dir = _snapshot_configs(
         base_dir,
         cfg_path,
@@ -327,12 +333,11 @@ def main() -> int:
         args.rules_enabled,
         mean,
         stddev,
-        commit_sha,
-        config_hash,
     )
+    lab_config_hash = _lab_config_hash_from_dir(snapshot_dir)
 
     lab_results_csv = (base_dir / args.lab_results_csv).resolve()
-    lab_config_path = os.path.relpath(str(snapshot_dir), start=str(repo_root))
+    lab_config_path = os.path.relpath(str(snapshot_dir), start=str(base_dir.parent))
     _update_lab_results(
         lab_results_csv,
         args.mode,
@@ -340,11 +345,9 @@ def main() -> int:
         args.logfile,
         seed_range,
         seed_count,
-        args.rules_enabled,
         mean,
         stddev,
-        config_hash,
-        commit_sha,
+        lab_config_hash,
         lab_config_path,
         args.notes,
     )

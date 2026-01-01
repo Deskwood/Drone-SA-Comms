@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 import json
 import math
 import time
@@ -21,6 +22,8 @@ from classes.Core import (
 from classes.Exporter import LOGGER
 if TYPE_CHECKING:
     from classes.Drone import _Drone
+
+SUMMARY_ONLY_PROMPT = True
 
 
 def _board_center_cartesian() -> Tuple[int, int]:
@@ -785,7 +788,7 @@ class _Drone_Decision_Support:
         def _format_score(value: float) -> str:
             return f"{value:.2f}"
 
-        excluded_component_keys = {"unknown_tile_bonus", "possible_target"}
+        excluded_component_keys = {"unknown_tile_bonus", "possible_target", "waypoint_progress", "waypoint_regression", "cross_track_penalty", "sector_compliance_bonus", "no_figures_left_behind", "figure_hint", "revisit_penalty", "neighborhood_potential"}
 
         move_component_keys = [
             "waypoint_progress",
@@ -882,12 +885,8 @@ class _Drone_Decision_Support:
                     else:
                         action_text = action
                     score_text = _format_score(entry.get("score", 0.0))
-                    components = entry.get("components") or {}
-                    comp_text = ", ".join(
-                        f"{key}={value:+.2f}" for key, value in components.items()
-                    ) or "n/a"
                     notes = "; ".join(entry.get("notes") or []) or "n/a"
-                    lines.append(f"{action_text}: score {score_text}; components: {comp_text}; notes: {notes}")
+                    lines.append(f"{action_text}: score {score_text}; notes: {notes}")
 
             best_entry = sorted_scores[0]
             best_action = (best_entry.get("action") or "-").strip()
@@ -935,6 +934,28 @@ class _Drone_Decision_Support:
         collected_figure_information = drone.knowledge.collected_figure_information_text()
 
         lines: List[str] = []
+        if SUMMARY_ONLY_PROMPT:
+            summary_line = "Decision Support Summary: n/a"
+            score_entries = snapshot.get("scores", [])
+            if score_entries:
+                sorted_scores = sorted(
+                    score_entries,
+                    key=lambda entry: entry.get("score", float("-inf")),
+                    reverse=True,
+                )
+                best_entry = sorted_scores[0]
+                best_action = (best_entry.get("action") or "-").strip()
+                best_label = (best_entry.get("label") or "").strip()
+                if best_action == "move" and best_label:
+                    best_action_text = f"{best_action} {best_label}"
+                elif best_label and best_action not in {"broadcast", "wait"}:
+                    best_action_text = f"{best_action} {best_label}"
+                else:
+                    best_action_text = best_action
+                summary_line = f"Decision Support Summary: {best_action_text}"
+            situation_description = "Decision Support:\n  " + summary_line
+            LOGGER.log(f"Drone {drone.id} Situation:\n{situation_description}")
+            return situation_description
         lines.append(f"Collected figure information: {collected_figure_information or 'None'}")
         rx_buffer = drone.mission_support.consume_rx_buffer().strip()
         if rx_buffer:
@@ -958,7 +979,6 @@ class _Drone_Decision_Support:
     def build_prompt(self, rules: str) -> Dict[str, object]:
         """Create the prompt payload for the language model."""
         snapshot = self.snapshot()
-        rules = ""
         situation = self.build_situation(snapshot)
 
         prompt_requests = CONFIG.get("prompt_requests", {})
@@ -1439,6 +1459,60 @@ class _Drone_Language_Model:
         self.drone = drone
         self.model = model
 
+    def _derive_llm_seed(self) -> Optional[int]:
+        sim = getattr(self.drone, "sim", None)
+        if sim is None:
+            return None
+        base_seed = getattr(sim, "seed", None)
+        if base_seed is None:
+            return None
+        try:
+            base_seed = int(base_seed)
+        except (TypeError, ValueError):
+            return None
+        game_index = int(getattr(sim, "game_index", 0) or 0)
+        round_num = int(getattr(sim, "round", 0) or 0)
+        turn_num = int(getattr(sim, "turn", 0) or 0)
+        drone_id = int(getattr(self.drone, "id", 0) or 0)
+        derived = (
+            base_seed * 1_000_003
+            + game_index * 10_000
+            + round_num * 100
+            + turn_num * 10
+            + drone_id
+        )
+        return int(derived % (2**31 - 1))
+
+    def _debug_dump_inputs(self, messages: List[dict], prompt_char_len: Optional[int], llm_seed: Optional[int]) -> None:
+        debug_cfg = CONFIG.get("decision_support", {}).get("prompt", {})
+        debug_path = debug_cfg.get("debug_dump_path")
+        if not debug_path:
+            debug_path = CONFIG.get("prompt_requests", {}).get("debug_dump_path")
+        if not debug_path:
+            debug_path = "debug_model_inputs.jsonl"
+        if not debug_path:
+            return
+        try:
+            path = resolve_data_path(str(debug_path))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            sim = getattr(self.drone, "sim", None)
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "seed": getattr(sim, "seed", None) if sim else None,
+                "llm_seed": llm_seed,
+                "drone_id": getattr(self.drone, "id", None),
+                "round": getattr(sim, "round", None) if sim else None,
+                "turn": getattr(sim, "turn", None) if sim else None,
+                "model": self.model,
+                "prompt_char_len": prompt_char_len,
+                "messages": messages,
+            }
+            with path.open("a", encoding="utf-8") as handle:
+                json.dump(entry, handle, ensure_ascii=True)
+                handle.write("\n")
+        except Exception:
+            return
+
     def generate(self, messages: List[dict], temperature: float, prompt_char_len: Optional[int] = None) -> List[dict]:
         """Return a list of messages including the model response."""
         if self.model == "manual":
@@ -1461,13 +1535,23 @@ class _Drone_Language_Model:
             LOGGER.log(f"Ollama unavailable: {exc}")
             raise
 
+        llm_seed = self._derive_llm_seed()
+        self._debug_dump_inputs(messages, prompt_char_len, llm_seed)
         request_started = time.perf_counter()
+        options: Dict[str, object] = {"temperature": float(temperature)}
+        sim_cfg = CONFIG.get("simulation", {})
+        if sim_cfg.get("top_p") is not None:
+            options["top_p"] = float(sim_cfg["top_p"])
+        if sim_cfg.get("top_k") is not None:
+            options["top_k"] = int(sim_cfg["top_k"])
+        if llm_seed is not None:
+            options["seed"] = llm_seed
         response = ollama_chat(
             model=self.model,
             messages=messages,
             stream=False,
             format="json",
-            options={"temperature": float(temperature)},
+            options=options,
         )
         elapsed = time.perf_counter() - request_started
         content = response["message"]["content"]

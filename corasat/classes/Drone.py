@@ -1,6 +1,7 @@
 """Drone agent orchestrating per-turn behavior via support components."""
 from __future__ import annotations
 
+import inspect
 from typing import Dict, List, Optional, Tuple
 
 from classes.Core import CONFIG
@@ -106,7 +107,19 @@ class _Drone:
         prompt_data = self.decision_support.build_prompt(self.rules)
         prompt_char_len = prompt_data["prompt_char_len"]
         print(f"Context length (chars): {prompt_char_len}")
-        return self.language_model.generate(prompt_data["messages"], temperature, prompt_char_len)
+        signature = inspect.signature(self.language_model.generate)
+        if "snapshot" in signature.parameters:
+            return self.language_model.generate(
+                prompt_data["messages"],
+                temperature,
+                prompt_char_len,
+                prompt_data.get("snapshot"),
+            )
+        return self.language_model.generate(
+            prompt_data["messages"],
+            temperature,
+            prompt_char_len,
+        )
 
     def take_turn(self) -> Dict[str, object]:
         """Run the full turn pipeline and return an outcome for Simulation."""

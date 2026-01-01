@@ -77,6 +77,33 @@ def _set_path(cfg: Dict[str, object], dotted_key: str, value: float) -> None:
     ref[keys[-1]] = value
 
 
+def _get_path(cfg: Dict[str, object], dotted_key: str) -> object:
+    ref: object = cfg
+    for key in dotted_key.split("."):
+        if not isinstance(ref, dict) or key not in ref:
+            raise KeyError(dotted_key)
+        ref = ref[key]
+    return ref
+
+
+def _params_from_config(cfg: Dict[str, object]) -> Dict[str, float]:
+    params: Dict[str, float] = {}
+    missing: List[str] = []
+    for key in PARAM_SPACE:
+        try:
+            value = _get_path(cfg, key)
+        except KeyError:
+            missing.append(key)
+            continue
+        try:
+            params[key] = float(value)
+        except (TypeError, ValueError):
+            missing.append(key)
+    if missing:
+        raise KeyError(f"Missing or invalid PARAM_SPACE keys in enqueue config: {', '.join(missing)}")
+    return params
+
+
 def _parse_seeds(seed_text: str) -> List[int]:
     seeds = []
     for token in seed_text.split(","):
@@ -220,6 +247,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional comma-separated seed:weight pairs, e.g. 5:3,8:3.",
     )
+    parser.add_argument(
+        "--enqueue-config",
+        type=str,
+        default="",
+        help="Optional config.json path to enqueue as the first trial.",
+    )
     parser.add_argument("--no-prune", action="store_true", help="Disable pruning.")
     parser.add_argument("--no-apply-best", action="store_true", help="Do not write best params back to config.json.")
     parser.add_argument("--verbose", action="store_true", help="Enable Optuna info logging.")
@@ -252,6 +285,12 @@ def main() -> int:
 
     original_cfg = _load_config()
     max_rounds = args.max_rounds if args.max_rounds > 0 else None
+
+    if args.enqueue_config:
+        enqueue_path = Path(args.enqueue_config).resolve()
+        enqueue_cfg = json.loads(enqueue_path.read_text(encoding="utf-8"))
+        enqueue_params = _params_from_config(enqueue_cfg)
+        study.enqueue_trial(enqueue_params)
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_path = BASE_DIR / f"optuna_runs_{timestamp}.csv"

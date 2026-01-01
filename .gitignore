@@ -208,3 +208,4 @@ __marimo__/
 corasat/screenshots/last_run.png
 corasat/results.csv
 corasat/*_runs_*.csv
+corasat/archive/

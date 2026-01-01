@@ -1,0 +1,16 @@
+{
+  "lab_id": "L3",
+  "label": "L3 - Full context (L2 optuna params)",
+  "created_at": "2026-01-01T11:37:23.113126+01:00",
+  "seed_range": "1-100",
+  "seed_count": 100,
+  "mean_norm_score": 0.89746,
+  "std_norm_score": 0.07993,
+  "logfile": "corasat\\logs\\simulation_2026-01-01_02.log",
+  "notes": "full context using L2 optuna parameters; L3 rules/Drone_Support",
+  "files": [
+    "config.json",
+    "rules.txt",
+    "classes/Drone_Support.py"
+  ]
+}

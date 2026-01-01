@@ -785,7 +785,7 @@ class _Drone_Decision_Support:
         def _format_score(value: float) -> str:
             return f"{value:.2f}"
 
-        excluded_component_keys = {"unknown_tile_bonus", "possible_target", "waypoint_progress", "waypoint_regression", "cross_track_penalty", "sector_compliance_bonus", "no_figures_left_behind", "figure_hint", "revisit_penalty", "neighborhood_potential"}
+        excluded_component_keys = {"unknown_tile_bonus", "possible_target"}
 
         move_component_keys = [
             "waypoint_progress",

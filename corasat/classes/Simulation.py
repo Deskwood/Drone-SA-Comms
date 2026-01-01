@@ -29,12 +29,13 @@ from classes.GUI import _SimulationGUI
 class Simulation:
     """Run a full Corasat game, coordinating drones, board state, and GUI."""
 
-    def __init__(self, game_index: int = 1, total_games: int = 1):
+    def __init__(self, game_index: int = 1, total_games: int = 1, seed: Optional[int] = None):
         if not CONFIG["simulation"].get("use_gui", True):
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
         self.turn = 1
         self.round = 1
+        self.seed = seed
         self.rules = self._load_rules()
 
         self.grid_size = (CONFIG["board"]["width"], CONFIG["board"]["height"])

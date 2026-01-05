@@ -1,0 +1,21 @@
+{
+  "lab_id": "L5",
+  "label": "L5 - LoRA fine-tune from L4 (corasat-l4-lora Q8_0)",
+  "created_at": "2026-01-02T21:16:30+01:00",
+  "source_lab": "L4_OptunaTuning_L3",
+  "notes": "LoRA fine-tune on L4 log simulation_2026-01-01_58.log with Llama-3.1-8B-Instruct; merged + GGUF Q8_0; Ollama model corasat-l4-lora.",
+  "seed_range": "1-100",
+  "seed_count": 100,
+  "mean_norm_score": 0.84842,
+  "std_norm_score": 0.13484,
+  "logfile": "corasat\\logs\\simulation_2026-01-02_01.log",
+  "files": [
+    "config.json",
+    "rules.txt",
+    "classes/Drone_Support.py"
+  ],
+  "lora_adapter_dir": "corasat\\lora\\output_l4_lora",
+  "lora_base_model": "C:\\models\\Llama-3.1-8B-Instruct",
+  "gguf_model": "C:\\models\\Llama-3.1-8B-Instruct-L4-Lora-Merged\\l4_lora_q8_0.gguf",
+  "ollama_model": "corasat-l4-lora:latest"
+}

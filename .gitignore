@@ -209,3 +209,8 @@ corasat/screenshots/last_run.png
 corasat/results.csv
 corasat/*_runs_*.csv
 corasat/archive/
+corasat/lora/output_*/
+corasat/lora/**/checkpoint-*/
+corasat/lora/*.pt
+corasat/lora/*.safetensors
+corasat/lora/*.bin

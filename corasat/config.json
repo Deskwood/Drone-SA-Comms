@@ -7,8 +7,8 @@
   "simulation": {
     "create_py_export": false,
     "use_gui": false,
-    "model_index": 4,
-    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
+    "model_index": 5,
+    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b", "corasat-l4-lora"],
     "num_drones": 2,
     "max_rounds": 32,
     "temperature": 0.0,

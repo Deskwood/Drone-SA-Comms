@@ -1,0 +1,12 @@
+model_name_or_path: C:/models/Llama-3.1-8B-Instruct
+adapter_name_or_path: lora/output_l4_lora
+
+stage: sft
+finetuning_type: lora
+template: llama3
+cutoff_len: 2048
+
+export_dir: C:/models/Llama-3.1-8B-Instruct-L4-Lora-Merged
+export_device: auto
+export_size: 5
+export_legacy_format: false

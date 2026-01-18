@@ -1,0 +1,171 @@
+{
+  "review_root": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_135203",
+  "tolerance": 1e-05,
+  "results": [
+    {
+      "label": "L1 - Baseline (pre-Optuna)",
+      "kind": "worst",
+      "seed": 5,
+      "baseline_norm_score": 0.55882,
+      "new_norm_score": 0.55882,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L1 - Baseline (pre-Optuna)",
+      "kind": "average",
+      "seed": 11,
+      "baseline_norm_score": 0.75,
+      "new_norm_score": 0.75,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L1 - Baseline (pre-Optuna)",
+      "kind": "best",
+      "seed": 28,
+      "baseline_norm_score": 0.95161,
+      "new_norm_score": 0.95161,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L2 - Reduced context (Optuna 1)",
+      "kind": "worst",
+      "seed": 6,
+      "baseline_norm_score": 0.53571,
+      "new_norm_score": 0.53571,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L2 - Reduced context (Optuna 1)",
+      "kind": "average",
+      "seed": 90,
+      "baseline_norm_score": 0.88679,
+      "new_norm_score": 0.88679,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L2 - Reduced context (Optuna 1)",
+      "kind": "best",
+      "seed": 3,
+      "baseline_norm_score": 1.0,
+      "new_norm_score": 1.0,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L3 - Full context (L2 optuna params)",
+      "kind": "worst",
+      "seed": 6,
+      "baseline_norm_score": 0.53571,
+      "new_norm_score": 0.53571,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L3 - Full context (L2 optuna params)",
+      "kind": "average",
+      "seed": 54,
+      "baseline_norm_score": 0.89831,
+      "new_norm_score": 0.89831,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L3 - Full context (L2 optuna params)",
+      "kind": "best",
+      "seed": 3,
+      "baseline_norm_score": 1.0,
+      "new_norm_score": 1.0,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L4 - Optuna tuning of L3 (full context)",
+      "kind": "worst",
+      "seed": 85,
+      "baseline_norm_score": 0.33898,
+      "new_norm_score": 0.33898,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L4 - Optuna tuning of L3 (full context)",
+      "kind": "average",
+      "seed": 28,
+      "baseline_norm_score": 0.90323,
+      "new_norm_score": 0.90323,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L4 - Optuna tuning of L3 (full context)",
+      "kind": "best",
+      "seed": 35,
+      "baseline_norm_score": 1.0,
+      "new_norm_score": 1.0,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L5 - LoRA fine-tuned (from L4)",
+      "kind": "worst",
+      "seed": 85,
+      "baseline_norm_score": 0.28814,
+      "new_norm_score": 0.28814,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L5 - LoRA fine-tuned (from L4)",
+      "kind": "average",
+      "seed": 12,
+      "baseline_norm_score": 0.84746,
+      "new_norm_score": 0.84746,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "label": "L5 - LoRA fine-tuned (from L4)",
+      "kind": "best",
+      "seed": 35,
+      "baseline_norm_score": 1.0,
+      "new_norm_score": 1.0,
+      "delta": 0.0,
+      "match": true,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}

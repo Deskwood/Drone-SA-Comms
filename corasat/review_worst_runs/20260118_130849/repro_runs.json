@@ -1,0 +1,81 @@
+{
+  "review_root": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849",
+  "started_at": "2026-01-18T13:10:11.516297",
+  "runs": [
+    {
+      "label": "L1 - Baseline (pre-Optuna)",
+      "seed": 5,
+      "status": "ok",
+      "error": null,
+      "temp_config": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L1_BeforeFirstOptunaOptimization\\config_repro_seed5.json",
+      "new_log": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_01.log",
+      "log_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L1_Baseline_pre_Optuna_seed5\\simulation_2026-01-18_01.log",
+      "screenshot_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L1_Baseline_pre_Optuna_seed5\\L1_Baseline_pre_Optuna_seed5.png",
+      "new_log_rel": "corasat/logs/simulation_2026-01-18_01.log",
+      "new_norm_score": 0.73529
+    },
+    {
+      "label": "L2 - Reduced context (Optuna 1)",
+      "seed": 6,
+      "status": "ok",
+      "error": null,
+      "temp_config": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L2_AfterFirstOptunaOptimization_ReducedContext\\config_repro_seed6.json",
+      "new_log": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_02.log",
+      "log_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L2_Reduced_context_Optuna_1_seed6\\simulation_2026-01-18_02.log",
+      "screenshot_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L2_Reduced_context_Optuna_1_seed6\\L2_Reduced_context_Optuna_1_seed6.png",
+      "new_log_rel": "corasat/logs/simulation_2026-01-18_02.log",
+      "new_norm_score": 0.80357
+    },
+    {
+      "label": "L3 - Full context (L2 optuna params)",
+      "seed": 6,
+      "status": "ok",
+      "error": null,
+      "temp_config": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L3_AfterFirstOptunaOptimization\\config_repro_seed6.json",
+      "new_log": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_03.log",
+      "log_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L3_Full_context_L2_optuna_params_seed6\\simulation_2026-01-18_03.log",
+      "screenshot_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L3_Full_context_L2_optuna_params_seed6\\L3_Full_context_L2_optuna_params_seed6.png",
+      "new_log_rel": "corasat/logs/simulation_2026-01-18_03.log",
+      "new_norm_score": 0.80357
+    },
+    {
+      "label": "L4 - Optuna tuning of L3 (full context)",
+      "seed": 85,
+      "status": "ok",
+      "error": null,
+      "temp_config": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L4_OptunaTuning_L3\\config_repro_seed85.json",
+      "new_log": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_04.log",
+      "log_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L4_Optuna_tuning_of_L3_full_context_seed85\\simulation_2026-01-18_04.log",
+      "screenshot_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L4_Optuna_tuning_of_L3_full_context_seed85\\L4_Optuna_tuning_of_L3_full_context_seed85.png",
+      "new_log_rel": "corasat/logs/simulation_2026-01-18_04.log",
+      "new_norm_score": 0.28814
+    },
+    {
+      "label": "L5 - LoRA fine-tuned (from L4)",
+      "seed": 85,
+      "status": "ok",
+      "error": null,
+      "temp_config": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L5_LoRA_L4\\config_repro_seed85.json",
+      "new_log": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_05.log",
+      "log_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L5_LoRA_fine_tuned_from_L4_seed85\\simulation_2026-01-18_05.log",
+      "screenshot_copy": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_130849\\L5_LoRA_fine_tuned_from_L4_seed85\\L5_LoRA_fine_tuned_from_L4_seed85.png",
+      "new_log_rel": "corasat/logs/simulation_2026-01-18_05.log",
+      "new_norm_score": 0.28814
+    }
+  ],
+  "created_logs": [
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_01.log",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_02.log",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_03.log",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_04.log",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\logs\\simulation_2026-01-18_05.log"
+  ],
+  "temp_configs": [
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L1_BeforeFirstOptunaOptimization\\config_repro_seed5.json",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L2_AfterFirstOptunaOptimization_ReducedContext\\config_repro_seed6.json",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L3_AfterFirstOptunaOptimization\\config_repro_seed6.json",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L4_OptunaTuning_L3\\config_repro_seed85.json",
+    "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\lab_configs\\L5_LoRA_L4\\config_repro_seed85.json"
+  ],
+  "finished_at": "2026-01-18T13:27:11.863924"
+}

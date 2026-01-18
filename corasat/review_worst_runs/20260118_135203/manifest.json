@@ -1,0 +1,110 @@
+{
+  "review_root": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_135203",
+  "created_at": "20260118_135203",
+  "labs": [
+    {
+      "label": "L1 - Baseline (pre-Optuna)",
+      "logfile": "corasat/logs/simulation_2025-12-28_173.log",
+      "lab_config_path": "corasat/lab_configs/L1_BeforeFirstOptunaOptimization",
+      "mean_norm_score": 0.7515,
+      "selections": {
+        "worst": {
+          "seed": 5,
+          "norm_score": 0.55882
+        },
+        "average": {
+          "seed": 11,
+          "norm_score": 0.75
+        },
+        "best": {
+          "seed": 28,
+          "norm_score": 0.95161
+        }
+      }
+    },
+    {
+      "label": "L2 - Reduced context (Optuna 1)",
+      "logfile": "corasat/logs/simulation_2026-01-01_01.log",
+      "lab_config_path": "corasat/lab_configs/L2_AfterFirstOptunaOptimization_ReducedContext",
+      "mean_norm_score": 0.88692,
+      "selections": {
+        "worst": {
+          "seed": 6,
+          "norm_score": 0.53571
+        },
+        "average": {
+          "seed": 90,
+          "norm_score": 0.88679
+        },
+        "best": {
+          "seed": 3,
+          "norm_score": 1.0
+        }
+      }
+    },
+    {
+      "label": "L3 - Full context (L2 optuna params)",
+      "logfile": "corasat/logs/simulation_2026-01-01_02.log",
+      "lab_config_path": "corasat/lab_configs/L3_AfterFirstOptunaOptimization",
+      "mean_norm_score": 0.89746,
+      "selections": {
+        "worst": {
+          "seed": 6,
+          "norm_score": 0.53571
+        },
+        "average": {
+          "seed": 54,
+          "norm_score": 0.89831
+        },
+        "best": {
+          "seed": 3,
+          "norm_score": 1.0
+        }
+      }
+    },
+    {
+      "label": "L4 - Optuna tuning of L3 (full context)",
+      "logfile": "corasat/logs/simulation_2026-01-01_58.log",
+      "lab_config_path": "corasat/lab_configs/L4_OptunaTuning_L3",
+      "mean_norm_score": 0.90348,
+      "selections": {
+        "worst": {
+          "seed": 85,
+          "norm_score": 0.33898
+        },
+        "average": {
+          "seed": 28,
+          "norm_score": 0.90323
+        },
+        "best": {
+          "seed": 35,
+          "norm_score": 1.0
+        }
+      }
+    },
+    {
+      "label": "L5 - LoRA fine-tuned (from L4)",
+      "logfile": "corasat/logs/simulation_2026-01-02_01.log",
+      "lab_config_path": "corasat/lab_configs/L5_LoRA_L4",
+      "mean_norm_score": 0.84842,
+      "selections": {
+        "worst": {
+          "seed": 85,
+          "norm_score": 0.28814
+        },
+        "average": {
+          "seed": 12,
+          "norm_score": 0.84746
+        },
+        "best": {
+          "seed": 35,
+          "norm_score": 1.0
+        }
+      }
+    }
+  ],
+  "backups": {
+    "results_csv": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_135203\\_backup\\results.csv",
+    "last_run_png": "c:\\Users\\Calvin\\Calvin Drive\\Calvin\\Studium\\Master Thesis\\Code\\corasat\\review_worst_runs\\20260118_135203\\_backup\\last_run.png"
+  }
+}

@@ -302,7 +302,15 @@ def main() -> int:
 
     rules_path = cfg.get("rules_path") if isinstance(cfg, dict) else ""
     rules_path = rules_path or "rules.txt"
-    rules_path = (base_dir / rules_path).resolve()
+    rules_candidate = Path(rules_path)
+    if rules_candidate.is_absolute():
+        rules_path = rules_candidate
+    else:
+        config_relative = (cfg_path.parent / rules_candidate).resolve()
+        if config_relative.exists():
+            rules_path = config_relative
+        else:
+            rules_path = (base_dir / rules_candidate).resolve()
     drone_support_path = (base_dir / "classes" / "Drone_Support.py").resolve()
 
     results_csv = (base_dir / args.results_csv).resolve()

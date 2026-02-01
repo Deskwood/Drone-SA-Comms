@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Users\Calvin\Calvin Drive\Calvin\Studium\Master Thesis\Code\corasat\scripts\run_L0_rules_only.py", line 6, in <module>
+    import main
+ModuleNotFoundError: No module named 'main'

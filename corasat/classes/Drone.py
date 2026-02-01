@@ -20,6 +20,7 @@ class _Drone:
         self.sim = sim
         self.id = id
         self.position = tuple(position)
+        self.start_position = tuple(position)
         self.model = model
 
         rules = rules.replace("DRONE_ID", str(id))

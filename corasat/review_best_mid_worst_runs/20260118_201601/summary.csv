@@ -1,0 +1,10 @@
+lab_label,kind,seed,original_norm_score,reproduced_norm_score,match,run_error,review_dir
+L1 - Baseline (pre-Optuna),worst,5,0.55882,0.58824,False,,corasat\review_worst_runs\20260118_201601\L1_Baseline_pre_Optuna\worst_seed5
+L1 - Baseline (pre-Optuna),average,11,0.75,0.76667,False,,corasat\review_worst_runs\20260118_201601\L1_Baseline_pre_Optuna\average_seed11
+L1 - Baseline (pre-Optuna),best,28,0.95161,0.95161,True,,corasat\review_worst_runs\20260118_201601\L1_Baseline_pre_Optuna\best_seed28
+L2 - Reduced context (Optuna 1),worst,6,0.53571,0.53571,True,,corasat\review_worst_runs\20260118_201601\L2_Reduced_context_Optuna_1\worst_seed6
+L2 - Reduced context (Optuna 1),average,90,0.88679,0.88679,True,,corasat\review_worst_runs\20260118_201601\L2_Reduced_context_Optuna_1\average_seed90
+L2 - Reduced context (Optuna 1),best,3,1.0,1.0,True,,corasat\review_worst_runs\20260118_201601\L2_Reduced_context_Optuna_1\best_seed3
+L3 - Full context (L2 optuna params),worst,6,0.53571,0.53571,True,,corasat\review_worst_runs\20260118_201601\L3_Full_context_L2_optuna_params\worst_seed6
+L3 - Full context (L2 optuna params),average,54,0.89831,0.89831,True,,corasat\review_worst_runs\20260118_201601\L3_Full_context_L2_optuna_params\average_seed54
+L3 - Full context (L2 optuna params),best,3,1.0,,False,run failed (exit 120),corasat\review_worst_runs\20260118_201601\L3_Full_context_L2_optuna_params\best_seed3

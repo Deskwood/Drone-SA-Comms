@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-01-26T06:49:07.650200+01:00",
+  "label": "L0 - Rules-only (no decision-support scoring)",
+  "logfile": "corasat\\logs\\simulation_2026-01-25_07.log",
+  "seed_range": "1-100",
+  "seed_count": 100,
+  "rules_used": "true",
+  "mean": 0.14937,
+  "stddev": 0.07641,
+  "config_items": [
+    "lab_configs\\L0_RulesOnly_NoDecisionSupport\\config.json",
+    "lab_configs\\L0_RulesOnly_NoDecisionSupport\\rules.txt",
+    "classes\\Drone_Support.py"
+  ],
+  "files_copied": [
+    "lab_configs\\L0_RulesOnly_NoDecisionSupport\\config.json",
+    "lab_configs\\L0_RulesOnly_NoDecisionSupport\\rules.txt",
+    "classes\\Drone_Support.py"
+  ],
+  "missing_files": [],
+  "global_items": [
+    "main.py",
+    "classes\\Core.py",
+    "classes\\Drone.py",
+    "classes\\Exporter.py",
+    "classes\\GUI.py",
+    "classes\\Simulation.py"
+  ],
+  "global_docs": [
+    "decision_support_parameters.md"
+  ]
+}

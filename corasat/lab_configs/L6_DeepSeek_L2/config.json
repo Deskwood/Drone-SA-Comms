@@ -1,0 +1,349 @@
+{
+  "board": {
+    "width": 8,
+    "height": 8
+  },
+  "rules_path": "rules.txt",
+  "simulation": {
+    "create_py_export": false,
+    "use_gui": false,
+    "model_index": 1,
+    "models": [
+      "manual",
+      "deepseek-r1:32b",
+      "qwen3:30b",
+      "deepseek-r1:14b",
+      "llama3.1:8b"
+    ],
+    "num_drones": 2,
+    "max_rounds": 32,
+    "temperature": 0.0,
+    "top_p": null,
+    "top_k": null,
+    "randomize_figures": true,
+    "seed_list": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100
+    ],
+    "watchdog_timeout_s": 900
+  },
+  "gui": {
+    "cell_size": 80,
+    "margin": 8,
+    "background_color": [
+      30,
+      30,
+      30
+    ],
+    "grid_color": [
+      70,
+      70,
+      70
+    ],
+    "drone_color": [
+      0,
+      200,
+      255
+    ],
+    "text_color": [
+      255,
+      255,
+      255
+    ],
+    "figure_image_dir": "./img",
+    "sidebar_width": 600
+  },
+  "figures": {
+    "white": {
+      "king": [
+        [
+          6,
+          2
+        ]
+      ],
+      "queen": [
+        [
+          1,
+          4
+        ]
+      ],
+      "rook": [
+        [
+          0,
+          0
+        ],
+        [
+          7,
+          5
+        ]
+      ],
+      "bishop": [
+        [
+          3,
+          3
+        ],
+        [
+          5,
+          7
+        ]
+      ],
+      "knight": [
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          6
+        ]
+      ],
+      "pawn": [
+        [
+          0,
+          3
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          3
+        ]
+      ]
+    },
+    "black": {
+      "king": [
+        [
+          4,
+          4
+        ]
+      ],
+      "queen": [
+        [
+          0,
+          7
+        ]
+      ],
+      "rook": [
+        [
+          1,
+          7
+        ],
+        [
+          7,
+          1
+        ]
+      ],
+      "bishop": [
+        [
+          5,
+          4
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "knight": [
+        [
+          3,
+          6
+        ],
+        [
+          6,
+          0
+        ]
+      ],
+      "pawn": [
+        [
+          0,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ]
+      ]
+    }
+  },
+  "decision_support": {
+    "scoring": {
+      "move": {
+        "waypoint_progress_bonus": 0.05,
+        "waypoint_delay_penalty": -0.15,
+        "unknown_tile_bonus": 1.4,
+        "no_figures_left_behind_bonus": 3.0,
+        "neighborhood_potential": 0.19,
+        "figure_hint_bonus": 1.1,
+        "possible_target_bonus": 1.7,
+        "neighborhood_weight_any_figure": 1.45,
+        "neighborhood_weight_possible_target": 0.45,
+        "border_bonus": 1.95,
+        "cross_track_penalty_per_step_squared": 0.0,
+        "sector_compliance_bonus": 1.8,
+        "revisit_penalty": -2.55
+      },
+      "broadcast": {
+        "base_broadcast_value": -0.4,
+        "first_turn_coordination_bonus": 6.0,
+        "last_turn_coordination_bonus": 2.3
+      },
+      "wait": {
+        "base_wait_value": -0.1
+      }
+    },
+    "prompt": {
+      "debug_dump_path": "Code/corasat/debug_model_inputs.jsonl"
+    }
+  },
+  "prompt_requests": {
+    "rationale": "",
+    "action": "",
+    "action_move": "",
+    "action_broadcast": "",
+    "memory_update": ""
+  }
+}

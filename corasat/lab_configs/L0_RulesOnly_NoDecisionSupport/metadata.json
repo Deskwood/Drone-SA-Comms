@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-01-25T20:57:50.033776+01:00",
+  "label": "L0 - Rules-only (no decision-support scores)",
+  "logfile": "",
+  "seed_range": "1-100",
+  "seed_count": "100",
+  "rules_enabled": "true",
+  "mean": "",
+  "stddev": "",
+  "notes": "Decision-support scores disabled; rely on full rules.",
+  "missing_files": [],
+  "rules_used": "true",
+  "config_items": [
+    "config.json",
+    "rules.txt",
+    "classes\\Drone_Support.py"
+  ],
+  "files_copied": [
+    "classes\\Drone_Support.py",
+    "config.json",
+    "rules.txt"
+  ],
+  "global_docs": [
+    "decision_support_parameters.md"
+  ],
+  "reconstruction": {
+    "config_changes": [
+      "simulation.seed_list=1..100",
+      "simulation.use_gui=false"
+    ],
+    "rules_source": "current rules.txt"
+  },
+  "global_items": [
+    "main.py",
+    "classes\\Core.py",
+    "classes\\Drone.py",
+    "classes\\Exporter.py",
+    "classes\\GUI.py",
+    "classes\\Simulation.py"
+  ],
+  "reference_id": "L0"
+}

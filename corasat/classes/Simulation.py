@@ -6,6 +6,7 @@ import os
 import pprint
 import random
 import threading
+import time
 import pygame
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, List, Optional
@@ -17,6 +18,7 @@ from classes.Core import (
     _Figure,
     _Tile,
     cartesian_to_chess,
+    chess_to_cartesian,
     format_edge,
     hsv_to_rgb255,
     resolve_data_path,
@@ -64,6 +66,22 @@ class Simulation:
         self.false_edge_counter = 0
         self.score = 0.0
         self.broadcast_count = 0
+        self.wait_actions = 0
+        self.total_actions = 0
+        self.wait_rate: Optional[float] = None
+        self.broadcast_rate: Optional[float] = None
+        self.total_visits = 0
+        self.unique_visits = 0
+        self.redundant_visits = 0
+        self._broadcast_correct_sum = 0
+        self.broadcast_effectiveness: Optional[float] = None
+        self.broadcast_effectiveness_per_broadcast: Optional[float] = None
+        self.runtime_s: Optional[float] = None
+        self.avg_turn_duration_s: Optional[float] = None
+        self.timeout_count = 0
+        self.timeout_reason: Optional[str] = None
+        self._metrics_finalized = False
+        self._run_start_time: Optional[float] = None
 
         self._create_figures()
         self.drone_base = self._resolve_drone_base()
@@ -73,6 +91,52 @@ class Simulation:
         self._current_future: Optional[Future] = None
         self._thinking = False
         self._abort_requested = False
+        self._abort_reason = ""
+        self._watchdog_triggered = False
+        self.rendezvous_success: Optional[bool] = None
+        self._rendezvous_checked = False
+        self._rendezvous_turn = max(1, self.max_rounds - 1)
+        self._rendezvous_tile = self._board_center_cartesian()
+
+    def _board_center_cartesian(self) -> tuple:
+        width = max(1, int(CONFIG.get("board", {}).get("width", 8)))
+        height = max(1, int(CONFIG.get("board", {}).get("height", 8)))
+        center_x = min(width - 1, width // 2)
+        center_y = min(height - 1, height // 2)
+        return (center_x, center_y)
+
+    def _rendezvous_target(self) -> tuple:
+        for drone in self.drones:
+            rv = getattr(drone, "rendezvous_directive", None)
+            if isinstance(rv, dict):
+                cart = rv.get("target_cartesian")
+                if isinstance(cart, (list, tuple)) and len(cart) == 2:
+                    try:
+                        return (int(cart[0]), int(cart[1]))
+                    except (TypeError, ValueError):
+                        pass
+                tile = rv.get("target")
+                if isinstance(tile, str):
+                    try:
+                        return chess_to_cartesian(tile)
+                    except Exception:
+                        pass
+        return self._rendezvous_tile
+
+    def _check_rendezvous(self) -> None:
+        target = self._rendezvous_target()
+        positions = []
+        success = True
+        for drone in self.drones:
+            positions.append(cartesian_to_chess(drone.position))
+            if tuple(drone.position) != tuple(target):
+                success = False
+        self.rendezvous_success = success
+        target_label = cartesian_to_chess(target)
+        LOGGER.log(
+            f"Rendezvous check (turn {self._rendezvous_turn}, target {target_label}): "
+            f"{'success' if success else 'failed'}; positions={positions}"
+        )
 
     def _load_rules(self) -> str:
         """Load and personalize rules for this simulation instance."""
@@ -229,6 +293,7 @@ class Simulation:
         self.score = correct_edge_counter - false_edge_counter
 
     def _log_final_summary(self) -> None:
+        self._finalize_metrics()
         LOGGER.log("#" * 60)
         LOGGER.log("FINAL EDGE SUMMARY")
         LOGGER.log(f"Reported edges: {len(self.reported_edges)}")
@@ -237,6 +302,29 @@ class Simulation:
         LOGGER.log(
             f"Score:          {self.score} / {len(self.gt_edges)} = "
             f"{self.score / max(1, len(self.gt_edges)):.2%}"
+        )
+        if self.rendezvous_success is not None:
+            LOGGER.log(f"Rendezvous success: {self.rendezvous_success}")
+        if self.broadcast_effectiveness is not None:
+            LOGGER.log(
+                "Broadcast effectiveness (sum correct edges per broadcast / gt edges): "
+                f"{self.broadcast_effectiveness:.4f}"
+            )
+        if self.broadcast_effectiveness_per_broadcast is not None:
+            LOGGER.log(
+                "Broadcast effectiveness per broadcast (avg correct edges / gt edges): "
+                f"{self.broadcast_effectiveness_per_broadcast:.4f}"
+            )
+        if self.avg_turn_duration_s is not None:
+            LOGGER.log(f"Average turn duration (s): {self.avg_turn_duration_s:.5f}")
+        LOGGER.log(f"Timeouts: {self.timeout_count}")
+        if self.broadcast_rate is not None:
+            LOGGER.log(f"Broadcast rate (per drone/seed): {self.broadcast_rate:.4f}")
+        if self.wait_rate is not None:
+            LOGGER.log(f"Wait rate: {self.wait_rate:.4f}")
+        LOGGER.log(
+            f"Wait actions: {self.wait_actions} / {self.total_actions} | "
+            f"Visits: total={self.total_visits}, unique={self.unique_visits}, redundant={self.redundant_visits}"
         )
 
         LOGGER.log("\nEdge summary:")
@@ -267,6 +355,50 @@ class Simulation:
     def post_info(self, msg: str) -> None:
         if self.gui:
             self.gui.post_info(msg)
+
+    def _compute_visit_metrics(self) -> tuple:
+        total_visits = 0
+        visited = set()
+        for drone in self.drones:
+            start = getattr(drone, "start_position", None)
+            if isinstance(start, (list, tuple)) and len(start) == 2:
+                total_visits += 1
+                visited.add(tuple(start))
+            for pos in getattr(drone, "mission_report", []) or []:
+                if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                    total_visits += 1
+                    visited.add(tuple(pos))
+        return total_visits, len(visited)
+
+    def _finalize_metrics(self) -> None:
+        if self._metrics_finalized:
+            return
+        self._metrics_finalized = True
+        expected_actions = max(1, int(self.max_rounds)) * max(1, int(self.num_drones))
+        if self.total_actions < expected_actions:
+            missing = expected_actions - self.total_actions
+            self.wait_actions += missing
+            self.total_actions = expected_actions
+        total_visits, unique_visits = self._compute_visit_metrics()
+        self.total_visits = total_visits
+        self.unique_visits = unique_visits
+        self.redundant_visits = max(0, total_visits - unique_visits)
+        total_gt = len(self.gt_edges)
+        if total_gt > 0:
+            self.broadcast_effectiveness = round(self._broadcast_correct_sum / total_gt, 5)
+        else:
+            self.broadcast_effectiveness = None
+        if self.total_actions > 0:
+            self.wait_rate = round(self.wait_actions / self.total_actions, 5)
+        if self.num_drones > 0:
+            self.broadcast_rate = round(self.broadcast_count / self.num_drones, 5)
+        if self.broadcast_effectiveness is not None and self.broadcast_count > 0:
+            self.broadcast_effectiveness_per_broadcast = round(
+                self.broadcast_effectiveness / self.broadcast_count,
+                5,
+            )
+        if self.runtime_s is not None and self.total_actions > 0:
+            self.avg_turn_duration_s = round(self.runtime_s / self.total_actions, 5)
 
     def _log_round_mission_plans(self, round_number: int) -> None:
         """Log mission plan changes at the start of each round."""
@@ -346,6 +478,11 @@ class Simulation:
                 self.post_info(error)
 
             action = outcome.get("action", "wait")
+            self.total_actions += 1
+            if action == "wait":
+                self.wait_actions += 1
+            elif action == "broadcast":
+                self._broadcast_correct_sum += self.correct_edge_counter
             if action == "move":
                 direction = outcome.get("direction")
                 if outcome.get("moved"):
@@ -374,6 +511,11 @@ class Simulation:
     def run_simulation(self) -> None:
         max_rounds = CONFIG["simulation"].get("max_rounds", 10)
         use_gui = bool(CONFIG["simulation"].get("use_gui", True)) and self.gui is not None
+        watchdog_s = CONFIG.get("simulation", {}).get("watchdog_timeout_s", 900)
+        if not isinstance(watchdog_s, (int, float)) or watchdog_s <= 0:
+            watchdog_s = None
+        start_time = time.time()
+        self._run_start_time = start_time
 
         running = True
         clock = None
@@ -398,9 +540,21 @@ class Simulation:
                         if event.type == pygame.QUIT:
                             running = False
                             self._abort_requested = True
+                            self._abort_reason = "GUI closed"
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                             running = False
                             self._abort_requested = True
+                            self._abort_reason = "GUI closed (ESC)"
+
+                if watchdog_s is not None and (time.time() - start_time) > watchdog_s:
+                    self._watchdog_triggered = True
+                    minutes = int(round(watchdog_s / 60))
+                    self._abort_reason = f"watchdog timeout after {minutes} minutes"
+                    self.timeout_count = 1
+                    self.timeout_reason = self._abort_reason
+                    LOGGER.log(f"Watchdog abort: {self._abort_reason}")
+                    running = False
+                    break
 
                 current_drone = self.drones[drone_index]
                 if not pending:
@@ -425,6 +579,13 @@ class Simulation:
                         if drone_index >= self.num_drones:
                             drone_index = 0
                             current_round += 1
+                            completed_round = current_round - 1
+                            if (
+                                not self._rendezvous_checked
+                                and completed_round == self._rendezvous_turn
+                            ):
+                                self._rendezvous_checked = True
+                                self._check_rendezvous()
                         pending = False
 
                 if use_gui and pygame:
@@ -435,6 +596,8 @@ class Simulation:
             running = False
         finally:
             try:
+                if self._run_start_time is not None:
+                    self.runtime_s = time.time() - self._run_start_time
                 self._log_final_summary()
             except Exception:
                 pass

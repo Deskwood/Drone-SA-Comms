@@ -120,7 +120,10 @@
       98,
       99,
       100
-    ]
+    ],
+    "top_p": null,
+    "top_k": null,
+    "watchdog_timeout_s": 900
   },
   "gui": {
     "cell_size": 80,

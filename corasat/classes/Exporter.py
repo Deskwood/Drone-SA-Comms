@@ -20,13 +20,26 @@ RESULTS_FIELDS = [
     "seed",
     "norm_score",
     "rounds",
+    "num_drones",
+    "total_actions",
     "broadcasts",
+    "broadcast_rate",
+    "wait_actions",
+    "wait_rate",
+    "broadcast_effectiveness",
+    "broadcast_effectiveness_per_broadcast",
     "coverage",
     "correct_edges",
+    "correct_edge_rate",
     "false_edges",
+    "false_edge_rate",
     "total_gt_edges",
+    "rendezvous_success",
     "mission_score",
     "runtime_s",
+    "avg_turn_duration_s",
+    "timeout_count",
+    "timeout_rate",
     "logfile",
     "run_id",
     "commit_sha",
@@ -188,8 +201,67 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
         config = entry.get("config")
         seed = entry.get("seed")
         runtime_s = entry.get("runtime_s")
+        omit_scores = bool(entry.get("omit_scores"))
         timestamp = entry.get("timestamp") or datetime.now().isoformat()
         coverage = _compute_coverage_ratio(sim) if sim else None
+        num_drones = None
+        if sim is not None:
+            num_drones = getattr(sim, "num_drones", None)
+        if num_drones is None and isinstance(config, dict):
+            num_drones = config.get("simulation", {}).get("num_drones")
+        rounds_value = getattr(sim, "round", None) if sim else None
+        max_rounds = getattr(sim, "max_rounds", None) if sim else None
+        total_actions = getattr(sim, "total_actions", None) if sim else None
+        if total_actions is None and isinstance(num_drones, (int, float)) and isinstance(max_rounds, (int, float)):
+            total_actions = int(num_drones) * int(max_rounds)
+        wait_actions = getattr(sim, "wait_actions", None) if sim else None
+        broadcasts = getattr(sim, "broadcast_count", None) if sim else None
+        wait_rate = None
+        broadcast_rate = None
+        timeout_rate = None
+        if isinstance(total_actions, (int, float)) and total_actions > 0:
+            if isinstance(wait_actions, (int, float)):
+                wait_rate = round(wait_actions / total_actions, 5)
+            timeout_count = getattr(sim, "timeout_count", None) if sim else None
+            if isinstance(timeout_count, (int, float)):
+                timeout_rate = round(timeout_count / total_actions, 5)
+        if isinstance(num_drones, (int, float)) and num_drones > 0:
+            if isinstance(broadcasts, (int, float)):
+                broadcast_rate = round(broadcasts / num_drones, 5)
+        avg_turn_duration_s = None
+        runtime_value = runtime_s if isinstance(runtime_s, (int, float)) else None
+        if runtime_value is None:
+            runtime_value = getattr(sim, "runtime_s", None) if sim else None
+        if isinstance(runtime_value, (int, float)) and isinstance(total_actions, (int, float)) and total_actions > 0:
+            avg_turn_duration_s = round(runtime_value / total_actions, 5)
+        score_value = None
+        if not omit_scores and sim is not None:
+            raw_score = getattr(sim, "score", None)
+            if isinstance(raw_score, (int, float)):
+                score_value = raw_score
+        norm_score_value = None
+        if score_value is not None and sim is not None:
+            gt_edges = getattr(sim, "gt_edges", None)
+            if gt_edges:
+                norm_score_value = round(score_value / len(gt_edges), 5)
+        broadcast_effectiveness = getattr(sim, "broadcast_effectiveness", None) if sim else None
+        broadcast_effectiveness_per_broadcast = None
+        if (
+            broadcast_effectiveness is not None
+            and isinstance(broadcasts, (int, float))
+            and broadcasts > 0
+        ):
+            broadcast_effectiveness_per_broadcast = round(broadcast_effectiveness / broadcasts, 5)
+        correct_edges = getattr(sim, "correct_edge_counter", None) if sim else None
+        false_edges = getattr(sim, "false_edge_counter", None) if sim else None
+        total_gt_edges = len(getattr(sim, "gt_edges", []) or []) if sim else 0
+        correct_edge_rate = None
+        false_edge_rate = None
+        if total_gt_edges > 0:
+            if isinstance(correct_edges, (int, float)):
+                correct_edge_rate = round(correct_edges / total_gt_edges, 5)
+            if isinstance(false_edges, (int, float)):
+                false_edge_rate = round(false_edges / total_gt_edges, 5)
         row = {
             "run_id": _build_run_id(seed),
             "timestamp": timestamp,
@@ -197,19 +269,28 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
             "config_hash": _config_hash_from_dict(config) if config else None,
             "model": getattr(sim, "model", None) if sim else None,
             "seed": seed,
-            "rounds": getattr(sim, "round", None) if sim else None,
+            "rounds": rounds_value,
+            "num_drones": num_drones,
+            "total_actions": total_actions,
             "coverage": coverage,
-            "correct_edges": getattr(sim, "correct_edge_counter", None) if sim else None,
-            "false_edges": getattr(sim, "false_edge_counter", None) if sim else None,
-            "total_gt_edges": len(getattr(sim, "gt_edges", []) or []),
-            "broadcasts": getattr(sim, "broadcast_count", None) if sim else None,
-            "mission_score": getattr(sim, "score", None) if sim else None,
-            "norm_score": (
-                round(getattr(sim, "score", 0) / len(getattr(sim, "gt_edges", []) or []), 5)
-                if sim and getattr(sim, "gt_edges", None)
-                else None
-            ),
+            "correct_edges": correct_edges,
+            "correct_edge_rate": correct_edge_rate,
+            "false_edges": false_edges,
+            "false_edge_rate": false_edge_rate,
+            "total_gt_edges": total_gt_edges,
+            "rendezvous_success": getattr(sim, "rendezvous_success", None) if sim else None,
+            "broadcasts": broadcasts,
+            "broadcast_rate": broadcast_rate,
+            "wait_actions": wait_actions,
+            "wait_rate": wait_rate,
+            "broadcast_effectiveness": broadcast_effectiveness,
+            "broadcast_effectiveness_per_broadcast": broadcast_effectiveness_per_broadcast,
+            "mission_score": score_value,
+            "norm_score": norm_score_value,
             "runtime_s": round(runtime_s, 2) if isinstance(runtime_s, (int, float)) else None,
+            "avg_turn_duration_s": avg_turn_duration_s,
+            "timeout_count": getattr(sim, "timeout_count", None) if sim else None,
+            "timeout_rate": timeout_rate,
             "logfile": logfile_entry,
         }
         rows.append(row)

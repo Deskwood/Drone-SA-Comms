@@ -147,11 +147,34 @@ def run_seed(seed: Optional[int], game_index: int, total_games: int) -> Tuple[Op
     if not run_success:
         return None, False
 
+    if getattr(sim, "_watchdog_triggered", False):
+        reason = getattr(sim, "_abort_reason", "") or "watchdog timeout"
+        _log(f"Run aborted by watchdog: {reason}")
+        runtime_s = time.time() - run_started
+        sim_runtime = getattr(sim, "runtime_s", None)
+        if isinstance(sim_runtime, (int, float)) and sim_runtime > 0:
+            runtime_s = sim_runtime
+        run_entry = {
+            "sim": sim,
+            "config": config,
+            "seed": seed,
+            "runtime_s": runtime_s,
+            "timestamp": datetime.now().isoformat(),
+            "omit_scores": True,
+        }
+        RUN_EXPORTS.append(run_entry)
+        _persist_results(run_entry)
+        return run_entry, False
+
     if getattr(sim, "_abort_requested", False):
-        _log("GUI closed by user - stopping remaining seeds.")
+        reason = getattr(sim, "_abort_reason", "") or "GUI closed"
+        _log(f"Run aborted: {reason} - stopping remaining seeds.")
         return None, True
 
     runtime_s = time.time() - run_started
+    sim_runtime = getattr(sim, "runtime_s", None)
+    if isinstance(sim_runtime, (int, float)) and sim_runtime > 0:
+        runtime_s = sim_runtime
     run_entry = {
         "sim": sim,
         "config": config,

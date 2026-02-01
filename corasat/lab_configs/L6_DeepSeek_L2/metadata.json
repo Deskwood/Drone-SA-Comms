@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-01-19T19:06:22.395666+01:00",
+  "label": "L6 - Deepseek baseline (L2 config)",
+  "logfile": "corasat\\logs\\simulation_2026-01-18_01.log",
+  "seed_range": "1-100",
+  "seed_count": 100,
+  "rules_used": "true",
+  "mean": 0.88708,
+  "stddev": 0.08573,
+  "config_items": [
+    "config.json",
+    "rules.txt",
+    "classes\\Drone_Support.py"
+  ],
+  "files_copied": [
+    "config.json",
+    "rules.txt",
+    "classes\\Drone_Support.py"
+  ],
+  "missing_files": [],
+  "global_items": [
+    "main.py",
+    "classes\\Core.py",
+    "classes\\Drone.py",
+    "classes\\Exporter.py",
+    "classes\\GUI.py",
+    "classes\\Simulation.py"
+  ],
+  "global_docs": [
+    "decision_support_parameters.md"
+  ]
+}

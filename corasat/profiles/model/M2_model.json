@@ -1,0 +1,7 @@
+{
+  "id": "M2",
+  "name": "deepseek-r1:32b",
+  "description": "Model-swap baseline.",
+  "runtime_model": "deepseek-r1:32b",
+  "selected_model": "deepseek-r1:32b"
+}

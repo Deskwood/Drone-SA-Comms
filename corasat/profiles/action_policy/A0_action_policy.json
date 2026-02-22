@@ -1,0 +1,8 @@
+{
+  "id": "A0",
+  "name": "Seeded random legal move",
+  "description": "Random legal movement; optional free broadcast when co-located.",
+  "use_language_model": false,
+  "use_decision_support": false,
+  "runtime_model_override": "policy_random"
+}

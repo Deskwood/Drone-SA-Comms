@@ -1,0 +1,7 @@
+{
+  "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s), especially waypoint progress/timing; do not use sector corners as movement targets unless they are the waypoint.",
+  "action": "Action: choose one of wait, move, broadcast. Follow Special directive if present. Prefer the Decision Support Summary recommendation when legal.",
+  "action_move": "Direction: choose ONLY from Legal moves. Use the immediate Plan focus waypoint as target; sector bounds are constraints, not direct move goals.",
+  "action_broadcast": "Message: If broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
+  "memory_update": "Memory: Use tags PLAN:, SECTOR:, RV:, FIG:, POSSIBLE:, NOTE:, VISITED:. Keep existing VISITED lines. Do NOT copy Decision Support, Legal movements, or Broadcast Rx Buffer."
+}

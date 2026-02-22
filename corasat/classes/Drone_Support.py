@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 import math
+import random
 import time
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -31,13 +32,66 @@ def _board_center_cartesian() -> Tuple[int, int]:
     return (center_x, center_y)
 
 
+def _resolve_decision_support_profile() -> str:
+    """Resolve the configured decision-support profile identifier.
+
+    Supported keys:
+    - simulation.drone_support_id
+    - simulation.decision_support_id
+    - simulation.drone_support_profile
+    - simulation.decision_support_profile
+    - decision_support.profile_id
+    """
+    sim_cfg = CONFIG.get("simulation", {})
+    ds_cfg = CONFIG.get("decision_support", {})
+    candidates = [
+        sim_cfg.get("drone_support_id"),
+        sim_cfg.get("decision_support_id"),
+        sim_cfg.get("drone_support_profile"),
+        sim_cfg.get("decision_support_profile"),
+        ds_cfg.get("profile_id"),
+    ]
+    for raw in candidates:
+        token = str(raw or "").strip().upper()
+        if token:
+            return token
+    return ""
+
+
+def _decision_support_enabled() -> bool:
+    """Return whether decision-support scoring should be active."""
+    ds_cfg = CONFIG.get("decision_support", {})
+    explicit_enabled = ds_cfg.get("enabled", None)
+    if isinstance(explicit_enabled, bool):
+        return explicit_enabled
+
+    profile = _resolve_decision_support_profile()
+    if profile == "DS0":
+        return False
+
+    scoring_cfg = ds_cfg.get("scoring", {})
+    if isinstance(scoring_cfg, dict):
+        for section in scoring_cfg.values():
+            if not isinstance(section, dict):
+                continue
+            for raw in section.values():
+                try:
+                    if abs(float(raw)) > 1e-12:
+                        return True
+                except Exception:
+                    continue
+    # If no explicit DS0 profile is set and scoring is absent/zero,
+    # treat decision support as disabled.
+    return False
+
+
 class _Drone_Knowledge:
     """Local board knowledge, memory, and intel sharing helpers."""
 
     def __init__(self, drone: _Drone):
         self.drone = drone
-        self.drone.memory = ""
         self.drone.rx_buffer = ""
+        self.drone.memory = ""
         self.drone.local_board = self._make_empty_local_board()
         self.drone.identified_edges = []
         self.drone.info_exchange_rounds = {}
@@ -764,6 +818,9 @@ class _Drone_Decision_Support:
         ds_output_cfg = CONFIG.get("decision_support", {}).get("output", {})
         show_scoring = ds_output_cfg.get("include_scoring", True)
         show_summary = ds_output_cfg.get("include_summary", True)
+        if not _decision_support_enabled():
+            show_scoring = False
+            show_summary = False
 
         score_entries = snapshot.get("scores", [])
         sorted_scores = sorted(
@@ -974,7 +1031,7 @@ class _Drone_Decision_Support:
                 prompt_requests.get("action_move", ""),
                 prompt_requests.get("action_broadcast", ""),
                 prompt_requests.get("memory_update", ""),
-            ]
+]
         ).strip()
         user_content = situation if not cues else situation + "\n\n" + cues
 
@@ -1443,8 +1500,153 @@ class _Drone_Language_Model:
     def __init__(self, drone: "_Drone", model: str):
         self.drone = drone
         self.model = model
+        self._policy_rng: Optional[random.Random] = None
 
-    def generate(self, messages: List[dict], temperature: float, prompt_char_len: Optional[int] = None) -> List[dict]:
+    def _seeded_policy_rng(self) -> random.Random:
+        if self._policy_rng is None:
+            try:
+                sim_seed = int(getattr(self.drone.sim, "seed", 0) or 0)
+            except (TypeError, ValueError):
+                sim_seed = 0
+            combined_seed = sim_seed * 1009 + int(self.drone.id) * 9176
+            self._policy_rng = random.Random(combined_seed)
+        return self._policy_rng
+
+    def _append_policy_message(
+        self,
+        messages: List[dict],
+        payload: Dict[str, Any],
+        prompt_char_len: Optional[int],
+    ) -> List[dict]:
+        messages.append({"role": "assistant", "content": json.dumps(payload)})
+        if prompt_char_len is not None:
+            approx_tokens = max(1, math.ceil(prompt_char_len / 4))
+            print(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
+        return messages
+
+    def _use_language_model(self) -> bool:
+        sim_cfg = CONFIG.get("simulation", {})
+        explicit = sim_cfg.get("use_language_model", None)
+        if isinstance(explicit, bool):
+            return explicit
+        model_name = str(self.model or "").strip().lower()
+        policy_aliases = {
+            "policy_random",
+            "policy_random_legal",
+            "policy_decision_support",
+            "policy_ds_only",
+            "none",
+            "no_llm",
+        }
+        return model_name not in policy_aliases
+
+    def policy_mode(self) -> str:
+        """Return one of: llm, decision_support, random."""
+        if self._use_language_model():
+            return "llm"
+        if _decision_support_enabled():
+            return "decision_support"
+        return "random"
+
+    def _random_policy_response(self, snapshot: Optional[Dict[str, object]]) -> Dict[str, Any]:
+        legal_directions: List[str] = []
+        if isinstance(snapshot, dict):
+            for entry in snapshot.get("scores") or []:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("action") or "").strip().lower() != "move":
+                    continue
+                direction = str(entry.get("label") or "").strip().lower()
+                if direction:
+                    legal_directions.append(direction)
+
+        if not legal_directions:
+            for step in self.drone._legal_movement_steps():
+                direction = str(step.get("direction") or "").strip().lower()
+                if direction:
+                    legal_directions.append(direction)
+
+        if not legal_directions:
+            return {
+                "rationale": "No legal move available.",
+                "action": "wait",
+                "memory": "NOTE: seeded_random_policy_wait",
+            }
+
+        rng = self._seeded_policy_rng()
+        direction = rng.choice(legal_directions)
+        response: Dict[str, Any] = {
+            "rationale": "Seeded random legal movement baseline.",
+            "action": "move",
+            "direction": direction,
+            "memory": "NOTE: seeded_random_policy_move",
+        }
+
+        # Optional free broadcast when drones are co-located.
+        try:
+            sx, sy = self.drone.position
+            tile = self.drone.sim.board[sx][sy]
+            has_peer = any(other.id != self.drone.id for other in tile.drones)
+        except Exception:
+            has_peer = False
+
+        if has_peer and rng.random() < 0.5:
+            response["free_broadcast"] = True
+            response["free_broadcast_message"] = "Random baseline free broadcast."
+            response["memory"] = "NOTE: seeded_random_policy_move+broadcast"
+
+        return response
+
+    def _decision_support_policy_response(self, snapshot: Optional[Dict[str, object]]) -> Dict[str, Any]:
+        score_entries: List[Dict[str, object]] = []
+        if isinstance(snapshot, dict):
+            for entry in snapshot.get("scores") or []:
+                if isinstance(entry, dict):
+                    score_entries.append(entry)
+
+        if not score_entries:
+            # Fall back to seeded random legal movement when scores are unavailable.
+            return self._random_policy_response(snapshot)
+
+        def _score_value(entry: Dict[str, object]) -> float:
+            try:
+                return float(entry.get("score", float("-inf")))
+            except (TypeError, ValueError):
+                return float("-inf")
+
+        best = max(score_entries, key=_score_value)
+        action = str(best.get("action") or "wait").strip().lower()
+        response: Dict[str, Any] = {
+            "rationale": "Executed top-ranked decision-support action.",
+            "action": action,
+            "memory": "NOTE: ds_policy_action",
+        }
+
+        if action == "move":
+            direction = str(best.get("label") or "").strip().lower()
+            if direction:
+                response["direction"] = direction
+            else:
+                response["action"] = "wait"
+                response["rationale"] = "Decision-support move lacked direction; waiting."
+        elif action == "broadcast":
+            suggestion = snapshot.get("coordination_suggestion") if isinstance(snapshot, dict) else None
+            if isinstance(suggestion, dict) and suggestion.get("plan"):
+                response["message"] = suggestion
+            else:
+                response["message"] = "Decision-support baseline broadcast."
+        else:
+            response["action"] = "wait"
+
+        return response
+
+    def generate(
+        self,
+        messages: List[dict],
+        temperature: float,
+        prompt_char_len: Optional[int] = None,
+        snapshot: Optional[Dict[str, object]] = None,
+    ) -> List[dict]:
         """Return a list of messages including the model response."""
         if self.model == "manual":
             try:
@@ -1459,6 +1661,14 @@ class _Drone_Language_Model:
                 approx_tokens = max(1, math.ceil(prompt_char_len / 4))
                 print(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
             return messages
+
+        mode = self.policy_mode()
+        if mode == "random":
+            payload = self._random_policy_response(snapshot)
+            return self._append_policy_message(messages, payload, prompt_char_len)
+        if mode == "decision_support":
+            payload = self._decision_support_policy_response(snapshot)
+            return self._append_policy_message(messages, payload, prompt_char_len)
 
         try:
             from ollama import chat as ollama_chat
@@ -1485,6 +1695,29 @@ class _Drone_Language_Model:
             duration_seconds = eval_duration / 1_000_000_000
         elif elapsed > 0:
             duration_seconds = elapsed
+
+        prompt_tokens_resolved: Optional[int] = None
+        if isinstance(prompt_tokens, (int, float)):
+            prompt_tokens_resolved = max(0, int(prompt_tokens))
+        elif prompt_char_len is not None:
+            prompt_tokens_resolved = max(1, math.ceil(prompt_char_len / 4))
+
+        completion_tokens_resolved: Optional[int] = None
+        if isinstance(completion_tokens, (int, float)):
+            completion_tokens_resolved = max(0, int(completion_tokens))
+        elif content:
+            completion_tokens_resolved = max(1, math.ceil(len(content) / 4))
+
+        record_usage = getattr(self.drone.sim, "record_lm_usage", None)
+        if callable(record_usage):
+            try:
+                record_usage(
+                    prompt_tokens=prompt_tokens_resolved,
+                    completion_tokens=completion_tokens_resolved,
+                    duration_s=duration_seconds,
+                )
+            except Exception:
+                pass
 
         if prompt_tokens is not None:
             ctx_msg = f"Context length: {prompt_tokens} tokens"
@@ -1556,10 +1789,16 @@ class _Drone_Aftermath:
         if parse_error:
             errors.append(parse_error)
 
+        policy_mode = "llm"
+        try:
+            policy_mode = str(self.drone.language_model.policy_mode())
+        except Exception:
+            policy_mode = "llm"
+
         is_first_coordination_turn = (
             self.drone.id == 1 and getattr(self.drone.sim, "round", None) == 1 and getattr(self.drone.sim, "turn", None) == 1
         )
-        if is_first_coordination_turn:
+        if is_first_coordination_turn and policy_mode == "llm":
             raw_message = result.get("message")
             _, payload = self._parse_broadcast_message(raw_message)
             valid_plan = False
@@ -1617,8 +1856,26 @@ class _Drone_Aftermath:
         direction = None
         broadcast_message = ""
         broadcast_payload = None
+        free_broadcast = False
+        free_broadcast_message = ""
+        free_broadcast_payload = None
 
         if action == "move":
+            if bool(result.get("free_broadcast")):
+                try:
+                    sx, sy = self.drone.position
+                    tile = self.drone.sim.board[sx][sy]
+                    has_peer = any(other.id != self.drone.id for other in tile.drones)
+                except Exception:
+                    has_peer = False
+                if has_peer:
+                    free_msg = result.get("free_broadcast_message") or "Random baseline free broadcast."
+                    free_broadcast_message, free_broadcast_payload, free_broadcast_error = self._execute_broadcast(free_msg)
+                    if free_broadcast_error:
+                        errors.append(free_broadcast_error)
+                    else:
+                        free_broadcast = True
+
             direction = self._normalize_token(result.get("direction")).strip().lower()
             moved, move_error = self._execute_move(direction)
             if move_error:
@@ -1644,6 +1901,9 @@ class _Drone_Aftermath:
             "direction": direction,
             "broadcast_message": broadcast_message,
             "broadcast_payload": broadcast_payload,
+            "free_broadcast": free_broadcast,
+            "free_broadcast_message": free_broadcast_message,
+            "free_broadcast_payload": free_broadcast_payload,
             "rationale": rationale,
             "position": self.drone.position,
             "moved": moved,
@@ -1816,3 +2076,4 @@ class _Drone_Aftermath:
         token = f"VISITED: {cartesian_to_chess((vx, vy))}"
         if token not in self.drone.memory:
             self.drone.memory += ("" if self.drone.memory.endswith("\n") else "\n") + token
+

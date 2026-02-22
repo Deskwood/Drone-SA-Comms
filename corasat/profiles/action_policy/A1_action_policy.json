@@ -1,0 +1,8 @@
+{
+  "id": "A1",
+  "name": "Deterministic DS-only",
+  "description": "Executes top-ranked decision-support action without LM.",
+  "use_language_model": false,
+  "use_decision_support": true,
+  "runtime_model_override": "policy_decision_support"
+}

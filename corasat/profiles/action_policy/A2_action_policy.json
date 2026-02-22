@@ -1,0 +1,8 @@
+{
+  "id": "A2",
+  "name": "LLM-only JSON action",
+  "description": "Action chosen by language model output without decision-support scoring.",
+  "use_language_model": true,
+  "use_decision_support": false,
+  "runtime_model_override": ""
+}

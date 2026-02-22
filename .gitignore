@@ -209,8 +209,15 @@ corasat/screenshots/last_run.png
 corasat/results.csv
 corasat/*_runs_*.csv
 corasat/archive/
+corasat/.lab_state/
+corasat/campaign_runs/
 corasat/lora/output_*/
 corasat/lora/**/checkpoint-*/
+corasat/lora/experiments/**/mode_*/output/
+corasat/lora/experiments/**/mode_*/checkpoint-*/
+corasat/lora/*.jsonl
+corasat/lora/*.err
+corasat/lora/Modelfile*
 corasat/lora/*.pt
 corasat/lora/*.safetensors
 corasat/lora/*.bin

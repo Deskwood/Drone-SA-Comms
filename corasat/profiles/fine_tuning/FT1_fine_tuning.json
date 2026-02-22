@@ -1,0 +1,7 @@
+{
+  "id": "FT1",
+  "name": "LoRA adapted",
+  "description": "LoRA-adapted deployment for the base model family.",
+  "is_adapted": true,
+  "runtime_model_override": "corasat-l4-lora"
+}

@@ -15,6 +15,12 @@ from classes.Exporter import LOGGER
 
 FIGURE_IMAGES: Dict[Tuple[str, str], "pygame.Surface"] = {}
 
+# GUI colors are code-owned (not config-driven) for stable rendering defaults.
+GUI_BACKGROUND_COLOR: Tuple[int, int, int] = (30, 30, 30)
+GUI_GRID_COLOR: Tuple[int, int, int] = (70, 70, 70)
+GUI_DRONE_COLOR: Tuple[int, int, int] = (0, 200, 255)
+GUI_TEXT_COLOR: Tuple[int, int, int] = (255, 255, 255)
+
 
 class _SimulationGUI:
     """Pygame GUI for rendering board state, overlays, and logs."""
@@ -191,8 +197,7 @@ class _SimulationGUI:
             pos += dash_len + gap_len
 
     def _draw_plan_legs(self) -> None:
-        gui = CONFIG["gui"]
-        color_default = gui["drone_color"]
+        color_default = GUI_DRONE_COLOR
         current_round = max(1, int(getattr(self.sim, "round", 1) or 1))
 
         def _to_cart(value):
@@ -234,7 +239,7 @@ class _SimulationGUI:
                     remaining = None
                 if remaining is not None:
                     label = f"{remaining}t"
-                    text = self._font_small.render(label, True, gui["text_color"], (0, 0, 0))
+                    text = self._font_small.render(label, True, GUI_TEXT_COLOR, (0, 0, 0))
                     rect = text.get_rect()
                     rect.center = (end_px[0] + 6, end_px[1] - 6)
                     self.screen.blit(text, rect)
@@ -244,7 +249,7 @@ class _SimulationGUI:
         cell = gui["cell_size"]
         margin = gui["margin"]
         gw, gh = self.grid_size
-        color_default = gui["drone_color"]
+        color_default = GUI_DRONE_COLOR
         for drone in getattr(self.sim, "drones", []):
             try:
                 bounds = drone._sector_bounds(getattr(drone, "assigned_sector", None))
@@ -275,13 +280,13 @@ class _SimulationGUI:
         margin = gui["margin"]
         gw, gh = self.grid_size
 
-        self.screen.fill(gui["background_color"])
+        self.screen.fill(GUI_BACKGROUND_COLOR)
 
         for x in range(gw):
             for y in range(gh):
                 y_flip = gh - 1 - y
                 rect = pygame.Rect(x * (cell + margin) + margin, y_flip * (cell + margin) + margin, cell, cell)
-                pygame.draw.rect(self.screen, gui["grid_color"], rect)
+                pygame.draw.rect(self.screen, GUI_GRID_COLOR, rect)
 
                 tile = self.sim.board[x][y]
 
@@ -298,7 +303,7 @@ class _SimulationGUI:
                 if tile.figure:
                     fig = tile.figure
                     overlay = f"D{fig.defended_by} A{fig.attacked_by}"
-                    surf = self._font_small.render(overlay, True, gui["text_color"])
+                    surf = self._font_small.render(overlay, True, GUI_TEXT_COLOR)
                     pad = 3
                     tx = rect.left + pad
                     ty = rect.bottom - surf.get_height() - pad
@@ -324,7 +329,7 @@ class _SimulationGUI:
                 base_pts = [self._tile_center_px(x, y) for (x, y) in drone.mission_report]
                 ox, oy = _path_offset_vec(drone)
                 pts = [(x + ox, y + oy) for (x, y) in base_pts]
-                color = getattr(drone, "render_color", gui["drone_color"])
+                color = getattr(drone, "render_color", GUI_DRONE_COLOR)
                 try:
                     pygame.draw.lines(self.screen, color, False, pts, 2)
                 except Exception:
@@ -348,12 +353,12 @@ class _SimulationGUI:
                             offset = pygame.math.Vector2(1, 0).rotate(angle_step * d_idx) * (cell // 4)
                         center = (rect.centerx + int(offset.x), rect.centery + int(offset.y))
 
-                        circle_color = getattr(drone, "render_color", gui["drone_color"])
+                        circle_color = getattr(drone, "render_color", GUI_DRONE_COLOR)
                         pygame.draw.circle(self.screen, circle_color, center, radius)
 
                         label = str(drone.id)
                         shadow = self._font.render(label, True, (0, 0, 0), circle_color)
-                        text_surf = self._font.render(label, True, gui["text_color"], circle_color)
+                        text_surf = self._font.render(label, True, GUI_TEXT_COLOR, circle_color)
                         shadow_rect = shadow.get_rect(center=(center[0] + 1, center[1] + 1))
                         text_rect = text_surf.get_rect(center=center)
                         self.screen.blit(shadow, shadow_rect)

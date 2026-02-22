@@ -78,6 +78,10 @@ class Simulation:
         self.broadcast_effectiveness_per_broadcast: Optional[float] = None
         self.runtime_s: Optional[float] = None
         self.avg_turn_duration_s: Optional[float] = None
+        self.prompt_tokens_total = 0
+        self.completion_tokens_total = 0
+        self.lm_total_tokens = 0
+        self.lm_inference_time_s = 0.0
         self.timeout_count = 0
         self.timeout_reason: Optional[str] = None
         self._metrics_finalized = False
@@ -97,6 +101,23 @@ class Simulation:
         self._rendezvous_checked = False
         self._rendezvous_turn = max(1, self.max_rounds - 1)
         self._rendezvous_tile = self._board_center_cartesian()
+
+    def record_lm_usage(
+        self,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
+        duration_s: Optional[float] = None,
+    ) -> None:
+        """Accumulate LM token and duration usage for one model call."""
+        prompt = int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else 0
+        completion = int(completion_tokens) if isinstance(completion_tokens, (int, float)) else 0
+        elapsed = float(duration_s) if isinstance(duration_s, (int, float)) and duration_s > 0 else 0.0
+
+        with self.state_lock:
+            self.prompt_tokens_total += max(0, prompt)
+            self.completion_tokens_total += max(0, completion)
+            self.lm_total_tokens = self.prompt_tokens_total + self.completion_tokens_total
+            self.lm_inference_time_s += max(0.0, elapsed)
 
     def _board_center_cartesian(self) -> tuple:
         width = max(1, int(CONFIG.get("board", {}).get("width", 8)))
@@ -186,41 +207,47 @@ class Simulation:
         return f"Simulation - Round {self._progress_string(round_num, turn_num)}"
 
     # Figures
+    def _default_figure_counts(self) -> Dict[str, Dict[str, int]]:
+        """Return default per-color figure counts for random board placement."""
+        base = {
+            "king": 1,
+            "queen": 1,
+            "rook": 2,
+            "bishop": 2,
+            "knight": 2,
+            "pawn": 8,
+        }
+        return {color: dict(base) for color in COLORS}
+
     def _create_figures(self) -> None:
-        """Populate the board with figures and precompute ground truth edges."""
-        LOGGER.log("Creating figures based on configuration.")
+        """Populate the board with seeded random figures and compute ground truth edges."""
+        LOGGER.log("Creating figures with seeded random placement.")
         self.figures = []
-        figures_cfg = CONFIG.get("figures", {})
-        sim_cfg = CONFIG.get("simulation", {})
         width, height = self.grid_size
-        randomize = bool(sim_cfg.get("randomize_figures", False))
-        rng = random
-        if randomize:
-            try:
-                all_tiles = [(x, y) for x in range(width) for y in range(height)]
-                rng.shuffle(all_tiles)
-                cursor = 0
-                req = []
-                for color in COLORS:
-                    for ftype in FIGURE_TYPES:
-                        lst = figures_cfg.get(color, {}).get(ftype, [])
-                        cnt = len(lst) if lst else (
-                            1 if ftype in ("king", "queen") else (2 if ftype in ("rook", "bishop", "knight") else 3)
-                        )
-                        req.append((color, ftype, cnt))
-                out = {c: {t: [] for t in FIGURE_TYPES} for c in COLORS}
-                for color, ftype, cnt in req:
-                    picks = all_tiles[cursor:cursor + cnt]
-                    cursor += cnt
-                    out[color][ftype] = [list(p) for p in picks]
-                figures_cfg = out
-                LOGGER.log("Figure positions RANDOMIZED.")
-            except Exception as exc:
-                LOGGER.log(f"Randomization failed ({exc}); using configured positions.")
+        all_tiles = [(x, y) for x in range(width) for y in range(height)]
+        random.shuffle(all_tiles)
+
+        counts = self._default_figure_counts()
+        remaining_tiles = len(all_tiles)
+        cursor = 0
         for color in COLORS:
             for figure_type in FIGURE_TYPES:
-                for position in figures_cfg.get(color, {}).get(figure_type, []):
+                requested = int(max(0, counts.get(color, {}).get(figure_type, 0)))
+                take = min(requested, remaining_tiles)
+                if take < requested:
+                    LOGGER.log(
+                        "WARNING: Board too small for default figure counts. "
+                        f"Placed {take}/{requested} {color} {figure_type}."
+                    )
+                for position in all_tiles[cursor:cursor + take]:
                     self.figures.append(_Figure(tuple(position), color, figure_type))
+                cursor += take
+                remaining_tiles -= take
+                if remaining_tiles <= 0:
+                    break
+            if remaining_tiles <= 0:
+                break
+        LOGGER.log("Figure positions RANDOMIZED (seeded).")
         for figure in self.figures:
             self.board[figure.position[0]][figure.position[1]].set_figure(figure)
 
@@ -317,6 +344,13 @@ class Simulation:
             )
         if self.avg_turn_duration_s is not None:
             LOGGER.log(f"Average turn duration (s): {self.avg_turn_duration_s:.5f}")
+        LOGGER.log(
+            "LM usage totals: "
+            f"prompt_tokens={self.prompt_tokens_total}, "
+            f"completion_tokens={self.completion_tokens_total}, "
+            f"total_tokens={self.lm_total_tokens}, "
+            f"inference_time_s={self.lm_inference_time_s:.5f}"
+        )
         LOGGER.log(f"Timeouts: {self.timeout_count}")
         if self.broadcast_rate is not None:
             LOGGER.log(f"Broadcast rate (per drone/seed): {self.broadcast_rate:.4f}")
@@ -498,6 +532,12 @@ class Simulation:
                 self.post_info(msg or "<no message>")
             else:
                 self.post_info("Wait")
+
+            if action != "broadcast" and bool(outcome.get("free_broadcast")):
+                self._broadcast_correct_sum += self.correct_edge_counter
+                free_msg = outcome.get("free_broadcast_message") or ""
+                self.post_info("Free Broadcast")
+                self.post_info(free_msg or "<no message>")
 
             self.post_info("\n")
         except Exception as exc:

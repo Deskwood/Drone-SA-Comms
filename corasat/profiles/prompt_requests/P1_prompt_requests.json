@@ -1,0 +1,7 @@
+{
+  "rationale": "Rationale: <=1 sentence. Mention the top factor or mandatory rule.",
+  "action": "Action: choose one of wait, move, broadcast.",
+  "action_move": "Direction: choose ONLY from Legal moves.",
+  "action_broadcast": "Message: keep it brief and only when needed.",
+  "memory_update": ""
+}

@@ -1,0 +1,8 @@
+{
+  "id": "A3",
+  "name": "DS-assisted LLM action",
+  "description": "Action chosen by language model output with decision-support scoring and summary.",
+  "use_language_model": true,
+  "use_decision_support": true,
+  "runtime_model_override": ""
+}

@@ -1,0 +1,7 @@
+{
+  "id": "M0",
+  "name": "no-language-model",
+  "description": "Heuristic policy baseline without LM inference.",
+  "runtime_model": "policy_random",
+  "selected_model": "policy_random"
+}

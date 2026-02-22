@@ -1,0 +1,6 @@
+{
+  "id": "FT0",
+  "name": "No fine-tuning",
+  "description": "Base model or non-LM policy without adapter.",
+  "is_adapted": false
+}

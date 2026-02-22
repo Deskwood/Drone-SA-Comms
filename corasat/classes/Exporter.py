@@ -38,6 +38,10 @@ RESULTS_FIELDS = [
     "mission_score",
     "runtime_s",
     "avg_turn_duration_s",
+    "prompt_tokens_total",
+    "completion_tokens_total",
+    "lm_total_tokens",
+    "lm_inference_time_s",
     "timeout_count",
     "timeout_rate",
     "logfile",
@@ -49,6 +53,17 @@ RESULTS_FIELDS = [
 
 def _resolve_results_path() -> Path:
     """Resolve the location for results.csv."""
+    env_path = os.environ.get("CORASAT_RESULTS_CSV", "").strip()
+    if env_path:
+        candidate = Path(env_path)
+        if not candidate.is_absolute():
+            try:
+                base = Path(__file__).resolve().parent.parent
+            except NameError:
+                base = Path.cwd()
+            candidate = (base / candidate).resolve()
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
     try:
         base = Path(__file__).resolve().parent.parent
     except NameError:
@@ -59,11 +74,18 @@ def _resolve_results_path() -> Path:
     return Path.cwd() / "results.csv"
 
 
-RESULTS_PATH = _resolve_results_path()
-
-
 def _resolve_log_dir(log_dir: str) -> Path:
     """Resolve the log directory relative to the Corasat root when needed."""
+    env_dir = os.environ.get("CORASAT_LOG_DIR", "").strip()
+    if env_dir:
+        path = Path(env_dir)
+        if not path.is_absolute():
+            try:
+                base = Path(__file__).resolve().parent.parent
+            except NameError:
+                base = Path.cwd()
+            path = (base / path).resolve()
+        return path
     path = Path(log_dir)
     if path.is_absolute():
         return path
@@ -72,6 +94,17 @@ def _resolve_log_dir(log_dir: str) -> Path:
     except NameError:
         base = Path.cwd()
     return base / path
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def _next_run_log_path(log_dir: Path, date_tag: str) -> Path:
@@ -100,7 +133,7 @@ def _format_logfile_entry(logfile: Optional[Path]) -> Optional[str]:
         return None
     try:
         log_path = Path(logfile)
-        base = RESULTS_PATH.parent
+        base = _resolve_results_path().parent
         rel_root = base.parent if base.parent.exists() else base
         return os.path.relpath(str(log_path), start=str(rel_root))
     except Exception:
@@ -178,9 +211,10 @@ def _append_results_rows(rows: List[Dict[str, Any]]) -> None:
     """Append rows to results.csv, creating the file if needed."""
     if not rows:
         return
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    file_exists = RESULTS_PATH.exists()
-    with open(RESULTS_PATH, "a", newline="", encoding="utf-8") as file_handle:
+    results_path = _resolve_results_path()
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = results_path.exists()
+    with open(results_path, "a", newline="", encoding="utf-8") as file_handle:
         writer = csv.DictWriter(file_handle, fieldnames=RESULTS_FIELDS)
         if not file_exists:
             writer.writeheader()
@@ -234,6 +268,10 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
             runtime_value = getattr(sim, "runtime_s", None) if sim else None
         if isinstance(runtime_value, (int, float)) and isinstance(total_actions, (int, float)) and total_actions > 0:
             avg_turn_duration_s = round(runtime_value / total_actions, 5)
+        prompt_tokens_total = getattr(sim, "prompt_tokens_total", None) if sim else None
+        completion_tokens_total = getattr(sim, "completion_tokens_total", None) if sim else None
+        lm_total_tokens = getattr(sim, "lm_total_tokens", None) if sim else None
+        lm_inference_time_s = getattr(sim, "lm_inference_time_s", None) if sim else None
         score_value = None
         if not omit_scores and sim is not None:
             raw_score = getattr(sim, "score", None)
@@ -289,6 +327,12 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
             "norm_score": norm_score_value,
             "runtime_s": round(runtime_s, 2) if isinstance(runtime_s, (int, float)) else None,
             "avg_turn_duration_s": avg_turn_duration_s,
+            "prompt_tokens_total": prompt_tokens_total,
+            "completion_tokens_total": completion_tokens_total,
+            "lm_total_tokens": lm_total_tokens,
+            "lm_inference_time_s": round(lm_inference_time_s, 5)
+            if isinstance(lm_inference_time_s, (int, float))
+            else None,
             "timeout_count": getattr(sim, "timeout_count", None) if sim else None,
             "timeout_rate": timeout_rate,
             "logfile": logfile_entry,
@@ -301,35 +345,21 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
 class TimestampedLogger:
     """Log to file and stdout with timestamps and inter-log durations."""
 
-    def __init__(self, log_dir: str = "logs", log_file: str = "simulation.log"):
-        date_tag = datetime.now().strftime("%Y-%m-%d")
-        log_dir_path = _resolve_log_dir(log_dir)
-        log_dir_path.mkdir(parents=True, exist_ok=True)
-        self.log_path = _next_run_log_path(log_dir_path, date_tag)
-
-        root = logging.getLogger()
-        for handler in list(root.handlers):
-            try:
-                handler.close()
-            except Exception:
-                pass
-            root.removeHandler(handler)
-
-        file_handler = logging.FileHandler(self.log_path, mode="a", encoding="utf-8", delay=False)
-        console_handler = logging.StreamHandler()
-
-        formatter = logging.Formatter(fmt="%(levelname)s:%(name)s:%(message)s")
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
-        root.setLevel(logging.INFO)
-        root.addHandler(file_handler)
-        root.addHandler(console_handler)
-
-        logging.getLogger("httpx").setLevel(logging.INFO)
-
+    def __init__(
+        self,
+        log_dir: str = "logs",
+        log_file: str = "simulation.log",
+        include_timestamps: Optional[bool] = None,
+    ):
+        self.include_timestamps = (
+            _env_bool("CORASAT_LOG_TIMESTAMPS", True)
+            if include_timestamps is None
+            else bool(include_timestamps)
+        )
         self.start_time = time.time()
         self.last_time = self.start_time
-        self.log("Logger initialized.")
+        self.log_path: Optional[Path] = None
+        self.start_new_log(log_dir=log_dir, log_file=None)
 
     def _now(self) -> str:
         """Return a timestamp string."""
@@ -342,13 +372,68 @@ class TimestampedLogger:
         self.last_time = current_time
         return f"{delta:.3f}s"
 
+    def _configure_handlers(self, log_path: Path) -> None:
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            try:
+                handler.close()
+            except Exception:
+                pass
+            root.removeHandler(handler)
+
+        file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8", delay=False)
+        console_handler = logging.StreamHandler()
+
+        formatter = logging.Formatter(fmt="%(levelname)s:%(name)s:%(message)s")
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        root.setLevel(logging.INFO)
+        root.addHandler(file_handler)
+        root.addHandler(console_handler)
+        logging.getLogger("httpx").setLevel(logging.INFO)
+
+    def set_include_timestamps(self, enabled: bool) -> None:
+        self.include_timestamps = bool(enabled)
+
+    def start_new_log(self, log_dir: str = "logs", log_file: Optional[str] = None) -> Path:
+        """Switch logging output to a new file and reset inter-log timing."""
+        log_dir_path = _resolve_log_dir(log_dir)
+        log_dir_path.mkdir(parents=True, exist_ok=True)
+        if log_file:
+            requested = Path(log_file)
+            if requested.is_absolute():
+                log_path = requested
+            else:
+                log_path = log_dir_path / requested
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            date_tag = datetime.now().strftime("%Y-%m-%d")
+            log_path = _next_run_log_path(log_dir_path, date_tag)
+
+        self._configure_handlers(log_path)
+        self.log_path = log_path
+        self.start_time = time.time()
+        self.last_time = self.start_time
+        self.log("Logger initialized.")
+        return log_path
+
     def log(self, message: str) -> None:
         """Log a message with timestamp and delta."""
-        logging.info(f"[{self._now()}] (+{self._duration()}) {message}")
+        if self.include_timestamps:
+            payload = f"[{self._now()}] (+{self._duration()}) {message}"
+        else:
+            self._duration()
+            payload = message
+        logging.info(payload)
 
     def warn(self, message: str) -> None:
         """Log a warning message with timestamp and delta."""
-        logging.warning(f"[{self._now()}] (+{self._duration()}) {message}")
+        if self.include_timestamps:
+            payload = f"[{self._now()}] (+{self._duration()}) {message}"
+        else:
+            self._duration()
+            payload = message
+        logging.warning(payload)
 
 
 LOGGER = TimestampedLogger()

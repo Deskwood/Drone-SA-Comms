@@ -1,0 +1,38 @@
+{
+  "id": "DS3",
+  "name": "Optuna-2 drone support",
+  "description": "Second Optuna-tuned decision-support scoring.",
+  "enabled": true,
+  "output": {
+    "include_scoring": true,
+    "include_summary": true
+  },
+  "prompt": {
+    "debug_dump_path": "Code/corasat/debug_model_inputs.jsonl"
+  },
+  "scoring": {
+    "move": {
+      "waypoint_progress_bonus": 0.45,
+      "waypoint_delay_penalty": -0.1,
+      "unknown_tile_bonus": 0.9,
+      "no_figures_left_behind_bonus": 2.55,
+      "neighborhood_potential": 0.11,
+      "figure_hint_bonus": 1.7,
+      "possible_target_bonus": 2.4,
+      "neighborhood_weight_any_figure": 0.05,
+      "neighborhood_weight_possible_target": 0.95,
+      "border_bonus": 1.2,
+      "cross_track_penalty_per_step_squared": -0.8,
+      "sector_compliance_bonus": 0.55,
+      "revisit_penalty": -2.7
+    },
+    "broadcast": {
+      "base_broadcast_value": -0.7,
+      "first_turn_coordination_bonus": 3.9,
+      "last_turn_coordination_bonus": 8.2
+    },
+    "wait": {
+      "base_wait_value": 0.0
+    }
+  }
+}

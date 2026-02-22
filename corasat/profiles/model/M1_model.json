@@ -1,0 +1,7 @@
+{
+  "id": "M1",
+  "name": "llama3.1:8b",
+  "description": "Primary base language model.",
+  "runtime_model": "llama3.1:8b",
+  "selected_model": "llama3.1:8b"
+}

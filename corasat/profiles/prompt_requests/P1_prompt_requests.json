@@ -1,4 +1,7 @@
 {
+  "id": "P1",
+  "name": "Reduced prompt requests",
+  "description": "Short prompt request fields for compact context.",
   "rationale": "Rationale: <=1 sentence. Mention the top factor or mandatory rule.",
   "action": "Action: choose one of wait, move, broadcast.",
   "action_move": "Direction: choose ONLY from Legal moves.",

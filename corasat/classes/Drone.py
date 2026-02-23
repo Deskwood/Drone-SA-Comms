@@ -5,6 +5,7 @@ import inspect
 from typing import Dict, List, Optional, Tuple
 
 from classes.Core import CONFIG
+from classes.Exporter import LOGGER
 from classes.Drone_Support import (
     _Drone_Aftermath,
     _Drone_Decision_Support,
@@ -107,7 +108,8 @@ class _Drone:
         temperature = CONFIG["simulation"].get("temperature", 0.7)
         prompt_data = self.decision_support.build_prompt(self.rules)
         prompt_char_len = prompt_data["prompt_char_len"]
-        print(f"Context length (chars): {prompt_char_len}")
+        if bool(CONFIG.get("logging", {}).get("print_prompt_stats", False)):
+            LOGGER.log(f"Context length (chars): {prompt_char_len}")
         signature = inspect.signature(self.language_model.generate)
         if "snapshot" in signature.parameters:
             return self.language_model.generate(

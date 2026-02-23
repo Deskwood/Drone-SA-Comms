@@ -10,6 +10,8 @@ from typing import Iterable, List
 
 
 CORASAT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = CORASAT_ROOT.parent.parent
+OVERLEAF_ROOT = PROJECT_ROOT / "Document" / "Overleaf"
 
 
 def _iter_matches(base: Path, patterns: Iterable[str]) -> List[Path]:
@@ -21,6 +23,20 @@ def _iter_matches(base: Path, patterns: Iterable[str]) -> List[Path]:
                 matches.append(path)
     dedup = sorted(set(matches), key=lambda p: str(p))
     return dedup
+
+
+def _remove_empty_dirs(root: Path) -> None:
+    if not root.exists():
+        return
+    for path in sorted(root.rglob("*"), key=lambda p: len(str(p)), reverse=True):
+        if not path.is_dir():
+            continue
+        try:
+            next(path.iterdir())
+        except StopIteration:
+            path.rmdir()
+        except Exception:
+            continue
 
 
 def _remove_path(path: Path) -> None:
@@ -39,6 +55,11 @@ def main() -> int:
         action="store_true",
         help="Keep canonical results.csv and lab_results.csv.",
     )
+    parser.add_argument(
+        "--include-overleaf",
+        action="store_true",
+        help="Also remove generated MT artifacts from Document/Overleaf.",
+    )
     args = parser.parse_args()
 
     patterns = [
@@ -48,6 +69,9 @@ def main() -> int:
         "review_best_mid_worst_runs/*",
         "lora/output_*",
         "lora/**/checkpoint-*",
+        "lora/*_train.jsonl",
+        "lora/*_val.jsonl",
+        "lora/Modelfile*",
         "optuna_runs_*.csv",
         ".lab_state/*",
     ]
@@ -55,13 +79,31 @@ def main() -> int:
         patterns.extend(["results.csv", "lab_results.csv", "results.csv.bak*"])
 
     matches = _iter_matches(CORASAT_ROOT, patterns)
+
+    overleaf_matches: List[Path] = []
+    if args.include_overleaf:
+        overleaf_patterns = [
+            "tex/generated/*.tex",
+            "figures/generated/*.png",
+            "review/generated_data/*",
+        ]
+        overleaf_matches = _iter_matches(OVERLEAF_ROOT, overleaf_patterns)
+        matches.extend(overleaf_matches)
+
     if not matches:
         print("No generated artifacts matched.")
         return 0
 
     print("Matched paths:")
     for path in matches:
-        rel = path.relative_to(CORASAT_ROOT).as_posix()
+        if str(path).startswith(str(CORASAT_ROOT)):
+            rel = path.relative_to(CORASAT_ROOT).as_posix()
+            rel = f"corasat/{rel}"
+        elif str(path).startswith(str(OVERLEAF_ROOT)):
+            rel = path.relative_to(OVERLEAF_ROOT).as_posix()
+            rel = f"overleaf/{rel}"
+        else:
+            rel = str(path)
         print(f"- {rel}")
 
     if not args.apply:
@@ -71,6 +113,14 @@ def main() -> int:
     # Remove deepest paths first so nested directories are handled cleanly.
     for path in sorted(matches, key=lambda p: len(str(p)), reverse=True):
         _remove_path(path)
+
+    _remove_empty_dirs(CORASAT_ROOT / "campaign_runs")
+    _remove_empty_dirs(CORASAT_ROOT / "logs")
+    _remove_empty_dirs(CORASAT_ROOT / ".lab_state")
+    if args.include_overleaf:
+        _remove_empty_dirs(OVERLEAF_ROOT / "review" / "generated_data")
+        _remove_empty_dirs(OVERLEAF_ROOT / "figures" / "generated")
+        _remove_empty_dirs(OVERLEAF_ROOT / "tex" / "generated")
 
     print("Cleanup complete.")
     return 0

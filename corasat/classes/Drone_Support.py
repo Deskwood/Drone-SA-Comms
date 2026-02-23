@@ -85,6 +85,11 @@ def _decision_support_enabled() -> bool:
     return False
 
 
+def _prompt_stats_enabled() -> bool:
+    """Return whether prompt/token throughput stats should be logged."""
+    return bool(CONFIG.get("logging", {}).get("print_prompt_stats", False))
+
+
 class _Drone_Knowledge:
     """Local board knowledge, memory, and intel sharing helpers."""
 
@@ -1519,9 +1524,9 @@ class _Drone_Language_Model:
         prompt_char_len: Optional[int],
     ) -> List[dict]:
         messages.append({"role": "assistant", "content": json.dumps(payload)})
-        if prompt_char_len is not None:
+        if prompt_char_len is not None and _prompt_stats_enabled():
             approx_tokens = max(1, math.ceil(prompt_char_len / 4))
-            print(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
+            LOGGER.log(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
         return messages
 
     def _use_language_model(self) -> bool:
@@ -1657,9 +1662,9 @@ class _Drone_Language_Model:
                 pass
             content = input("Paste model result: ")
             messages.append({"role": "assistant", "content": content})
-            if prompt_char_len is not None:
+            if prompt_char_len is not None and _prompt_stats_enabled():
                 approx_tokens = max(1, math.ceil(prompt_char_len / 4))
-                print(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
+                LOGGER.log(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
             return messages
 
         mode = self.policy_mode()
@@ -1719,23 +1724,26 @@ class _Drone_Language_Model:
             except Exception:
                 pass
 
-        if prompt_tokens is not None:
+        if prompt_tokens is not None and _prompt_stats_enabled():
             ctx_msg = f"Context length: {prompt_tokens} tokens"
             if prompt_char_len is not None:
                 ctx_msg += f" ({prompt_char_len} chars)"
-            print(ctx_msg)
-        elif prompt_char_len is not None:
+            LOGGER.log(ctx_msg)
+        elif prompt_char_len is not None and _prompt_stats_enabled():
             approx_tokens = max(1, math.ceil(prompt_char_len / 4))
-            print(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
+            LOGGER.log(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
 
         if (
             isinstance(completion_tokens, (int, float))
             and completion_tokens > 0
             and duration_seconds
             and duration_seconds > 0
+            and _prompt_stats_enabled()
         ):
             tokens_per_second = completion_tokens / duration_seconds
-            print(f"Tokens per second: {tokens_per_second:.2f} tok/s ({completion_tokens} completion tokens)")
+            LOGGER.log(
+                f"Tokens per second: {tokens_per_second:.2f} tok/s ({completion_tokens} completion tokens)"
+            )
         return messages
 
 

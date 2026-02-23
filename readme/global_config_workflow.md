@@ -1,26 +1,38 @@
 # Global Config Workflow
 
-Corasat uses a global configuration model.
+Corasat now uses a single master config file:
+- `corasat/config.json`
 
-Core files:
-- `corasat/config.base.json`: baseline runtime config template.
-- `corasat/lab_overrides.json`: per-lab config overrides.
-- `corasat/lab_matrix.json`: lab IDs and profile allocations.
-- `corasat/campaign_config.json`: campaign run selection and seed ranges.
+## Configuration model
+`config.json` contains:
+- global runtime config (`board`, `simulation`, `decision_support`, `prompt_requests`),
+- campaign controls (`campaign.*`),
+- full lab list (`campaign.labs`).
 
-Profiles:
-- `corasat/profiles/rules/R*.txt`
-- `corasat/profiles/prompt_requests/P*.json`
-- `corasat/profiles/model/M*.json`
-- `corasat/profiles/fine_tuning/FT*.json`
-- `corasat/profiles/action_policy/A*.json`
+Each lab is a compact tuple of profile IDs:
+- `rules_id` (`R*`)
+- `prompt_id` (`P*`)
+- `drone_support_id` (`DS*`)
+- `model_id` (`M*`)
+- `fine_tuning_id` (`FT*`)
+- `action_policy_id` (`A*`)
 
-Activation flow:
-1. Select lab by `lab` or `lab_id`.
-2. Merge `config.base.json` + selected override from `lab_overrides.json`.
-3. Resolve `rules_id` from `lab_matrix.json` to `profiles/rules/Rx_rules.txt`.
-4. Write merged runtime config to `corasat/config.json`.
+Optional per-lab execution blocks:
+- `optuna.enabled`
+- `lora.enabled` + command list
 
-Main entry points:
-- `corasat/lab_state.py`: activate/list/run/restore lab states.
-- `corasat/run_campaign.py`: executes full campaigns and writes reports.
+## Runtime flow (`main.py`)
+1. Load `config.json`.
+2. For each enabled lab, build runtime config by resolving profile IDs.
+3. Run optional Optuna and LoRA stages for that lab.
+4. Execute configured seeds and write seed/lab/campaign logs and reports.
+5. Export MT-ready tables/figures when `campaign.mt_export.enabled=true`.
+
+## Outputs
+Primary outputs are written to:
+- `corasat/campaign_runs/<campaign_name>/...`
+
+MT-ready generated artifacts are written to:
+- `Document/Overleaf/tex/generated/`
+- `Document/Overleaf/figures/generated/`
+- `Document/Overleaf/review/generated_data/<campaign_name>/`

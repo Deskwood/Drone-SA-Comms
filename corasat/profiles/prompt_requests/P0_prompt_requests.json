@@ -1,4 +1,7 @@
 {
+  "id": "P0",
+  "name": "No prompt requests",
+  "description": "No additional prompt request constraints.",
   "rationale": "",
   "action": "",
   "action_move": "",

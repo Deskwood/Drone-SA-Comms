@@ -1,4 +1,7 @@
 {
+  "id": "P2",
+  "name": "Full prompt requests",
+  "description": "Full prompt request fields including memory update guidance.",
   "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s) or the mandatory rule you are following.",
   "action": "Action: choose one of wait, move, broadcast. Follow rules; if Special directive says Drone 1 on round 1, you MUST broadcast.",
   "action_move": "Direction: choose ONLY from Legal moves.",

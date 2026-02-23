@@ -161,7 +161,7 @@ class Simulation:
 
     def _load_rules(self) -> str:
         """Load and personalize rules for this simulation instance."""
-        rules_path = CONFIG.get("rules_path", "rules.txt")
+        rules_path = CONFIG.get("rules_path", "profiles/rules/R1_rules.txt")
         resolved = resolve_data_path(str(rules_path))
         with open(resolved, "r", encoding="utf-8") as file_handle:
             rules = file_handle.read()

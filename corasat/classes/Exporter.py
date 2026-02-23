@@ -16,6 +16,8 @@ import uuid
 
 RESULTS_FIELDS = [
     "timestamp",
+    "campaign",
+    "lab_id",
     "model",
     "seed",
     "norm_score",
@@ -237,6 +239,9 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
         runtime_s = entry.get("runtime_s")
         omit_scores = bool(entry.get("omit_scores"))
         timestamp = entry.get("timestamp") or datetime.now().isoformat()
+        context = entry.get("context") if isinstance(entry.get("context"), dict) else {}
+        campaign_name = context.get("campaign")
+        lab_id = context.get("lab_id")
         coverage = _compute_coverage_ratio(sim) if sim else None
         num_drones = None
         if sim is not None:
@@ -303,6 +308,8 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
         row = {
             "run_id": _build_run_id(seed),
             "timestamp": timestamp,
+            "campaign": campaign_name,
+            "lab_id": lab_id,
             "commit_sha": commit_sha,
             "config_hash": _config_hash_from_dict(config) if config else None,
             "model": getattr(sim, "model", None) if sim else None,

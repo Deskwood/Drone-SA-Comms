@@ -1,11 +1,10 @@
 """Entry point for Corasat simulation and campaign runs.
 
 This module supports two modes from one config file:
-1) single runtime mode (legacy): run the seeds in one runtime config, and
+1) single runtime mode: run the seeds in one runtime config, and
 2) campaign mode: run multiple labs in sequence using ID-based profile tuples.
 
 In campaign mode, ``config.json`` is the single source of truth.
-``run_campaign.py`` and ``lab_state.py`` are kept as compatibility wrappers.
 """
 from __future__ import annotations
 
@@ -57,6 +56,7 @@ RUNTIME_ROOT_KEYS = (
     "rules_path",
     "simulation",
     "gui",
+    "logging",
     "decision_support",
     "prompt_requests",
 )
@@ -914,6 +914,46 @@ def _run_lora_commands(lora_cfg: Dict[str, Any], env: Dict[str, str], context: D
         _run_subprocess(argv, cwd=CORASAT_ROOT, env=env, note=f"LoRA command {index}")
 
 
+def _export_campaign_to_mt(
+    *,
+    master_config: Dict[str, Any],
+    campaign_cfg: Dict[str, Any],
+    config_path: Path,
+    output_dir: Path,
+    results_path: Path,
+    lab_results_path: Path,
+    manifest_path: Path,
+) -> None:
+    mt_cfg = campaign_cfg.get("mt_export", {})
+    if not isinstance(mt_cfg, dict) or not bool(mt_cfg.get("enabled", False)):
+        return
+    try:
+        from campaign_mt_export import export_campaign_artifacts
+    except Exception as exc:
+        _log(f"MT export unavailable: {exc}")
+        return
+
+    try:
+        outputs = export_campaign_artifacts(
+            corasat_root=CORASAT_ROOT,
+            config_path=config_path,
+            master_config=master_config,
+            campaign_cfg=campaign_cfg,
+            output_dir=output_dir,
+            results_path=results_path,
+            lab_results_path=lab_results_path,
+            manifest_path=manifest_path,
+            logger=_log,
+        )
+        if outputs:
+            _log("MT export completed:")
+            for key in sorted(outputs.keys()):
+                _log(f"- {key}: {outputs[key]}")
+    except Exception as exc:
+        _log(f"MT export failed: {exc}")
+        _log(traceback.format_exc())
+
+
 def _concat_seed_logs(seed_reports: Sequence[Dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as target:
@@ -1217,6 +1257,16 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
 
     manifest_path = output_dir / "campaign_report.json"
     _write_json(manifest_path, manifest)
+
+    _export_campaign_to_mt(
+        master_config=master_config,
+        campaign_cfg=campaign_cfg,
+        config_path=config_path,
+        output_dir=output_dir,
+        results_path=results_path,
+        lab_results_path=lab_results_path,
+        manifest_path=manifest_path,
+    )
 
     _append_text_log(campaign_log_path, "Campaign completed.", include_timestamps)
     _append_text_log(campaign_log_path, f"Manifest: {manifest_path}", include_timestamps)

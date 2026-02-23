@@ -1,4 +1,7 @@
 {
+  "id": "P3",
+  "name": "Waypoint-clarified prompts",
+  "description": "Full prompt requests plus explicit waypoint-vs-sector disambiguation cues.",
   "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s), especially waypoint progress/timing; do not use sector corners as movement targets unless they are the waypoint.",
   "action": "Action: choose one of wait, move, broadcast. Follow Special directive if present. Prefer the Decision Support Summary recommendation when legal.",
   "action_move": "Direction: choose ONLY from Legal moves. Use the immediate Plan focus waypoint as target; sector bounds are constraints, not direct move goals.",

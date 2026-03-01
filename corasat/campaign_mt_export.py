@@ -36,6 +36,7 @@ PROFILE_SPECS: Dict[str, Dict[str, str]] = {
     "model": {"subdir": "model", "suffix": "_model.json", "format": "json"},
     "fine_tuning": {"subdir": "fine_tuning", "suffix": "_fine_tuning.json", "format": "json"},
     "action_policy": {"subdir": "action_policy", "suffix": "_action_policy.json", "format": "json"},
+    "communication": {"subdir": "communication", "suffix": "_communication.json", "format": "json"},
     "decision_support": {
         "subdir": "decision_support",
         "suffix": "_decision_support.json",
@@ -50,6 +51,7 @@ LAB_PROFILE_FIELDS: Sequence[Tuple[str, str, str]] = (
     ("model_id", "M", "model"),
     ("fine_tuning_id", "FT", "fine_tuning"),
     ("action_policy_id", "A", "action_policy"),
+    ("communication_id", "C", "communication"),
 )
 
 RULES_NAME_OVERRIDES: Dict[str, Tuple[str, str]] = {
@@ -179,6 +181,7 @@ def _infer_changed_item(lab: Dict[str, Any], parent: Optional[Dict[str, Any]]) -
         "model_id": "M",
         "fine_tuning_id": "FT",
         "action_policy_id": "A",
+        "communication_id": "C",
     }
     for field, _, _ in LAB_PROFILE_FIELDS:
         if str(lab.get(field) or "").upper() != str(parent.get(field) or "").upper():
@@ -268,6 +271,7 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
         "model": "Model",
         "fine_tuning": "Fine tuning",
         "action_policy": "Action policy",
+        "communication": "Communication",
     }
     for _, _, kind in LAB_PROFILE_FIELDS:
         ids = sorted(used_ids[kind], key=_id_sort_key)
@@ -289,15 +293,15 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
     lines.append("\\setlength{\\LTpre}{6pt}")
     lines.append("\\setlength{\\LTpost}{6pt}")
     lines.append(
-        "\\begin{longtable}{l l l l l l l p{0.20\\linewidth} p{0.17\\linewidth} p{0.22\\linewidth}}"
+        "\\begin{longtable}{l l l l l l l l p{0.17\\linewidth} p{0.15\\linewidth} p{0.19\\linewidth}}"
     )
     lines.append("\\caption{Lab-to-configuration mapping for campaign execution.}\\label{tab:lab-configs}\\\\")
     lines.append("\\hline")
-    lines.append("Lab & R & P & DS & M & FT & A & Runtime model & Changed item & Idea \\\\")
+    lines.append("Lab & R & P & DS & M & FT & A & C & Runtime model & Changed item & Idea \\\\")
     lines.append("\\hline")
     lines.append("\\endfirsthead")
     lines.append("\\hline")
-    lines.append("Lab & R & P & DS & M & FT & A & Runtime model & Changed item & Idea \\\\")
+    lines.append("Lab & R & P & DS & M & FT & A & C & Runtime model & Changed item & Idea \\\\")
     lines.append("\\hline")
     lines.append("\\endhead")
 
@@ -313,6 +317,7 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
             _latex_escape(str(lab.get("model_id") or "")),
             _latex_escape(str(lab.get("fine_tuning_id") or "")),
             _latex_escape(str(lab.get("action_policy_id") or "")),
+            _latex_escape(str(lab.get("communication_id") or "")),
             _latex_softbreak(_resolve_lab_runtime_model(corasat_root, lab)),
             _latex_escape(_infer_changed_item(lab, parent)),
             _latex_escape(str(lab.get("title") or lab.get("notes") or lab.get("label") or "")),
@@ -346,7 +351,8 @@ def _build_lab_results_tex(labs: Sequence[Dict[str, Any]], lab_rows: Sequence[Di
         row = rows_by_id.get(lab_id, {})
         tuple_text = (
             f"[{lab.get('rules_id','')},{lab.get('prompt_id','')},{lab.get('drone_support_id','')},"
-            f"{lab.get('model_id','')},{lab.get('fine_tuning_id','')},{lab.get('action_policy_id','')}]"
+            f"{lab.get('model_id','')},{lab.get('fine_tuning_id','')},{lab.get('action_policy_id','')},"
+            f"{lab.get('communication_id','')}]"
         )
         mean_value = _float_from_row(row, "mean_norm_score")
         std_value = _float_from_row(row, "std_norm_score")

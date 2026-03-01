@@ -1,0 +1,131 @@
+{
+  "schema_version": 3,
+  "board": {
+    "width": 8,
+    "height": 8
+  },
+  "rules_path": "profiles/rules/R2_rules.txt",
+  "simulation": {
+    "create_py_export": false,
+    "use_gui": false,
+    "model_index": 4,
+    "models": [
+      "manual",
+      "deepseek-r1:32b",
+      "qwen3:30b",
+      "deepseek-r1:14b",
+      "llama3.1:8b"
+    ],
+    "num_drones": 2,
+    "max_rounds": 32,
+    "temperature": 0.0,
+    "seed_list": {
+      "first_seed": 1,
+      "last_seed": 100
+    },
+    "top_p": null,
+    "top_k": null,
+    "watchdog_timeout_s": 900,
+    "communication_id": "C0",
+    "communication_mode": "co_located_action_cost"
+  },
+  "gui": {
+    "cell_size": 80,
+    "margin": 8,
+    "figure_image_dir": "./img",
+    "sidebar_width": 600
+  },
+  "logging": {
+    "print_prompt_stats": false,
+    "include_timestamps": true
+  },
+  "decision_support": {
+    "enabled": true,
+    "output": {
+      "include_scoring": true,
+      "include_summary": true
+    },
+    "scoring": {
+      "move": {
+        "waypoint_progress_bonus": 0.5,
+        "waypoint_delay_penalty": -3.0,
+        "unknown_tile_bonus": 1.3,
+        "no_figures_left_behind_bonus": 1.5,
+        "neighborhood_potential": 0.1,
+        "figure_hint_bonus": 1.0,
+        "possible_target_bonus": 0.9,
+        "neighborhood_weight_any_figure": 0.4,
+        "neighborhood_weight_possible_target": 0.7,
+        "border_bonus": 1.0,
+        "cross_track_penalty_per_step_squared": -1.0,
+        "sector_compliance_bonus": 0.8,
+        "revisit_penalty": -1.0
+      },
+      "broadcast": {
+        "base_broadcast_value": -0.6,
+        "first_turn_coordination_bonus": 2.5,
+        "last_turn_coordination_bonus": 8.0
+      },
+      "wait": {
+        "base_wait_value": -1.68
+      }
+    }
+  },
+  "prompt_requests": {
+    "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s) or the mandatory rule you are following.",
+    "action": "Action: choose one of wait, move, broadcast. Follow rules; if Special directive says Drone 1 on round 1, you MUST broadcast.",
+    "action_move": "Direction: choose ONLY from Legal moves.",
+    "action_broadcast": "Message: If broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
+    "memory_update": "Memory: Use tags PLAN:, SECTOR:, RV:, FIG:, POSSIBLE:, NOTE:, VISITED:. Keep existing VISITED lines. Do NOT copy Decision Support, Legal movements, or Broadcast Rx Buffer."
+  },
+  "campaign": {
+    "name": "mt_full_rerun",
+    "smoke_run": false,
+    "campaign_run": true,
+    "smoke_seed_limit": 2,
+    "smoke_skip_optuna": true,
+    "smoke_skip_lora": true,
+    "smoke_output_dir": "campaign_runs/mt_full_rerun_smoke",
+    "smoke_mt_export": false,
+    "output_dir": "campaign_runs/preflight_single_lab",
+    "fresh_output": true,
+    "stop_on_error": true,
+    "seed_list": {
+      "first_seed": 1,
+      "last_seed": 1
+    },
+    "max_rounds": 4,
+    "use_gui": false,
+    "logging": {
+      "include_timestamps": true
+    },
+    "mt_export": {
+      "enabled": false
+    },
+    "labs": [
+      {
+        "id": "L0.0",
+        "enabled": true,
+        "title": "Random legal baseline (constrained comm)",
+        "label": "L0.0 [R0,P0,DS0,M0,FT0,A0,C0]",
+        "parent_lab": "",
+        "changed_item": "baseline",
+        "notes": "Seeded random legal movement baseline with constrained communication.",
+        "rules_id": "R0",
+        "prompt_id": "P0",
+        "drone_support_id": "DS0",
+        "model_id": "M0",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A0",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      }
+    ]
+  }
+}

@@ -1,10 +1,10 @@
-"""Entry point for Corasat simulation and campaign runs.
+"""Entry point for Corasat campaign execution.
 
-This module supports two modes from one config file:
-1) single runtime mode: run the seeds in one runtime config, and
-2) campaign mode: run multiple labs in sequence using ID-based profile tuples.
+This module supports two campaign-controlled modes from one config file:
+1) smoke run mode: run the configured campaign with only the first seeds, and
+2) campaign run mode: run the full configured campaign.
 
-In campaign mode, ``config.json`` is the single source of truth.
+Mode activation is controlled by ``campaign.smoke_run`` and ``campaign.campaign_run``.
 """
 from __future__ import annotations
 
@@ -18,35 +18,17 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import statistics
 import subprocess
 import sys
 import time
 import traceback
-from typing import Any, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from classes.Simulation import Simulation
 
-if TYPE_CHECKING:
-    import pygame
-
 import classes.Core as core
-
-# Legacy shared constants (kept here until core modules are reorganized).
-COLORS = ["white", "black"]
-FIGURE_TYPES = ["king", "queen", "rook", "bishop", "knight", "pawn"]
-DIRECTION_MAP: Dict[str, Tuple[int, int]] = {
-    "north": (0, 1),
-    "south": (0, -1),
-    "east": (1, 0),
-    "west": (-1, 0),
-    "northeast": (1, 1),
-    "northwest": (-1, 1),
-    "southeast": (1, -1),
-    "southwest": (-1, -1),
-}
-VALID_DIRECTIONS = set(DIRECTION_MAP.keys())
-FIGURE_IMAGES: Dict[Tuple[str, str], "pygame.Surface"] = {}
 
 CORASAT_ROOT = Path(__file__).resolve().parent
 CODE_ROOT = CORASAT_ROOT.parent
@@ -67,6 +49,7 @@ PROFILE_SPECS: Dict[str, Dict[str, str]] = {
     "model": {"subdir": "model", "suffix": "_model.json", "format": "json"},
     "fine_tuning": {"subdir": "fine_tuning", "suffix": "_fine_tuning.json", "format": "json"},
     "action_policy": {"subdir": "action_policy", "suffix": "_action_policy.json", "format": "json"},
+    "communication": {"subdir": "communication", "suffix": "_communication.json", "format": "json"},
     "decision_support": {
         "subdir": "decision_support",
         "suffix": "_decision_support.json",
@@ -239,6 +222,21 @@ def _resolve_path(base_dir: Path, raw_value: str, fallback: str) -> Path:
     return (base_dir / path).resolve()
 
 
+def _remove_tree(path: Path) -> None:
+    """Delete a directory tree, retrying once after clearing read-only flags."""
+    if not path.exists():
+        return
+
+    def _onerror(func, target_path, _exc_info):
+        try:
+            os.chmod(target_path, stat.S_IWRITE)
+            func(target_path)
+        except Exception:
+            raise
+
+    shutil.rmtree(path, onerror=_onerror)
+
+
 def _deep_merge(base: object, override: object) -> object:
     if isinstance(base, dict) and isinstance(override, dict):
         merged = {key: copy.deepcopy(value) for key, value in base.items()}
@@ -302,22 +300,6 @@ def _select_runtime_model(sim_cfg: Dict[str, Any], model_name: str) -> None:
         normalized.append(model_name)
     sim_cfg["models"] = normalized
     sim_cfg["model_index"] = normalized.index(model_name)
-
-
-def _seed_list_from_config(config: Dict[str, Any]) -> List[Optional[int]]:
-    """Extract the simulation seed list and apply a fallback when missing."""
-    simulation_cfg = config.get("simulation", {}) or {}
-    seed_spec = simulation_cfg.get("seed_list", [])
-    seed_list = _resolve_seed_spec(seed_spec)
-
-    if not seed_list:
-        _log("No seed list found in config; defaulting to [0].")
-        return [0]
-    if len(seed_list) > 10:
-        _log(f"Seed list: {seed_list[:3]} .. {seed_list[-3:]} (total {len(seed_list)})")
-    else:
-        _log(f"Seed list: {seed_list}")
-    return list(seed_list)
 
 
 def _resolve_seed_spec(seed_spec: Any) -> List[int]:
@@ -581,34 +563,6 @@ def _summarize_lab_seed_reports(seed_reports: Sequence[Dict[str, Any]]) -> Dict[
     }
 
 
-def _compute_average_norm_score(
-    run_exports: List[Dict[str, Any]],
-    seeds: List[Optional[int]],
-) -> Optional[float]:
-    """Compute average normalized score for completed seed runs."""
-    if not run_exports:
-        return None
-    scores: List[float] = []
-    valid_seeds = {str(seed) for seed in seeds}
-    for entry in run_exports:
-        sim = entry.get("sim")
-        seed = entry.get("seed")
-        if sim is None or seed is None:
-            continue
-        if str(seed) not in valid_seeds:
-            continue
-        gt_edges = getattr(sim, "gt_edges", None)
-        if not gt_edges:
-            continue
-        score = getattr(sim, "score", None)
-        if score is None:
-            continue
-        scores.append(float(score) / max(1, len(gt_edges)))
-    if not scores:
-        return None
-    return sum(scores) / len(scores)
-
-
 def run_seed(
     seed: Optional[int],
     game_index: int,
@@ -696,39 +650,6 @@ def run_seed(
     return run_entry, False
 
 
-def run_all_seeds(config_path: str = core.CONFIG_PATH) -> List[Dict[str, Any]]:
-    """Run all configured seeds in sequence for a single runtime config."""
-    run_exports: List[Dict[str, Any]] = []
-    config = _reload_config(config_path)
-    include_timestamps = bool(config.get("logging", {}).get("include_timestamps", True))
-    _set_shared_logger_timestamp_mode(include_timestamps)
-
-    seeds = _seed_list_from_config(config)
-    total_games = max(1, len(seeds))
-
-    for game_index, seed in enumerate(seeds, start=1):
-        try:
-            run_entry, abort_requested = run_seed(
-                seed,
-                game_index,
-                total_games,
-                config_path=config_path,
-                include_timestamps=include_timestamps,
-            )
-        except KeyboardInterrupt:
-            break
-        if run_entry:
-            run_exports.append(run_entry)
-        if abort_requested:
-            break
-    avg_norm = _compute_average_norm_score(run_exports, seeds)
-    if avg_norm is not None:
-        _log(f"Average normalized score over {len(seeds)} seeds: {avg_norm:.5f}")
-    else:
-        _log("Average normalized score: n/a (no completed runs)")
-    return run_exports
-
-
 def _build_lab_runtime_config(
     *,
     master_config: Dict[str, Any],
@@ -746,6 +667,7 @@ def _build_lab_runtime_config(
     model_id = str(lab_entry.get("model_id") or "").strip().upper()
     fine_tuning_id = str(lab_entry.get("fine_tuning_id") or "").strip().upper()
     action_policy_id = str(lab_entry.get("action_policy_id") or "").strip().upper()
+    communication_id = str(lab_entry.get("communication_id") or "").strip().upper()
 
     if rules_id:
         rules_path = _profile_path(config_dir, "rules", rules_id)
@@ -799,6 +721,20 @@ def _build_lab_runtime_config(
     if action_override_model:
         _select_runtime_model(sim_cfg, action_override_model)
 
+    if communication_id:
+        comm_payload = _load_profile_json(config_dir, "communication", communication_id)
+        comm_cfg = _strip_profile_metadata(comm_payload)
+        mode = str(comm_cfg.get("mode") or "").strip()
+        if mode:
+            sim_cfg["communication_mode"] = mode
+        sim_cfg["communication_id"] = communication_id
+        if isinstance(sim_cfg.get("communication"), dict):
+            merged_comm = _deep_merge(sim_cfg.get("communication", {}), comm_cfg)
+            if isinstance(merged_comm, dict):
+                sim_cfg["communication"] = merged_comm
+        else:
+            sim_cfg["communication"] = comm_cfg
+
     lab_override = lab_entry.get("runtime_override")
     if not isinstance(lab_override, dict):
         lab_override = lab_entry.get("config_override")
@@ -815,6 +751,7 @@ def _build_lab_runtime_config(
     sim_cfg["model_id"] = model_id
     sim_cfg["fine_tuning_id"] = fine_tuning_id
     sim_cfg["action_policy_id"] = action_policy_id
+    sim_cfg["communication_id"] = communication_id
 
     resolved = {
         "lab_id": lab_id,
@@ -824,6 +761,7 @@ def _build_lab_runtime_config(
         "model_id": model_id,
         "fine_tuning_id": fine_tuning_id,
         "action_policy_id": action_policy_id,
+        "communication_id": communication_id,
     }
     return runtime_cfg, resolved
 
@@ -967,21 +905,37 @@ def _concat_seed_logs(seed_reports: Sequence[Dict[str, Any]], output_path: Path)
             target.write("\n\n")
 
 
-def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
+def _run_campaign(
+    master_config: Dict[str, Any],
+    config_path: Path,
+    *,
+    run_mode: str = "campaign",
+    seed_limit: Optional[int] = None,
+    skip_optuna: bool = False,
+    skip_lora: bool = False,
+    output_dir_override: Optional[Path] = None,
+    export_mt: bool = True,
+) -> int:
     campaign_cfg = master_config.get("campaign", {})
     if not isinstance(campaign_cfg, dict):
         raise ValueError("campaign must be a JSON object when provided.")
+    if seed_limit is not None and int(seed_limit) < 1:
+        raise ValueError("seed_limit must be >= 1 when provided.")
 
     config_dir = config_path.parent
-    campaign_name = str(campaign_cfg.get("name") or campaign_cfg.get("campaign_name") or "campaign").strip()
-    if not campaign_name:
-        campaign_name = "campaign"
+    campaign_name_base = str(campaign_cfg.get("name") or campaign_cfg.get("campaign_name") or "campaign").strip()
+    if not campaign_name_base:
+        campaign_name_base = "campaign"
+    campaign_name = campaign_name_base if run_mode == "campaign" else f"{campaign_name_base}_{run_mode}"
 
-    output_dir = _resolve_path(
-        config_dir,
-        str(campaign_cfg.get("output_dir") or ""),
-        f"campaign_runs/{campaign_name}",
-    )
+    if output_dir_override is not None:
+        output_dir = output_dir_override.resolve()
+    else:
+        output_dir = _resolve_path(
+            config_dir,
+            str(campaign_cfg.get("output_dir") or ""),
+            f"campaign_runs/{campaign_name_base}",
+        )
     fresh_output = bool(campaign_cfg.get("fresh_output", True))
     stop_on_error = bool(campaign_cfg.get("stop_on_error", True))
 
@@ -990,7 +944,7 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
     _set_shared_logger_timestamp_mode(include_timestamps)
 
     if fresh_output and output_dir.exists():
-        shutil.rmtree(output_dir)
+        _remove_tree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     results_path = output_dir / "results.csv"
@@ -1027,19 +981,31 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
 
     manifest: Dict[str, Any] = {
         "campaign_name": campaign_name,
+        "run_mode": run_mode,
         "config_path": str(config_path),
         "started_at": datetime.now().astimezone().isoformat(),
         "output_dir": str(output_dir),
         "results_csv": str(results_path),
         "lab_results_csv": str(lab_results_path),
         "include_timestamps": include_timestamps,
+        "seed_limit": int(seed_limit) if seed_limit is not None else None,
+        "skip_optuna": bool(skip_optuna),
+        "skip_lora": bool(skip_lora),
+        "export_mt": bool(export_mt),
         "labs": [],
     }
 
-    _append_text_log(campaign_log_path, f"Campaign '{campaign_name}' started.", include_timestamps)
+    _append_text_log(
+        campaign_log_path,
+        f"Campaign '{campaign_name}' started (mode={run_mode}, seed_limit={seed_limit}, "
+        f"skip_optuna={skip_optuna}, skip_lora={skip_lora}).",
+        include_timestamps,
+    )
     _append_text_log(campaign_log_path, f"Output dir: {output_dir}", include_timestamps)
 
     lab_rows: List[Dict[str, Any]] = []
+    lab_rows_by_id: Dict[str, Dict[str, Any]] = {}
+    lab_reports_by_id: Dict[str, Dict[str, Any]] = {}
     completed_lab_logfiles: Dict[str, str] = {}
 
     for index, lab_cfg_raw in enumerate(labs_cfg, start=1):
@@ -1061,9 +1027,88 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
         lab_log_path = lab_dir / "lab.log"
         lab_report_path = lab_dir / "lab_report.json"
         lab_simulation_log_path = lab_dir / "lab_simulation.log"
+        reference_lab_id = str(lab_cfg.get("reference_lab") or "").strip()
 
         _append_text_log(campaign_log_path, f"[{lab_id}] start", include_timestamps)
         _append_text_log(lab_log_path, f"Lab {lab_id} started.", include_timestamps)
+
+        if reference_lab_id:
+            source_report = lab_reports_by_id.get(reference_lab_id)
+            source_row = lab_rows_by_id.get(reference_lab_id)
+            if source_report is None or source_row is None:
+                raise ValueError(f"{lab_id}: reference_lab '{reference_lab_id}' not found among completed labs.")
+
+            runtime_cfg, resolved_ids = _build_lab_runtime_config(
+                master_config=master_config,
+                config_dir=config_dir,
+                lab_entry=lab_cfg,
+            )
+            runtime_config_path = runtime_dir / f"{lab_id}_runtime.json"
+            _write_json(runtime_config_path, runtime_cfg)
+
+            source_metrics = source_report.get("metrics", {})
+            source_seed_reports = source_report.get("seed_reports", [])
+            source_lab_sim_log = str(source_report.get("lab_simulation_log") or "")
+
+            _append_text_log(
+                lab_log_path,
+                f"Referenced results from {reference_lab_id}. No simulation executed for this lab.",
+                include_timestamps,
+            )
+
+            lab_report = {
+                "campaign": campaign_name,
+                "lab_id": lab_id,
+                "label": lab_label,
+                "notes": lab_notes,
+                "reference_lab": reference_lab_id,
+                "resolved_ids": resolved_ids,
+                "seed_count_planned": source_report.get("seed_count_planned"),
+                "seed_range": source_report.get("seed_range"),
+                "seed_spec": source_report.get("seed_spec"),
+                "runtime_config": str(runtime_config_path),
+                "lab_log": str(lab_log_path),
+                "lab_simulation_log": source_lab_sim_log,
+                "seed_reports": list(source_seed_reports) if isinstance(source_seed_reports, list) else [],
+                "metrics": source_metrics if isinstance(source_metrics, dict) else {},
+            }
+            _write_json(lab_report_path, lab_report)
+
+            lab_row = {
+                "timestamp": datetime.now().astimezone().isoformat(),
+                "lab_id": lab_id,
+                "label": lab_label,
+                "seed_count_planned": source_row.get("seed_count_planned"),
+                "seed_count_completed": source_row.get("seed_count_completed"),
+                "seed_range": source_row.get("seed_range"),
+                "mean_norm_score": source_row.get("mean_norm_score"),
+                "std_norm_score": source_row.get("std_norm_score"),
+                "total_prompt_tokens": source_row.get("total_prompt_tokens"),
+                "total_completion_tokens": source_row.get("total_completion_tokens"),
+                "total_lm_tokens": source_row.get("total_lm_tokens"),
+                "total_lm_inference_time_s": source_row.get("total_lm_inference_time_s"),
+                "total_runtime_s": source_row.get("total_runtime_s"),
+                "mean_runtime_s": source_row.get("mean_runtime_s"),
+                "runtime_config": str(runtime_config_path),
+                "lab_log": str(lab_log_path),
+                "lab_simulation_log": source_lab_sim_log,
+                "notes": f"{lab_notes} (referenced from {reference_lab_id})".strip(),
+            }
+            lab_rows.append(lab_row)
+            lab_rows_by_id[lab_id] = dict(lab_row)
+            manifest["labs"].append(lab_report)
+            lab_reports_by_id[lab_id] = dict(lab_report)
+
+            completed_lab_logfiles[lab_id] = source_lab_sim_log
+            completed_lab_logfiles[lab_label] = source_lab_sim_log
+
+            _append_text_log(
+                campaign_log_path,
+                f"[{lab_id}] referenced from {reference_lab_id}.",
+                include_timestamps,
+            )
+            _append_text_log(lab_log_path, "Lab completed (reference).", include_timestamps)
+            continue
 
         try:
             runtime_cfg, resolved_ids = _build_lab_runtime_config(
@@ -1080,6 +1125,8 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
                 else global_seed_spec
             )
             lab_seeds = _resolve_seed_spec(lab_seed_spec)
+            if seed_limit is not None:
+                lab_seeds = lab_seeds[: int(seed_limit)]
             if not lab_seeds:
                 raise ValueError(f"{lab_id}: seed_list resolved to empty list.")
 
@@ -1100,33 +1147,47 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
 
             optuna_cfg = lab_cfg.get("optuna", {})
             if isinstance(optuna_cfg, dict) and bool(optuna_cfg.get("enabled", False)):
-                optuna_output_dir = lab_dir / "optuna"
-                optuna_output_dir.mkdir(parents=True, exist_ok=True)
-                optuna_env = dict(env_base)
-                optuna_env["CORASAT_RESULTS_CSV"] = str(optuna_output_dir / "results_optuna.csv")
-                optuna_env["CORASAT_LOG_DIR"] = str(optuna_output_dir / "logs")
-                optuna_env["CORASAT_LOG_TIMESTAMPS"] = _bool_text(include_timestamps)
+                if skip_optuna:
+                    _append_text_log(
+                        lab_log_path,
+                        f"Optuna skipped for {lab_id} in mode '{run_mode}'.",
+                        include_timestamps,
+                    )
+                else:
+                    optuna_output_dir = lab_dir / "optuna"
+                    optuna_output_dir.mkdir(parents=True, exist_ok=True)
+                    optuna_env = dict(env_base)
+                    optuna_env["CORASAT_RESULTS_CSV"] = str(optuna_output_dir / "results_optuna.csv")
+                    optuna_env["CORASAT_LOG_DIR"] = str(optuna_output_dir / "logs")
+                    optuna_env["CORASAT_LOG_TIMESTAMPS"] = _bool_text(include_timestamps)
 
-                optuna_args = _build_optuna_args(optuna_cfg)
-                if "--output-dir" not in optuna_args:
-                    optuna_args.extend(["--output-dir", str(optuna_output_dir)])
+                    optuna_args = _build_optuna_args(optuna_cfg)
+                    if "--output-dir" not in optuna_args:
+                        optuna_args.extend(["--output-dir", str(optuna_output_dir)])
 
-                _run_subprocess(
-                    [
-                        sys.executable,
-                        str(CORASAT_ROOT / "optuna_tuner.py"),
-                        "--config",
-                        str(runtime_config_path),
-                    ]
-                    + optuna_args,
-                    cwd=CORASAT_ROOT,
-                    env=optuna_env,
-                    note=f"Optuna for {lab_id}",
-                )
+                    _run_subprocess(
+                        [
+                            sys.executable,
+                            str(CORASAT_ROOT / "optuna_tuner.py"),
+                            "--config",
+                            str(runtime_config_path),
+                        ]
+                        + optuna_args,
+                        cwd=CORASAT_ROOT,
+                        env=optuna_env,
+                        note=f"Optuna for {lab_id}",
+                    )
 
             lora_cfg = lab_cfg.get("lora", {})
             if isinstance(lora_cfg, dict) and bool(lora_cfg.get("enabled", False)):
-                _run_lora_commands(lora_cfg, env_base, context=completed_lab_logfiles)
+                if skip_lora:
+                    _append_text_log(
+                        lab_log_path,
+                        f"LoRA fine-tuning skipped for {lab_id} in mode '{run_mode}'.",
+                        include_timestamps,
+                    )
+                else:
+                    _run_lora_commands(lora_cfg, env_base, context=completed_lab_logfiles)
 
             seed_reports: List[Dict[str, Any]] = []
             total_games = max(1, len(lab_seeds))
@@ -1221,7 +1282,9 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
                 "notes": lab_notes,
             }
             lab_rows.append(lab_row)
+            lab_rows_by_id[lab_id] = dict(lab_row)
             manifest["labs"].append(lab_report)
+            lab_reports_by_id[lab_id] = dict(lab_report)
 
             _append_text_log(
                 campaign_log_path,
@@ -1258,20 +1321,23 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
     manifest_path = output_dir / "campaign_report.json"
     _write_json(manifest_path, manifest)
 
-    _export_campaign_to_mt(
-        master_config=master_config,
-        campaign_cfg=campaign_cfg,
-        config_path=config_path,
-        output_dir=output_dir,
-        results_path=results_path,
-        lab_results_path=lab_results_path,
-        manifest_path=manifest_path,
-    )
+    if export_mt:
+        _export_campaign_to_mt(
+            master_config=master_config,
+            campaign_cfg=campaign_cfg,
+            config_path=config_path,
+            output_dir=output_dir,
+            results_path=results_path,
+            lab_results_path=lab_results_path,
+            manifest_path=manifest_path,
+        )
+    else:
+        _append_text_log(campaign_log_path, "MT export skipped for this run mode.", include_timestamps)
 
-    _append_text_log(campaign_log_path, "Campaign completed.", include_timestamps)
+    _append_text_log(campaign_log_path, f"Campaign completed (mode={run_mode}).", include_timestamps)
     _append_text_log(campaign_log_path, f"Manifest: {manifest_path}", include_timestamps)
 
-    _log("Campaign completed.")
+    _log(f"Campaign completed (mode={run_mode}).")
     _log(f"- Output dir: {output_dir}")
     _log(f"- Results: {results_path}")
     _log(f"- Lab results: {lab_results_path}")
@@ -1279,7 +1345,69 @@ def _run_campaign(master_config: Dict[str, Any], config_path: Path) -> int:
     return 0
 
 
-def _should_run_campaign(config: Dict[str, Any]) -> bool:
+def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> int:
+    campaign_cfg = master_config.get("campaign")
+    if not isinstance(campaign_cfg, dict):
+        raise ValueError("config must define a 'campaign' object.")
+
+    labs = campaign_cfg.get("labs")
+    if not isinstance(labs, list) or not labs:
+        raise ValueError("campaign.labs must be a non-empty list.")
+
+    smoke_run = bool(campaign_cfg.get("smoke_run", False))
+    campaign_run = bool(campaign_cfg.get("campaign_run", True))
+    if not smoke_run and not campaign_run:
+        raise ValueError("At least one mode must be enabled: campaign.smoke_run or campaign.campaign_run.")
+
+    config_dir = config_path.parent
+    campaign_name = str(campaign_cfg.get("name") or campaign_cfg.get("campaign_name") or "campaign").strip() or "campaign"
+    base_output_dir = _resolve_path(
+        config_dir,
+        str(campaign_cfg.get("output_dir") or ""),
+        f"campaign_runs/{campaign_name}",
+    )
+
+    if smoke_run:
+        smoke_seed_limit_raw = campaign_cfg.get("smoke_seed_limit", 2)
+        try:
+            smoke_seed_limit = int(smoke_seed_limit_raw)
+        except Exception as exc:
+            raise ValueError(f"campaign.smoke_seed_limit must be an integer, got: {smoke_seed_limit_raw!r}") from exc
+        if smoke_seed_limit < 1:
+            raise ValueError("campaign.smoke_seed_limit must be >= 1.")
+
+        smoke_output_dir = _resolve_path(
+            config_dir,
+            str(campaign_cfg.get("smoke_output_dir") or ""),
+            str(base_output_dir) + "_smoke",
+        )
+        smoke_skip_optuna = bool(campaign_cfg.get("smoke_skip_optuna", True))
+        smoke_skip_lora = bool(campaign_cfg.get("smoke_skip_lora", True))
+        smoke_export_mt = bool(campaign_cfg.get("smoke_mt_export", False))
+
+        _log(
+            "Starting smoke run "
+            f"(seed_limit={smoke_seed_limit}, skip_optuna={smoke_skip_optuna}, skip_lora={smoke_skip_lora})."
+        )
+        _run_campaign(
+            master_config,
+            config_path,
+            run_mode="smoke",
+            seed_limit=smoke_seed_limit,
+            skip_optuna=smoke_skip_optuna,
+            skip_lora=smoke_skip_lora,
+            output_dir_override=smoke_output_dir,
+            export_mt=smoke_export_mt,
+        )
+
+    if campaign_run:
+        _log("Starting full campaign run.")
+        _run_campaign(master_config, config_path, run_mode="campaign")
+
+    return 0
+
+
+def _has_campaign_labs(config: Dict[str, Any]) -> bool:
     campaign_cfg = config.get("campaign")
     if not isinstance(campaign_cfg, dict):
         return False
@@ -1288,12 +1416,12 @@ def _should_run_campaign(config: Dict[str, Any]) -> bool:
 
 
 def main() -> int:
-    """CLI entry point for single-run and campaign execution."""
-    parser = argparse.ArgumentParser(description="Run Corasat simulation(s) from config.json.")
+    """CLI entry point for smoke/campaign execution."""
+    parser = argparse.ArgumentParser(description="Run Corasat campaign(s) from config.json.")
     parser.add_argument(
         "--config",
         default=core.CONFIG_PATH,
-        help="Runtime/campaign config path (default: config.json).",
+        help="Campaign config path (default: config.json).",
     )
     args = parser.parse_args()
 
@@ -1304,10 +1432,9 @@ def main() -> int:
     master_config = _read_json(config_path)
 
     try:
-        if _should_run_campaign(master_config):
-            return int(_run_campaign(master_config, config_path))
-        run_all_seeds(str(config_path))
-        return 0
+        if not _has_campaign_labs(master_config):
+            raise SystemExit("Single-runtime mode was removed. Provide config.campaign.labs in the config file.")
+        return int(_run_configured_modes(master_config, config_path))
     except KeyboardInterrupt:
         _log("Interrupted by user.")
         return 130

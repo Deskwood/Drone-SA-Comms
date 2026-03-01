@@ -1,0 +1,6 @@
+{
+  "id": "C2",
+  "name": "Free any-distance communication",
+  "description": "Broadcast reaches all drones at any distance and can occur without consuming the action slot.",
+  "mode": "any_distance_free"
+}

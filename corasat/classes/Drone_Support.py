@@ -24,6 +24,13 @@ if TYPE_CHECKING:
     from classes.Drone import _Drone
 
 
+def _optional_config_value(mapping: Any, key: str, default: Any = None) -> Any:
+    """Return mapping[key] when present without triggering ConfigDict missing-key warnings."""
+    if isinstance(mapping, dict) and key in mapping:
+        return mapping[key]
+    return default
+
+
 def _board_center_cartesian() -> Tuple[int, int]:
     width = max(1, int(CONFIG.get("board", {}).get("width", 8)))
     height = max(1, int(CONFIG.get("board", {}).get("height", 8)))
@@ -83,6 +90,66 @@ def _decision_support_enabled() -> bool:
     # If no explicit DS0 profile is set and scoring is absent/zero,
     # treat decision support as disabled.
     return False
+
+
+def _resolve_communication_mode_token() -> str:
+    """Resolve communication mode/profile token from runtime config."""
+    sim_cfg = CONFIG.get("simulation", {})
+    comm_cfg = _optional_config_value(sim_cfg, "communication", {})
+    candidates = [
+        _optional_config_value(sim_cfg, "communication_id"),
+        _optional_config_value(sim_cfg, "communication_mode"),
+        _optional_config_value(sim_cfg, "communication_profile"),
+        _optional_config_value(comm_cfg, "id"),
+        _optional_config_value(comm_cfg, "profile_id"),
+        _optional_config_value(comm_cfg, "mode"),
+    ]
+    for raw in candidates:
+        token = str(raw or "").strip()
+        if token:
+            return token
+    return ""
+
+
+def _communication_mode() -> str:
+    """Return normalized communication mode.
+
+    Modes:
+    - co_located_action_cost: broadcast only to co-located drones; no free channel.
+    - co_located_free: broadcast only to co-located drones; free channel available.
+    - any_distance_free: broadcast to any drone at any distance; free channel available.
+    """
+    token = _resolve_communication_mode_token().strip().lower()
+    if not token:
+        return "co_located_action_cost"
+
+    alias_map = {
+        "c0": "co_located_action_cost",
+        "co_located_action_cost": "co_located_action_cost",
+        "co-located-action-cost": "co_located_action_cost",
+        "co_located": "co_located_action_cost",
+        "colocated": "co_located_action_cost",
+        "c1": "co_located_free",
+        "co_located_free": "co_located_free",
+        "co-located-free": "co_located_free",
+        "c2": "any_distance_free",
+        "any_distance_free": "any_distance_free",
+        "global_free": "any_distance_free",
+        "any-distance-free": "any_distance_free",
+    }
+    return alias_map.get(token, "co_located_action_cost")
+
+
+def _communication_free_channel_enabled() -> bool:
+    return _communication_mode() in {"co_located_free", "any_distance_free"}
+
+
+def _broadcast_recipients_for_drone(drone: "_Drone") -> List["_Drone"]:
+    mode = _communication_mode()
+    if mode == "any_distance_free":
+        return [target for target in getattr(drone.sim, "drones", []) if target.id != drone.id]
+    tile = drone.sim.board[drone.position[0]][drone.position[1]]
+    return [target for target in tile.drones if target.id != drone.id]
 
 
 def _prompt_stats_enabled() -> bool:
@@ -1414,8 +1481,8 @@ class _Drone_Decision_Support:
                 }
             )
 
-        tile = drone.sim.board[drone.position[0]][drone.position[1]]
-        recipients = [d for d in tile.drones if d.id != drone.id]
+        recipients = _broadcast_recipients_for_drone(drone)
+        communication_mode = _communication_mode()
         broadcast_components: Dict[str, float] = {}
         broadcast_notes: List[str] = []
         broadcast_score = broadcast_base_value
@@ -1427,12 +1494,18 @@ class _Drone_Decision_Support:
                 ages.append(max(age, 0))
             avg_age = sum(ages) / len(ages) if ages else 0.0
             broadcast_score = 0.0
-            broadcast_notes.append(f"{len(recipients)} co-located drones")
+            if communication_mode == "any_distance_free":
+                broadcast_notes.append(f"{len(recipients)} drones in communication range")
+            else:
+                broadcast_notes.append(f"{len(recipients)} co-located drones")
             if avg_age > 0:
                 broadcast_notes.append("recipients have stale intel")
         else:
             broadcast_components["broadcast_base"] = broadcast_base_value
-            broadcast_notes.append("no co-located drones")
+            if communication_mode == "any_distance_free":
+                broadcast_notes.append("no other drones in communication range")
+            else:
+                broadcast_notes.append("no co-located drones")
 
         if is_first_coordination_turn and coordination_broadcast_bonus:
             broadcast_score += coordination_broadcast_bonus
@@ -1587,15 +1660,9 @@ class _Drone_Language_Model:
             "memory": "NOTE: seeded_random_policy_move",
         }
 
-        # Optional free broadcast when drones are co-located.
-        try:
-            sx, sy = self.drone.position
-            tile = self.drone.sim.board[sx][sy]
-            has_peer = any(other.id != self.drone.id for other in tile.drones)
-        except Exception:
-            has_peer = False
-
-        if has_peer and rng.random() < 0.5:
+        # Optional free broadcast in communication modes that expose a free channel.
+        recipients = _broadcast_recipients_for_drone(self.drone) if _communication_free_channel_enabled() else []
+        if recipients and rng.random() < 0.5:
             response["free_broadcast"] = True
             response["free_broadcast_message"] = "Random baseline free broadcast."
             response["memory"] = "NOTE: seeded_random_policy_move+broadcast"
@@ -1869,21 +1936,6 @@ class _Drone_Aftermath:
         free_broadcast_payload = None
 
         if action == "move":
-            if bool(result.get("free_broadcast")):
-                try:
-                    sx, sy = self.drone.position
-                    tile = self.drone.sim.board[sx][sy]
-                    has_peer = any(other.id != self.drone.id for other in tile.drones)
-                except Exception:
-                    has_peer = False
-                if has_peer:
-                    free_msg = result.get("free_broadcast_message") or "Random baseline free broadcast."
-                    free_broadcast_message, free_broadcast_payload, free_broadcast_error = self._execute_broadcast(free_msg)
-                    if free_broadcast_error:
-                        errors.append(free_broadcast_error)
-                    else:
-                        free_broadcast = True
-
             direction = self._normalize_token(result.get("direction")).strip().lower()
             moved, move_error = self._execute_move(direction)
             if move_error:
@@ -1894,6 +1946,21 @@ class _Drone_Aftermath:
                 errors.append(broadcast_error)
         else:
             action = "wait"
+
+        # In free-channel communication modes, non-broadcast actions can still share intel.
+        if action != "broadcast" and _communication_free_channel_enabled():
+            recipients = _broadcast_recipients_for_drone(self.drone)
+            if recipients:
+                free_msg = (
+                    result.get("free_broadcast_message")
+                    or result.get("message")
+                    or "Free communication update."
+                )
+                free_broadcast_message, free_broadcast_payload, free_broadcast_error = self._execute_broadcast(free_msg)
+                if free_broadcast_error:
+                    errors.append(free_broadcast_error)
+                else:
+                    free_broadcast = True
 
         self._update_memory(result)
 
@@ -1996,10 +2063,9 @@ class _Drone_Aftermath:
             if payload:
                 drone.mission_support.apply_plan_directive(payload)
 
-            tile = drone.sim.board[drone.position[0]][drone.position[1]]
-            for target_drone in tile.drones:
-                if target_drone.id != drone.id:
-                    target_drone.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
+            recipients = _broadcast_recipients_for_drone(drone)
+            for target_drone in recipients:
+                target_drone.rx_buffer += f"Drone {drone.id} broadcasted: {msg}\n"
                 if payload:
                     target_drone.mission_support.apply_plan_directive(payload)
                 drone.knowledge.provide_intelligence_to(target_drone)

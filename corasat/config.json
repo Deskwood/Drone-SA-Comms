@@ -25,7 +25,9 @@
     },
     "top_p": null,
     "top_k": null,
-    "watchdog_timeout_s": 900
+    "watchdog_timeout_s": 900,
+    "communication_id": "C0",
+    "communication_mode": "co_located_action_cost"
   },
   "gui": {
     "cell_size": 80,
@@ -78,6 +80,13 @@
   },
   "campaign": {
     "name": "mt_full_rerun",
+    "smoke_run": true,
+    "campaign_run": true,
+    "smoke_seed_limit": 2,
+    "smoke_skip_optuna": true,
+    "smoke_skip_lora": true,
+    "smoke_output_dir": "campaign_runs/mt_full_rerun_smoke",
+    "smoke_mt_export": false,
     "output_dir": "campaign_runs/mt_full_rerun",
     "fresh_output": true,
     "stop_on_error": true,
@@ -102,19 +111,20 @@
     },
     "labs": [
       {
-        "id": "L0",
+        "id": "L0.0",
         "enabled": true,
-        "title": "Random legal baseline",
-        "label": "L0 [R0,P0,DS0,M0,FT0,A0]",
+        "title": "Random legal baseline (constrained comm)",
+        "label": "L0.0 [R0,P0,DS0,M0,FT0,A0,C0]",
         "parent_lab": "",
         "changed_item": "baseline",
-        "notes": "Seeded random legal movement without language model or decision support.",
+        "notes": "Seeded random legal movement baseline with constrained communication.",
         "rules_id": "R0",
         "prompt_id": "P0",
         "drone_support_id": "DS0",
         "model_id": "M0",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A0",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -124,19 +134,20 @@
         }
       },
       {
-        "id": "L1",
+        "id": "L0.1",
         "enabled": true,
-        "title": "Decision-support weights loaded",
-        "label": "L1 [R0,P0,DS1,M0,FT0,A0]",
-        "parent_lab": "L0",
+        "title": "Random policy with decision-support context",
+        "label": "L0.1 [R0,P0,DS1,M0,FT0,A0,C0]",
+        "parent_lab": "L0.0",
         "changed_item": "DS",
-        "notes": "Control run: DS profile loaded while random policy remains active.",
+        "notes": "Loads decision-support context while preserving random legal action policy.",
         "rules_id": "R0",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
         "model_id": "M0",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A0",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -146,19 +157,20 @@
         }
       },
       {
-        "id": "L2",
+        "id": "L0.2",
         "enabled": true,
-        "title": "Decision-support only baseline",
-        "label": "L2 [R0,P0,DS1,M0,FT0,A1]",
-        "parent_lab": "L1",
+        "title": "Decision-support-only baseline",
+        "label": "L0.2 [R0,P0,DS1,M0,FT0,A1,C0]",
+        "parent_lab": "L0.1",
         "changed_item": "A",
-        "notes": "No LM. Executes the highest-ranked decision-support action.",
+        "notes": "No LM; executes top-ranked decision-support action under constrained communication.",
         "rules_id": "R0",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
         "model_id": "M0",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A1",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -168,19 +180,20 @@
         }
       },
       {
-        "id": "L3",
+        "id": "L0.3",
         "enabled": true,
-        "title": "Bridge to LM model profile",
-        "label": "L3 [R0,P0,DS1,M1,FT0,A1]",
-        "parent_lab": "L2",
+        "title": "Model bridge under DS-only policy",
+        "label": "L0.3 [R0,P0,DS1,M1,FT0,A1,C0]",
+        "parent_lab": "L0.2",
         "changed_item": "M",
-        "notes": "Control run with model profile switched to M1 while still using DS-only policy.",
+        "notes": "Switches to LM model profile while still executing DS-only policy.",
         "rules_id": "R0",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A1",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -190,19 +203,20 @@
         }
       },
       {
-        "id": "L4",
+        "id": "L0.4",
         "enabled": true,
         "title": "LM + DS minimal context",
-        "label": "L4 [R0,P0,DS1,M1,FT0,A3]",
-        "parent_lab": "L3",
+        "label": "L0.4 [R0,P0,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.3",
         "changed_item": "A",
-        "notes": "Enables language-model action selection with decision-support context.",
+        "notes": "Enables LM decision-making with DS, without rules/prompt templates.",
         "rules_id": "R0",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -212,19 +226,20 @@
         }
       },
       {
-        "id": "L5",
+        "id": "L0.5",
         "enabled": true,
-        "title": "Add reduced rules",
-        "label": "L5 [R1,P0,DS1,M1,FT0,A3]",
-        "parent_lab": "L4",
+        "title": "LM + DS with full rules",
+        "label": "L0.5 [R2,P0,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.4",
         "changed_item": "R",
-        "notes": "Adds compact rules while prompts remain minimal.",
-        "rules_id": "R1",
+        "notes": "Adds full rules while keeping prompts minimal.",
+        "rules_id": "R2",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -234,19 +249,136 @@
         }
       },
       {
-        "id": "L6",
+        "id": "L0.6",
         "enabled": true,
-        "title": "Add reduced prompt requests",
-        "label": "L6 [R1,P1,DS1,M1,FT0,A3]",
-        "parent_lab": "L5",
+        "title": "LM + DS with full rules and prompts",
+        "label": "L0.6 [R2,P2,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.5",
         "changed_item": "P",
-        "notes": "Adds concise rationale/action prompt requests.",
+        "notes": "Adds full prompt template to full-rule LM+DS baseline.",
+        "rules_id": "R2",
+        "prompt_id": "P2",
+        "drone_support_id": "DS1",
+        "model_id": "M1",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L0.7",
+        "enabled": true,
+        "title": "Free co-located communication",
+        "label": "L0.7 [R2,P2,DS1,M1,FT0,A3,C1]",
+        "parent_lab": "L0.6",
+        "changed_item": "C",
+        "notes": "Same as L0.6, but free communication is available only when co-located.",
+        "rules_id": "R2",
+        "prompt_id": "P2",
+        "drone_support_id": "DS1",
+        "model_id": "M1",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C1",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L0.8",
+        "enabled": true,
+        "title": "Free any-distance communication",
+        "label": "L0.8 [R2,P2,DS1,M1,FT0,A3,C2]",
+        "parent_lab": "L0.7",
+        "changed_item": "C",
+        "notes": "Same as L0.6, but free communication is available at any distance.",
+        "rules_id": "R2",
+        "prompt_id": "P2",
+        "drone_support_id": "DS1",
+        "model_id": "M1",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C2",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L1.0",
+        "enabled": true,
+        "title": "Prompt-tuning anchor (referenced from L0.6)",
+        "label": "L1.0 [R2,P2,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.8",
+        "changed_item": "C",
+        "notes": "References the constrained LM+DS full-context baseline without rerunning.",
+        "rules_id": "R2",
+        "prompt_id": "P2",
+        "drone_support_id": "DS1",
+        "model_id": "M1",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        },
+        "reference_lab": "L0.6"
+      },
+      {
+        "id": "L1.1",
+        "enabled": true,
+        "title": "Reduced rules context",
+        "label": "L1.1 [R1,P2,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L1.0",
+        "changed_item": "R",
+        "notes": "Tests reduced rules under otherwise fixed prompt-tuning settings.",
+        "rules_id": "R1",
+        "prompt_id": "P2",
+        "drone_support_id": "DS1",
+        "model_id": "M1",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L1.2",
+        "enabled": true,
+        "title": "Reduced prompt requests",
+        "label": "L1.2 [R1,P1,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L1.1",
+        "changed_item": "P",
+        "notes": "Tests reduced prompt request format under reduced rules.",
         "rules_id": "R1",
         "prompt_id": "P1",
         "drone_support_id": "DS1",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -256,19 +388,20 @@
         }
       },
       {
-        "id": "L7",
+        "id": "L1.3",
         "enabled": true,
-        "title": "Switch to full rules",
-        "label": "L7 [R2,P1,DS1,M1,FT0,A3]",
-        "parent_lab": "L6",
+        "title": "Waypoint clarification in rules",
+        "label": "L1.3 [R3,P1,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L1.2",
         "changed_item": "R",
-        "notes": "Uses full mission rule text with reduced prompts.",
-        "rules_id": "R2",
+        "notes": "Adds waypoint-vs-sector clarification in rules.",
+        "rules_id": "R3",
         "prompt_id": "P1",
         "drone_support_id": "DS1",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -278,63 +411,20 @@
         }
       },
       {
-        "id": "L8",
-        "enabled": true,
-        "title": "Switch to full prompts",
-        "label": "L8 [R2,P2,DS1,M1,FT0,A3]",
-        "parent_lab": "L7",
-        "changed_item": "P",
-        "notes": "Adds full prompt request template with memory update guidance.",
-        "rules_id": "R2",
-        "prompt_id": "P2",
-        "drone_support_id": "DS1",
-        "model_id": "M1",
-        "fine_tuning_id": "FT0",
-        "action_policy_id": "A3",
-        "optuna": {
-          "enabled": false
-        },
-        "lora": {
-          "enabled": false,
-          "commands": []
-        }
-      },
-      {
-        "id": "L9",
-        "enabled": true,
-        "title": "Waypoint clarification in rules",
-        "label": "L9 [R3,P2,DS1,M1,FT0,A3]",
-        "parent_lab": "L8",
-        "changed_item": "R",
-        "notes": "Adds explicit waypoint-vs-sector disambiguation in rules.",
-        "rules_id": "R3",
-        "prompt_id": "P2",
-        "drone_support_id": "DS1",
-        "model_id": "M1",
-        "fine_tuning_id": "FT0",
-        "action_policy_id": "A3",
-        "optuna": {
-          "enabled": false
-        },
-        "lora": {
-          "enabled": false,
-          "commands": []
-        }
-      },
-      {
-        "id": "L10",
+        "id": "L1.4",
         "enabled": true,
         "title": "Waypoint clarification in prompts",
-        "label": "L10 [R3,P3,DS1,M1,FT0,A3]",
-        "parent_lab": "L9",
+        "label": "L1.4 [R3,P3,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L1.3",
         "changed_item": "P",
-        "notes": "Repeats waypoint disambiguation inside prompt requests.",
+        "notes": "Adds waypoint-vs-sector clarification in prompt requests.",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS1",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -344,19 +434,20 @@
         }
       },
       {
-        "id": "L11",
+        "id": "L2.0",
         "enabled": true,
-        "title": "Optuna-1 DS profile",
-        "label": "L11 [R3,P3,DS2,M1,FT0,A3]",
-        "parent_lab": "L10",
+        "title": "Decision-support tuned profile DS2",
+        "label": "L2.0 [R3,P3,DS2,M1,FT0,A3,C0]",
+        "parent_lab": "L1.4",
         "changed_item": "DS",
-        "notes": "Applies first Optuna-tuned decision-support weights.",
+        "notes": "Applies the DS2 tuned decision-support profile.",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS2",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -366,19 +457,66 @@
         }
       },
       {
-        "id": "L12",
+        "id": "L2.1",
         "enabled": true,
-        "title": "Optuna-2 DS profile",
-        "label": "L12 [R3,P3,DS3,M1,FT0,A3]",
-        "parent_lab": "L11",
+        "title": "Decision-support tuned profile DS3",
+        "label": "L2.1 [R3,P3,DS3,M1,FT0,A3,C0]",
+        "parent_lab": "L2.0",
         "changed_item": "DS",
-        "notes": "Applies second Optuna-tuned decision-support weights.",
+        "notes": "Applies the DS3 tuned decision-support profile.",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS3",
         "model_id": "M1",
         "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L2.2",
+        "enabled": true,
+        "title": "Language model selection swap",
+        "label": "L2.2 [R3,P3,DS3,M2,FT0,A3,C0]",
+        "parent_lab": "L2.1",
+        "changed_item": "M",
+        "notes": "Swaps only the LM profile to evaluate model-selection impact.",
+        "rules_id": "R3",
+        "prompt_id": "P3",
+        "drone_support_id": "DS3",
+        "model_id": "M2",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L2.3",
+        "enabled": true,
+        "title": "Optuna optimization stage",
+        "label": "L2.3 [R3,P3,DS3,M2,FT0,A3,C0]",
+        "parent_lab": "L2.2",
+        "changed_item": "optuna",
+        "notes": "Runs Optuna optimization for the configured decision-support parameter space.",
+        "rules_id": "R3",
+        "prompt_id": "P3",
+        "drone_support_id": "DS3",
+        "model_id": "M2",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": true,
           "trials": 55,
@@ -393,19 +531,44 @@
         }
       },
       {
-        "id": "L13",
+        "id": "L2.4",
         "enabled": true,
-        "title": "LoRA-adapted variant",
-        "label": "L13 [R3,P3,DS3,M1,FT1,A3]",
-        "parent_lab": "L12",
-        "changed_item": "FT",
-        "notes": "Builds LoRA data from L12 and evaluates an adapted model.",
+        "title": "Post-Optuna anchor (referenced from L2.3)",
+        "label": "L2.4 [R3,P3,DS3,M2,FT0,A3,C0]",
+        "parent_lab": "L2.3",
+        "changed_item": "optuna",
+        "notes": "References L2.3 results as anchor for fine-tuning branch without rerunning Optuna.",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS3",
-        "model_id": "M1",
-        "fine_tuning_id": "FT1",
+        "model_id": "M2",
+        "fine_tuning_id": "FT0",
         "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        },
+        "reference_lab": "L2.3"
+      },
+      {
+        "id": "L3.0",
+        "enabled": true,
+        "title": "LoRA training/export stage",
+        "label": "L3.0 [R3,P3,DS3,M2,FT0,A3,C0]",
+        "parent_lab": "L2.4",
+        "changed_item": "lora",
+        "notes": "Builds LoRA dataset and executes training/export pipeline.",
+        "rules_id": "R3",
+        "prompt_id": "P3",
+        "drone_support_id": "DS3",
+        "model_id": "M2",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
@@ -416,7 +579,7 @@
               "python",
               "build_lora_dataset.py",
               "--log",
-              "{lab_logfile:L12}",
+              "{lab_logfile:L2.4}",
               "--rules",
               "profiles/rules/R3_rules.txt",
               "--out-dir",
@@ -454,24 +617,25 @@
         }
       },
       {
-        "id": "L14",
+        "id": "L3.1",
         "enabled": true,
-        "title": "Model-swap baseline",
-        "label": "L14 [R3,P3,DS3,M2,FT0,A3]",
-        "parent_lab": "L12",
-        "changed_item": "M",
-        "notes": "Swaps only the base model to DeepSeek under the same tuned support stack.",
+        "title": "LoRA-adapted runtime evaluation",
+        "label": "L3.1 [R3,P3,DS3,M2,FT1,A3,C0]",
+        "parent_lab": "L3.0",
+        "changed_item": "FT",
+        "notes": "Evaluates FT1 LoRA-adapted runtime with all other factors fixed.",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS3",
         "model_id": "M2",
-        "fine_tuning_id": "FT0",
+        "fine_tuning_id": "FT1",
         "action_policy_id": "A3",
+        "communication_id": "C0",
         "optuna": {
           "enabled": false
         },
         "lora": {
-          "enabled": false,
+          "enabled": true,
           "commands": []
         }
       }

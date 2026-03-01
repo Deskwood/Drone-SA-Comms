@@ -1,0 +1,6 @@
+{
+  "id": "C0",
+  "name": "Constrained co-located communication",
+  "description": "Broadcast reaches only co-located drones and consumes the action slot.",
+  "mode": "co_located_action_cost"
+}

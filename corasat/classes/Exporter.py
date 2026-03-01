@@ -76,8 +76,18 @@ def _resolve_results_path() -> Path:
     return Path.cwd() / "results.csv"
 
 
-def _resolve_log_dir(log_dir: str) -> Path:
+def _resolve_log_dir(log_dir: str, *, prefer_arg: bool = False) -> Path:
     """Resolve the log directory relative to the Corasat root when needed."""
+    if prefer_arg:
+        path = Path(log_dir)
+        if path.is_absolute():
+            return path
+        try:
+            base = Path(__file__).resolve().parent.parent
+        except NameError:
+            base = Path.cwd()
+        return (base / path).resolve()
+
     env_dir = os.environ.get("CORASAT_LOG_DIR", "").strip()
     if env_dir:
         path = Path(env_dir)
@@ -366,7 +376,8 @@ class TimestampedLogger:
         self.start_time = time.time()
         self.last_time = self.start_time
         self.log_path: Optional[Path] = None
-        self.start_new_log(log_dir=log_dir, log_file=None)
+        self._configure_console_only()
+        self.log("Logger initialized.")
 
     def _now(self) -> str:
         """Return a timestamp string."""
@@ -399,12 +410,29 @@ class TimestampedLogger:
         root.addHandler(console_handler)
         logging.getLogger("httpx").setLevel(logging.INFO)
 
+    def _configure_console_only(self) -> None:
+        """Configure logging to console without creating a log file."""
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            try:
+                handler.close()
+            except Exception:
+                pass
+            root.removeHandler(handler)
+
+        console_handler = logging.StreamHandler()
+        formatter = logging.Formatter(fmt="%(levelname)s:%(name)s:%(message)s")
+        console_handler.setFormatter(formatter)
+        root.setLevel(logging.INFO)
+        root.addHandler(console_handler)
+        logging.getLogger("httpx").setLevel(logging.INFO)
+
     def set_include_timestamps(self, enabled: bool) -> None:
         self.include_timestamps = bool(enabled)
 
     def start_new_log(self, log_dir: str = "logs", log_file: Optional[str] = None) -> Path:
         """Switch logging output to a new file and reset inter-log timing."""
-        log_dir_path = _resolve_log_dir(log_dir)
+        log_dir_path = _resolve_log_dir(log_dir, prefer_arg=True)
         log_dir_path.mkdir(parents=True, exist_ok=True)
         if log_file:
             requested = Path(log_file)

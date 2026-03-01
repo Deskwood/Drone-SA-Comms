@@ -85,7 +85,11 @@ LAB_RESULTS_FIELDS = [
     "lab_id",
     "label",
     "seed_count_planned",
+    "seed_count_recorded",
     "seed_count_completed",
+    "seed_count_non_ok",
+    "seed_count_failed",
+    "seed_count_aborted",
     "seed_range",
     "mean_norm_score",
     "std_norm_score",
@@ -416,7 +420,7 @@ def _seed_object_from_values(seeds: Sequence[int]) -> Dict[str, Any]:
         "first_seed": int(ordered[0]),
         "last_seed": int(ordered[-1]),
     }
-    if len(ordered) <= 2:
+    if len(ordered) == 1:
         return payload
     step = ordered[1] - ordered[0]
     arithmetic = all((ordered[idx] - ordered[idx - 1]) == step for idx in range(2, len(ordered)))
@@ -501,11 +505,15 @@ def _run_entry_to_seed_report(
     sim = run_entry.get("sim")
     seed = run_entry.get("seed")
     norm_score = _norm_score_from_sim(sim)
+    status = str(run_entry.get("status") or "ok")
     report = {
         "campaign": campaign_name,
         "lab_id": lab_id,
         "seed": seed,
         "timestamp": run_entry.get("timestamp"),
+        "status": status,
+        "error": run_entry.get("error") or "",
+        "abort_reason": run_entry.get("abort_reason") or "",
         "runtime_config": str(runtime_config_path),
         "logfile": run_entry.get("logfile") or "",
         "model": getattr(sim, "model", None) if sim else None,
@@ -542,16 +550,28 @@ def _stddev(values: Sequence[float]) -> float:
 
 
 def _summarize_lab_seed_reports(seed_reports: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    norm_scores = [float(item["norm_score"]) for item in seed_reports if isinstance(item.get("norm_score"), (int, float))]
-    runtimes = [float(item["runtime_s"]) for item in seed_reports if isinstance(item.get("runtime_s"), (int, float))]
+    ok_reports = [item for item in seed_reports if str(item.get("status") or "ok") == "ok"]
+    non_ok_reports = [item for item in seed_reports if str(item.get("status") or "ok") != "ok"]
 
-    prompt_tokens = sum(int(item.get("prompt_tokens_total") or 0) for item in seed_reports)
-    completion_tokens = sum(int(item.get("completion_tokens_total") or 0) for item in seed_reports)
-    lm_tokens = sum(int(item.get("lm_total_tokens") or 0) for item in seed_reports)
-    lm_time = sum(float(item.get("lm_inference_time_s") or 0.0) for item in seed_reports)
+    norm_scores = [float(item["norm_score"]) for item in ok_reports if isinstance(item.get("norm_score"), (int, float))]
+    runtimes = [float(item["runtime_s"]) for item in ok_reports if isinstance(item.get("runtime_s"), (int, float))]
+
+    prompt_tokens = sum(int(item.get("prompt_tokens_total") or 0) for item in ok_reports)
+    completion_tokens = sum(int(item.get("completion_tokens_total") or 0) for item in ok_reports)
+    lm_tokens = sum(int(item.get("lm_total_tokens") or 0) for item in ok_reports)
+    lm_time = sum(float(item.get("lm_inference_time_s") or 0.0) for item in ok_reports)
+
+    failed_statuses = {"init_error", "run_error"}
+    aborted_statuses = {"watchdog_abort", "user_abort"}
+    seed_count_failed = sum(1 for item in seed_reports if str(item.get("status") or "ok") in failed_statuses)
+    seed_count_aborted = sum(1 for item in seed_reports if str(item.get("status") or "ok") in aborted_statuses)
 
     return {
-        "seed_count_completed": len(seed_reports),
+        "seed_count_recorded": len(seed_reports),
+        "seed_count_completed": len(ok_reports),
+        "seed_count_non_ok": len(non_ok_reports),
+        "seed_count_failed": seed_count_failed,
+        "seed_count_aborted": seed_count_aborted,
         "mean_norm_score": round(_mean(norm_scores), 6),
         "std_norm_score": round(_stddev(norm_scores), 6),
         "total_runtime_s": round(sum(runtimes), 5),
@@ -586,11 +606,25 @@ def run_seed(
 
     sim = _create_simulation(game_index=game_index, total_games=total_games, seed=seed)
     if sim is None:
-        return None, False
+        run_entry: Dict[str, Any] = {
+            "sim": None,
+            "config": config,
+            "seed": seed,
+            "runtime_s": 0.0,
+            "timestamp": datetime.now().isoformat(),
+            "status": "init_error",
+            "error": "Simulation init failed.",
+            "logfile": _current_logfile_path(),
+        }
+        if context:
+            run_entry["context"] = dict(context)
+        _persist_results(run_entry)
+        return run_entry, False
 
     _log("Launching simulation.")
     run_started = time.time()
     run_success = False
+    run_error: Optional[str] = None
     try:
         sim.run_simulation()
         run_success = True
@@ -598,13 +632,32 @@ def run_seed(
         _log("Interrupted by user (Ctrl+C).")
         raise
     except Exception as exc:
+        run_error = str(exc)
         _log(f"Simulation error: {exc}")
         _log(traceback.format_exc())
     finally:
         _safe_shutdown(sim)
 
     if not run_success:
-        return None, False
+        runtime_s = time.time() - run_started
+        sim_runtime = getattr(sim, "runtime_s", None)
+        if isinstance(sim_runtime, (int, float)) and sim_runtime > 0:
+            runtime_s = sim_runtime
+        run_entry = {
+            "sim": sim,
+            "config": config,
+            "seed": seed,
+            "runtime_s": runtime_s,
+            "timestamp": datetime.now().isoformat(),
+            "status": "run_error",
+            "error": run_error or "Simulation run failed.",
+            "omit_scores": True,
+            "logfile": _current_logfile_path(),
+        }
+        if context:
+            run_entry["context"] = dict(context)
+        _persist_results(run_entry)
+        return run_entry, False
 
     if getattr(sim, "_watchdog_triggered", False):
         reason = getattr(sim, "_abort_reason", "") or "watchdog timeout"
@@ -619,6 +672,8 @@ def run_seed(
             "seed": seed,
             "runtime_s": runtime_s,
             "timestamp": datetime.now().isoformat(),
+            "status": "watchdog_abort",
+            "abort_reason": reason,
             "omit_scores": True,
             "logfile": _current_logfile_path(),
         }
@@ -630,7 +685,25 @@ def run_seed(
     if getattr(sim, "_abort_requested", False):
         reason = getattr(sim, "_abort_reason", "") or "GUI closed"
         _log(f"Run aborted: {reason} - stopping remaining seeds.")
-        return None, True
+        runtime_s = time.time() - run_started
+        sim_runtime = getattr(sim, "runtime_s", None)
+        if isinstance(sim_runtime, (int, float)) and sim_runtime > 0:
+            runtime_s = sim_runtime
+        run_entry = {
+            "sim": sim,
+            "config": config,
+            "seed": seed,
+            "runtime_s": runtime_s,
+            "timestamp": datetime.now().isoformat(),
+            "status": "user_abort",
+            "abort_reason": reason,
+            "omit_scores": True,
+            "logfile": _current_logfile_path(),
+        }
+        if context:
+            run_entry["context"] = dict(context)
+        _persist_results(run_entry)
+        return run_entry, True
 
     runtime_s = time.time() - run_started
     sim_runtime = getattr(sim, "runtime_s", None)
@@ -642,6 +715,7 @@ def run_seed(
         "seed": seed,
         "runtime_s": runtime_s,
         "timestamp": datetime.now().isoformat(),
+        "status": "ok",
         "logfile": _current_logfile_path(),
     }
     if context:
@@ -800,6 +874,87 @@ def _build_optuna_args(optuna_cfg: Dict[str, Any]) -> List[str]:
     return args
 
 
+def _apply_smoke_optuna_overrides(
+    optuna_cfg: Dict[str, Any],
+    *,
+    campaign_cfg: Dict[str, Any],
+    lab_seeds: Sequence[int],
+) -> Dict[str, Any]:
+    """Return smoke-mode Optuna config with shortened defaults/overrides."""
+    effective = copy.deepcopy(optuna_cfg)
+    smoke_cfg = campaign_cfg.get("smoke_optuna", {})
+    if not isinstance(smoke_cfg, dict):
+        smoke_cfg = {}
+
+    default_trials = smoke_cfg.get("trials", 3)
+    try:
+        trial_cap = max(1, int(default_trials))
+    except Exception:
+        trial_cap = 3
+
+    current_trials = effective.get("trials")
+    if current_trials is None:
+        effective["trials"] = trial_cap
+    else:
+        try:
+            effective["trials"] = max(1, min(int(current_trials), trial_cap))
+        except Exception:
+            effective["trials"] = trial_cap
+
+    if smoke_cfg.get("seeds") not in (None, ""):
+        effective["seeds"] = smoke_cfg.get("seeds")
+    elif lab_seeds:
+        effective["seeds"] = ",".join(str(int(seed)) for seed in list(lab_seeds)[:1])
+
+    smoke_max_rounds = smoke_cfg.get("max_rounds")
+    if smoke_max_rounds is not None:
+        try:
+            effective["max_rounds"] = max(1, int(smoke_max_rounds))
+        except Exception:
+            pass
+    elif effective.get("max_rounds") is not None:
+        try:
+            effective["max_rounds"] = max(1, min(int(effective["max_rounds"]), 8))
+        except Exception:
+            pass
+
+    if "no_prune" in smoke_cfg:
+        effective["no_prune"] = bool(smoke_cfg.get("no_prune"))
+    else:
+        effective["no_prune"] = True
+
+    extra_override = smoke_cfg.get("override")
+    if isinstance(extra_override, dict):
+        for key, value in extra_override.items():
+            effective[key] = copy.deepcopy(value)
+
+    return effective
+
+
+def _select_lora_cfg_for_mode(
+    lora_cfg: Dict[str, Any],
+    *,
+    campaign_cfg: Dict[str, Any],
+    run_mode: str,
+) -> Dict[str, Any]:
+    if run_mode != "smoke":
+        return lora_cfg
+    smoke_cfg = campaign_cfg.get("smoke_lora", {})
+    if not isinstance(smoke_cfg, dict):
+        smoke_cfg = {}
+    use_smoke_commands = bool(smoke_cfg.get("use_smoke_commands", True))
+    if not use_smoke_commands:
+        return lora_cfg
+
+    smoke_commands = lora_cfg.get("smoke_commands")
+    if not isinstance(smoke_commands, list):
+        return lora_cfg
+
+    effective = copy.deepcopy(lora_cfg)
+    effective["commands"] = copy.deepcopy(smoke_commands)
+    return effective
+
+
 def _run_subprocess(argv: Sequence[str], *, cwd: Path, env: Dict[str, str], note: str = "") -> None:
     display = " ".join(argv)
     if note:
@@ -905,6 +1060,48 @@ def _concat_seed_logs(seed_reports: Sequence[Dict[str, Any]], output_path: Path)
             target.write("\n\n")
 
 
+def _resolve_lab_id(lab_cfg: Dict[str, Any], index: int) -> str:
+    """Resolve a stable lab id from config, with deterministic fallback."""
+    resolved = str(lab_cfg.get("id") or lab_cfg.get("lab_id") or f"L{index - 1}").strip()
+    if not resolved:
+        return f"L{index - 1}"
+    return resolved
+
+
+def _validate_lab_profiles(labs_cfg: Sequence[Dict[str, Any]], config_dir: Path) -> None:
+    """Fail fast when enabled labs reference profile files that do not exist."""
+    profile_key_to_kind = {
+        "rules_id": "rules",
+        "prompt_id": "prompt",
+        "model_id": "model",
+        "fine_tuning_id": "fine_tuning",
+        "action_policy_id": "action_policy",
+        "communication_id": "communication",
+        "drone_support_id": "decision_support",
+        "decision_support_id": "decision_support",
+    }
+
+    for index, lab_cfg_raw in enumerate(labs_cfg, start=1):
+        if not isinstance(lab_cfg_raw, dict):
+            continue
+        if not bool(lab_cfg_raw.get("enabled", True)):
+            continue
+
+        lab_id = _resolve_lab_id(lab_cfg_raw, index)
+        for key, kind in profile_key_to_kind.items():
+            raw_profile = lab_cfg_raw.get(key)
+            if raw_profile in (None, ""):
+                continue
+            profile_id = str(raw_profile).strip().upper()
+            if not profile_id:
+                continue
+            profile_path = _profile_path(config_dir, kind, profile_id)
+            if not profile_path.exists():
+                raise FileNotFoundError(
+                    f"{lab_id}: missing profile '{profile_id}' for {key}: {profile_path}"
+                )
+
+
 def _run_campaign(
     master_config: Dict[str, Any],
     config_path: Path,
@@ -939,8 +1136,14 @@ def _run_campaign(
     fresh_output = bool(campaign_cfg.get("fresh_output", True))
     stop_on_error = bool(campaign_cfg.get("stop_on_error", True))
 
-    logging_cfg = campaign_cfg.get("logging", {}) if isinstance(campaign_cfg.get("logging"), dict) else {}
-    include_timestamps = bool(logging_cfg.get("include_timestamps", True))
+    global_logging_cfg = master_config.get("logging", {}) if isinstance(master_config.get("logging"), dict) else {}
+    campaign_logging_cfg = campaign_cfg.get("logging", {}) if isinstance(campaign_cfg.get("logging"), dict) else {}
+    include_timestamps = bool(
+        campaign_logging_cfg.get(
+            "include_timestamps",
+            global_logging_cfg.get("include_timestamps", True),
+        )
+    )
     _set_shared_logger_timestamp_mode(include_timestamps)
 
     if fresh_output and output_dir.exists():
@@ -961,11 +1164,43 @@ def _run_campaign(
     if not isinstance(labs_cfg, list) or not labs_cfg:
         raise ValueError("campaign.labs must be a non-empty list.")
 
+    # Preflight checks: duplicate ids and forward/missing references.
+    seen_enabled_lab_ids: Dict[str, int] = {}
+    for index, lab_cfg_raw in enumerate(labs_cfg, start=1):
+        if not isinstance(lab_cfg_raw, dict):
+            continue
+        if not bool(lab_cfg_raw.get("enabled", True)):
+            continue
+        lab_id = _resolve_lab_id(lab_cfg_raw, index)
+        previous = seen_enabled_lab_ids.get(lab_id)
+        if previous is not None:
+            raise ValueError(
+                f"Duplicate enabled lab id '{lab_id}' in campaign.labs "
+                f"(positions {previous} and {index})."
+            )
+        seen_enabled_lab_ids[lab_id] = index
+
+    completed_ids: set[str] = set()
+    for index, lab_cfg_raw in enumerate(labs_cfg, start=1):
+        if not isinstance(lab_cfg_raw, dict):
+            continue
+        if not bool(lab_cfg_raw.get("enabled", True)):
+            continue
+        lab_id = _resolve_lab_id(lab_cfg_raw, index)
+        reference_lab_id = str(lab_cfg_raw.get("reference_lab") or "").strip()
+        if reference_lab_id and reference_lab_id not in completed_ids:
+            raise ValueError(
+                f"{lab_id}: reference_lab '{reference_lab_id}' must reference an enabled lab "
+                "defined earlier in campaign.labs."
+            )
+        completed_ids.add(lab_id)
+
+    _validate_lab_profiles(labs_cfg, config_dir)
+
     global_seed_spec = campaign_cfg.get("seed_list")
     if global_seed_spec is None:
         global_seed_spec = master_config.get("simulation", {}).get("seed_list")
-    global_seeds = _resolve_seed_spec(global_seed_spec)
-    if not global_seeds:
+    if not _resolve_seed_spec(global_seed_spec):
         raise ValueError("campaign seed_list resolved to an empty set.")
 
     global_max_rounds = int(
@@ -1015,11 +1250,18 @@ def _run_campaign(
             continue
 
         lab_cfg = copy.deepcopy(lab_cfg_raw)
-        lab_id = str(lab_cfg.get("id") or lab_cfg.get("lab_id") or f"L{index - 1}").strip()
-        if not lab_id:
-            lab_id = f"L{index - 1}"
-        lab_label = str(lab_cfg.get("label") or lab_cfg.get("title") or lab_id).strip()
+        lab_id = _resolve_lab_id(lab_cfg, index)
+        lab_label = str(lab_cfg.get("label") or lab_id).strip()
         lab_notes = str(lab_cfg.get("notes") or "").strip()
+        lab_fine_tuning_id = str(lab_cfg.get("fine_tuning_id") or "").strip().upper()
+
+        if skip_lora and lab_fine_tuning_id == "FT1":
+            _append_text_log(
+                campaign_log_path,
+                f"[{lab_id}] skipped (skip_lora=true and fine_tuning_id={lab_fine_tuning_id}).",
+                include_timestamps,
+            )
+            continue
 
         lab_dir = labs_root / lab_id
         seeds_dir = lab_dir / "seed_reports"
@@ -1079,7 +1321,11 @@ def _run_campaign(
                 "lab_id": lab_id,
                 "label": lab_label,
                 "seed_count_planned": source_row.get("seed_count_planned"),
+                "seed_count_recorded": source_row.get("seed_count_recorded"),
                 "seed_count_completed": source_row.get("seed_count_completed"),
+                "seed_count_non_ok": source_row.get("seed_count_non_ok"),
+                "seed_count_failed": source_row.get("seed_count_failed"),
+                "seed_count_aborted": source_row.get("seed_count_aborted"),
                 "seed_range": source_row.get("seed_range"),
                 "mean_norm_score": source_row.get("mean_norm_score"),
                 "std_norm_score": source_row.get("std_norm_score"),
@@ -1154,6 +1400,11 @@ def _run_campaign(
                         include_timestamps,
                     )
                 else:
+                    effective_optuna_cfg = (
+                        _apply_smoke_optuna_overrides(optuna_cfg, campaign_cfg=campaign_cfg, lab_seeds=lab_seeds)
+                        if run_mode == "smoke"
+                        else optuna_cfg
+                    )
                     optuna_output_dir = lab_dir / "optuna"
                     optuna_output_dir.mkdir(parents=True, exist_ok=True)
                     optuna_env = dict(env_base)
@@ -1161,7 +1412,7 @@ def _run_campaign(
                     optuna_env["CORASAT_LOG_DIR"] = str(optuna_output_dir / "logs")
                     optuna_env["CORASAT_LOG_TIMESTAMPS"] = _bool_text(include_timestamps)
 
-                    optuna_args = _build_optuna_args(optuna_cfg)
+                    optuna_args = _build_optuna_args(effective_optuna_cfg)
                     if "--output-dir" not in optuna_args:
                         optuna_args.extend(["--output-dir", str(optuna_output_dir)])
 
@@ -1187,7 +1438,18 @@ def _run_campaign(
                         include_timestamps,
                     )
                 else:
-                    _run_lora_commands(lora_cfg, env_base, context=completed_lab_logfiles)
+                    effective_lora_cfg = _select_lora_cfg_for_mode(
+                        lora_cfg,
+                        campaign_cfg=campaign_cfg,
+                        run_mode=run_mode,
+                    )
+                    if run_mode == "smoke" and effective_lora_cfg is lora_cfg:
+                        _append_text_log(
+                            lab_log_path,
+                            "Smoke mode: no lora.smoke_commands configured; using default lora.commands.",
+                            include_timestamps,
+                        )
+                    _run_lora_commands(effective_lora_cfg, env_base, context=completed_lab_logfiles)
 
             seed_reports: List[Dict[str, Any]] = []
             total_games = max(1, len(lab_seeds))
@@ -1217,19 +1479,30 @@ def _run_campaign(
                     seed_payload["seed_report_path"] = str(seed_report_path)
                     seed_reports.append(seed_payload)
 
+                    status = str(seed_payload.get("status") or "ok")
                     norm_score = seed_payload.get("norm_score")
-                    if isinstance(norm_score, (int, float)):
+                    if status == "ok" and isinstance(norm_score, (int, float)):
                         _append_text_log(
                             lab_log_path,
                             f"Seed {seed} completed. norm_score={float(norm_score):.5f}",
                             include_timestamps,
                         )
-                    else:
+                    elif status == "ok":
                         _append_text_log(
                             lab_log_path,
                             f"Seed {seed} completed. norm_score=n/a",
                             include_timestamps,
                         )
+                    else:
+                        status_note = str(seed_payload.get("error") or seed_payload.get("abort_reason") or "").strip()
+                        suffix = f" ({status_note})" if status_note else ""
+                        _append_text_log(
+                            lab_log_path,
+                            f"Seed {seed} completed with status={status}{suffix}.",
+                            include_timestamps,
+                        )
+                        if stop_on_error and status in {"init_error", "run_error"}:
+                            raise RuntimeError(f"{lab_id}: seed {seed} failed with status={status}{suffix}")
 
                 if abort_requested:
                     _append_text_log(
@@ -1266,7 +1539,11 @@ def _run_campaign(
                 "lab_id": lab_id,
                 "label": lab_label,
                 "seed_count_planned": len(lab_seeds),
+                "seed_count_recorded": summary["seed_count_recorded"],
                 "seed_count_completed": summary["seed_count_completed"],
+                "seed_count_non_ok": summary["seed_count_non_ok"],
+                "seed_count_failed": summary["seed_count_failed"],
+                "seed_count_aborted": summary["seed_count_aborted"],
                 "seed_range": _seed_range_text(lab_seeds),
                 "mean_norm_score": summary["mean_norm_score"],
                 "std_norm_score": summary["std_norm_score"],
@@ -1304,7 +1581,11 @@ def _run_campaign(
 
     campaign_totals = {
         "labs_executed": len(lab_rows),
+        "seed_count_recorded": sum(int(row.get("seed_count_recorded") or 0) for row in lab_rows),
         "seed_count_completed": sum(int(row.get("seed_count_completed") or 0) for row in lab_rows),
+        "seed_count_non_ok": sum(int(row.get("seed_count_non_ok") or 0) for row in lab_rows),
+        "seed_count_failed": sum(int(row.get("seed_count_failed") or 0) for row in lab_rows),
+        "seed_count_aborted": sum(int(row.get("seed_count_aborted") or 0) for row in lab_rows),
         "total_prompt_tokens": sum(int(row.get("total_prompt_tokens") or 0) for row in lab_rows),
         "total_completion_tokens": sum(int(row.get("total_completion_tokens") or 0) for row in lab_rows),
         "total_lm_tokens": sum(int(row.get("total_lm_tokens") or 0) for row in lab_rows),

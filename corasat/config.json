@@ -1,5 +1,4 @@
 {
-  "schema_version": 3,
   "board": {
     "width": 8,
     "height": 8
@@ -23,8 +22,6 @@
       "first_seed": 1,
       "last_seed": 100
     },
-    "top_p": null,
-    "top_k": null,
     "watchdog_timeout_s": 900,
     "communication_id": "C0",
     "communication_mode": "co_located_action_cost"
@@ -83,8 +80,8 @@
     "smoke_run": true,
     "campaign_run": true,
     "smoke_seed_limit": 2,
-    "smoke_skip_optuna": true,
-    "smoke_skip_lora": true,
+    "smoke_skip_optuna": false,
+    "smoke_skip_lora": false,
     "smoke_output_dir": "campaign_runs/mt_full_rerun_smoke",
     "smoke_mt_export": false,
     "output_dir": "campaign_runs/mt_full_rerun",
@@ -113,7 +110,6 @@
       {
         "id": "L0.0",
         "enabled": true,
-        "title": "Random legal baseline (constrained comm)",
         "label": "L0.0 [R0,P0,DS0,M0,FT0,A0,C0]",
         "parent_lab": "",
         "changed_item": "baseline",
@@ -136,7 +132,6 @@
       {
         "id": "L0.1",
         "enabled": true,
-        "title": "Random policy with decision-support context",
         "label": "L0.1 [R0,P0,DS1,M0,FT0,A0,C0]",
         "parent_lab": "L0.0",
         "changed_item": "DS",
@@ -159,7 +154,6 @@
       {
         "id": "L0.2",
         "enabled": true,
-        "title": "Decision-support-only baseline",
         "label": "L0.2 [R0,P0,DS1,M0,FT0,A1,C0]",
         "parent_lab": "L0.1",
         "changed_item": "A",
@@ -182,7 +176,6 @@
       {
         "id": "L0.3",
         "enabled": true,
-        "title": "Model bridge under DS-only policy",
         "label": "L0.3 [R0,P0,DS1,M1,FT0,A1,C0]",
         "parent_lab": "L0.2",
         "changed_item": "M",
@@ -205,7 +198,6 @@
       {
         "id": "L0.4",
         "enabled": true,
-        "title": "LM + DS minimal context",
         "label": "L0.4 [R0,P0,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.3",
         "changed_item": "A",
@@ -228,7 +220,6 @@
       {
         "id": "L0.5",
         "enabled": true,
-        "title": "LM + DS with full rules",
         "label": "L0.5 [R2,P0,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.4",
         "changed_item": "R",
@@ -251,7 +242,6 @@
       {
         "id": "L0.6",
         "enabled": true,
-        "title": "LM + DS with full rules and prompts",
         "label": "L0.6 [R2,P2,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.5",
         "changed_item": "P",
@@ -274,7 +264,6 @@
       {
         "id": "L0.7",
         "enabled": true,
-        "title": "Free co-located communication",
         "label": "L0.7 [R2,P2,DS1,M1,FT0,A3,C1]",
         "parent_lab": "L0.6",
         "changed_item": "C",
@@ -297,7 +286,6 @@
       {
         "id": "L0.8",
         "enabled": true,
-        "title": "Free any-distance communication",
         "label": "L0.8 [R2,P2,DS1,M1,FT0,A3,C2]",
         "parent_lab": "L0.7",
         "changed_item": "C",
@@ -320,7 +308,6 @@
       {
         "id": "L1.0",
         "enabled": true,
-        "title": "Prompt-tuning anchor (referenced from L0.6)",
         "label": "L1.0 [R2,P2,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.8",
         "changed_item": "C",
@@ -344,7 +331,6 @@
       {
         "id": "L1.1",
         "enabled": true,
-        "title": "Reduced rules context",
         "label": "L1.1 [R1,P2,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L1.0",
         "changed_item": "R",
@@ -367,7 +353,6 @@
       {
         "id": "L1.2",
         "enabled": true,
-        "title": "Reduced prompt requests",
         "label": "L1.2 [R1,P1,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L1.1",
         "changed_item": "P",
@@ -390,7 +375,6 @@
       {
         "id": "L1.3",
         "enabled": true,
-        "title": "Waypoint clarification in rules",
         "label": "L1.3 [R3,P1,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L1.2",
         "changed_item": "R",
@@ -413,7 +397,6 @@
       {
         "id": "L1.4",
         "enabled": true,
-        "title": "Waypoint clarification in prompts",
         "label": "L1.4 [R3,P3,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L1.3",
         "changed_item": "P",
@@ -436,7 +419,6 @@
       {
         "id": "L2.0",
         "enabled": true,
-        "title": "Decision-support tuned profile DS2",
         "label": "L2.0 [R3,P3,DS2,M1,FT0,A3,C0]",
         "parent_lab": "L1.4",
         "changed_item": "DS",
@@ -459,7 +441,6 @@
       {
         "id": "L2.1",
         "enabled": true,
-        "title": "Decision-support tuned profile DS3",
         "label": "L2.1 [R3,P3,DS3,M1,FT0,A3,C0]",
         "parent_lab": "L2.0",
         "changed_item": "DS",
@@ -482,7 +463,6 @@
       {
         "id": "L2.2",
         "enabled": true,
-        "title": "Language model selection swap",
         "label": "L2.2 [R3,P3,DS3,M2,FT0,A3,C0]",
         "parent_lab": "L2.1",
         "changed_item": "M",
@@ -505,7 +485,6 @@
       {
         "id": "L2.3",
         "enabled": true,
-        "title": "Optuna optimization stage",
         "label": "L2.3 [R3,P3,DS3,M2,FT0,A3,C0]",
         "parent_lab": "L2.2",
         "changed_item": "optuna",
@@ -533,7 +512,6 @@
       {
         "id": "L2.4",
         "enabled": true,
-        "title": "Post-Optuna anchor (referenced from L2.3)",
         "label": "L2.4 [R3,P3,DS3,M2,FT0,A3,C0]",
         "parent_lab": "L2.3",
         "changed_item": "optuna",
@@ -557,7 +535,6 @@
       {
         "id": "L3.0",
         "enabled": true,
-        "title": "LoRA training/export stage",
         "label": "L3.0 [R3,P3,DS3,M2,FT0,A3,C0]",
         "parent_lab": "L2.4",
         "changed_item": "lora",
@@ -613,13 +590,52 @@
               "--modelfile",
               "lora/Modelfile.l13"
             ]
+          ],
+          "smoke_commands": [
+            [
+              "python",
+              "build_lora_dataset.py",
+              "--log",
+              "{lab_logfile:L2.4}",
+              "--rules",
+              "profiles/rules/R3_rules.txt",
+              "--out-dir",
+              "lora",
+              "--mode",
+              "summary",
+              "--dataset-prefix",
+              "l13_smoke",
+              "--train-seeds",
+              "1",
+              "--val-seeds",
+              "1"
+            ],
+            [
+              "llamafactory-cli",
+              "train",
+              "lora/train_lora_smoke.yaml"
+            ],
+            [
+              "llamafactory-cli",
+              "export",
+              "lora/export_lora_smoke.yaml"
+            ],
+            [
+              "python",
+              "register_ollama_model.py",
+              "--export-yaml",
+              "lora/export_lora_smoke.yaml",
+              "--model-name",
+              "corasat-l13-lora",
+              "--modelfile",
+              "lora/Modelfile.l13"
+            ]
           ]
         }
       },
       {
         "id": "L3.1",
         "enabled": true,
-        "title": "LoRA-adapted runtime evaluation",
         "label": "L3.1 [R3,P3,DS3,M2,FT1,A3,C0]",
         "parent_lab": "L3.0",
         "changed_item": "FT",
@@ -639,6 +655,15 @@
           "commands": []
         }
       }
-    ]
+    ],
+    "smoke_optuna": {
+      "trials": 3,
+      "seeds": "1",
+      "max_rounds": 8,
+      "no_prune": true
+    },
+    "smoke_lora": {
+      "use_smoke_commands": true
+    }
   }
 }

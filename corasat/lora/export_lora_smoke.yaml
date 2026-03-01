@@ -1,0 +1,12 @@
+model_name_or_path: meta-llama/Llama-3.1-8B-Instruct
+adapter_name_or_path: lora/output_l13_lora_smoke
+
+stage: sft
+finetuning_type: lora
+template: llama3
+cutoff_len: 1024
+
+export_dir: lora/exports/Llama-3.1-8B-Instruct-L13-Lora-Merged-smoke
+export_device: auto
+export_size: 5
+export_legacy_format: false

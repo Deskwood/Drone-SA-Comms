@@ -105,6 +105,17 @@ LAB_RESULTS_FIELDS = [
     "notes",
 ]
 
+REPRO_COMPARE_FIELDS = [
+    "mission_score",
+    "norm_score",
+    "correct_edges",
+    "false_edges",
+    "rendezvous_success",
+    "prompt_tokens_total",
+    "completion_tokens_total",
+    "lm_total_tokens",
+]
+
 PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z0-9_]+)(?::([^}]+))?\}")
 
 
@@ -193,6 +204,13 @@ def _write_csv(path: Path, fieldnames: Sequence[str], rows: Sequence[Dict[str, A
         writer.writeheader()
         for row in rows:
             writer.writerow({field: row.get(field, "") for field in fieldnames})
+
+
+def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
 
 
 def _append_text_log(path: Path, message: str, include_timestamps: bool) -> None:
@@ -1102,6 +1120,304 @@ def _validate_lab_profiles(labs_cfg: Sequence[Dict[str, Any]], config_dir: Path)
                 )
 
 
+def _reproducibility_cfg(campaign_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    cfg = campaign_cfg.get("reproducibility", {})
+    if not isinstance(cfg, dict):
+        return {}
+    return cfg
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _lab_is_stochastic_by_id(lab_id: str, lab_cfg_by_id: Dict[str, Dict[str, Any]], cache: Dict[str, bool]) -> bool:
+    if lab_id in cache:
+        return cache[lab_id]
+    cfg = lab_cfg_by_id.get(lab_id)
+    if not isinstance(cfg, dict):
+        cache[lab_id] = False
+        return False
+
+    fine_tuning_id = str(cfg.get("fine_tuning_id") or "").strip().upper()
+    stochastic = bool(cfg.get("optuna", {}).get("enabled", False)) or bool(cfg.get("lora", {}).get("enabled", False))
+    if fine_tuning_id and fine_tuning_id != "FT0":
+        stochastic = True
+
+    reference_lab_id = str(cfg.get("reference_lab") or "").strip()
+    if not stochastic and reference_lab_id and reference_lab_id != lab_id:
+        stochastic = _lab_is_stochastic_by_id(reference_lab_id, lab_cfg_by_id, cache)
+
+    cache[lab_id] = stochastic
+    return stochastic
+
+
+def _compare_results_for_reproducibility(
+    *,
+    current_rows: Sequence[Dict[str, str]],
+    reference_rows: Sequence[Dict[str, str]],
+    labs_cfg: Sequence[Dict[str, Any]],
+    repro_cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    fields_cfg = repro_cfg.get("fields")
+    if isinstance(fields_cfg, list) and fields_cfg:
+        fields = [str(item) for item in fields_cfg if str(item or "").strip()]
+    else:
+        fields = list(REPRO_COMPARE_FIELDS)
+    if not fields:
+        fields = list(REPRO_COMPARE_FIELDS)
+
+    det_tol = _coerce_float(repro_cfg.get("numeric_tolerance"))
+    if det_tol is None or det_tol < 0:
+        det_tol = 0.0
+    stoch_tol = _coerce_float(repro_cfg.get("stochastic_numeric_tolerance"))
+    if stoch_tol is None or stoch_tol < 0:
+        stoch_tol = det_tol
+
+    allow_missing_keys = bool(repro_cfg.get("allow_missing_keys", False))
+    max_stochastic_mismatch_rate = _coerce_float(repro_cfg.get("max_stochastic_mismatch_rate"))
+    if max_stochastic_mismatch_rate is None:
+        max_stochastic_mismatch_rate = 0.0
+    max_stochastic_mismatch_rate = max(0.0, min(1.0, float(max_stochastic_mismatch_rate)))
+
+    def _key(row: Dict[str, str]) -> Tuple[str, str]:
+        return (str(row.get("lab_id") or "").strip(), str(row.get("seed") or "").strip())
+
+    current_by_key = {_key(row): row for row in current_rows if _key(row) != ("", "")}
+    reference_by_key = {_key(row): row for row in reference_rows if _key(row) != ("", "")}
+
+    shared_keys = sorted(set(current_by_key.keys()) & set(reference_by_key.keys()))
+    missing_in_current = sorted(set(reference_by_key.keys()) - set(current_by_key.keys()))
+    missing_in_reference = sorted(set(current_by_key.keys()) - set(reference_by_key.keys()))
+
+    enabled_labs = [lab for lab in labs_cfg if isinstance(lab, dict) and bool(lab.get("enabled", True))]
+    lab_cfg_by_id: Dict[str, Dict[str, Any]] = {
+        str(lab.get("id") or lab.get("lab_id") or "").strip(): lab for lab in enabled_labs
+    }
+    stochastic_cache: Dict[str, bool] = {}
+
+    field_stats: Dict[str, Dict[str, Any]] = {}
+    for field in fields:
+        field_stats[field] = {
+            "checked": 0,
+            "matched": 0,
+            "mismatched": 0,
+            "deterministic_mismatched": 0,
+            "stochastic_mismatched": 0,
+        }
+
+    mismatches: List[Dict[str, Any]] = []
+    deterministic_checks = 0
+    deterministic_mismatches = 0
+    stochastic_checks = 0
+    stochastic_mismatches = 0
+
+    for lab_id, seed in shared_keys:
+        current_row = current_by_key[(lab_id, seed)]
+        reference_row = reference_by_key[(lab_id, seed)]
+        is_stochastic = _lab_is_stochastic_by_id(lab_id, lab_cfg_by_id, stochastic_cache)
+        mode = "stochastic" if is_stochastic else "deterministic"
+        tolerance = stoch_tol if is_stochastic else det_tol
+
+        for field in fields:
+            current_value = current_row.get(field)
+            reference_value = reference_row.get(field)
+            field_stats[field]["checked"] += 1
+
+            current_num = _coerce_float(current_value)
+            reference_num = _coerce_float(reference_value)
+            matched = False
+            abs_delta: Optional[float] = None
+
+            if current_num is not None and reference_num is not None:
+                abs_delta = abs(current_num - reference_num)
+                matched = abs_delta <= tolerance
+            else:
+                matched = str(current_value or "") == str(reference_value or "")
+
+            if is_stochastic:
+                stochastic_checks += 1
+            else:
+                deterministic_checks += 1
+
+            if matched:
+                field_stats[field]["matched"] += 1
+                continue
+
+            field_stats[field]["mismatched"] += 1
+            if is_stochastic:
+                field_stats[field]["stochastic_mismatched"] += 1
+                stochastic_mismatches += 1
+            else:
+                field_stats[field]["deterministic_mismatched"] += 1
+                deterministic_mismatches += 1
+
+            mismatches.append(
+                {
+                    "lab_id": lab_id,
+                    "seed": seed,
+                    "mode": mode,
+                    "field": field,
+                    "current": current_value,
+                    "reference": reference_value,
+                    "abs_delta": "" if abs_delta is None else round(abs_delta, 12),
+                    "tolerance": tolerance,
+                }
+            )
+
+    missing_key_violation = (not allow_missing_keys) and (bool(missing_in_current) or bool(missing_in_reference))
+    stochastic_mismatch_rate = (
+        (float(stochastic_mismatches) / float(stochastic_checks)) if stochastic_checks > 0 else 0.0
+    )
+
+    pass_status = True
+    reasons: List[str] = []
+    if missing_key_violation:
+        pass_status = False
+        reasons.append("missing_keys")
+    if deterministic_mismatches > 0:
+        pass_status = False
+        reasons.append("deterministic_mismatch")
+    if stochastic_mismatch_rate > max_stochastic_mismatch_rate:
+        pass_status = False
+        reasons.append("stochastic_mismatch_rate_exceeded")
+
+    return {
+        "pass": pass_status,
+        "failure_reasons": reasons,
+        "fields": fields,
+        "tolerances": {
+            "deterministic_numeric_tolerance": det_tol,
+            "stochastic_numeric_tolerance": stoch_tol,
+            "allow_missing_keys": allow_missing_keys,
+            "max_stochastic_mismatch_rate": max_stochastic_mismatch_rate,
+        },
+        "shared_key_count": len(shared_keys),
+        "missing_in_current_count": len(missing_in_current),
+        "missing_in_reference_count": len(missing_in_reference),
+        "missing_in_current": [{"lab_id": item[0], "seed": item[1]} for item in missing_in_current],
+        "missing_in_reference": [{"lab_id": item[0], "seed": item[1]} for item in missing_in_reference],
+        "deterministic_checks": deterministic_checks,
+        "deterministic_mismatches": deterministic_mismatches,
+        "stochastic_checks": stochastic_checks,
+        "stochastic_mismatches": stochastic_mismatches,
+        "stochastic_mismatch_rate": round(stochastic_mismatch_rate, 6),
+        "field_stats": field_stats,
+        "mismatch_count": len(mismatches),
+        "mismatches": mismatches,
+    }
+
+
+def _run_reproducibility_check(
+    *,
+    campaign_cfg: Dict[str, Any],
+    output_dir: Path,
+    results_path: Path,
+    labs_cfg: Sequence[Dict[str, Any]],
+    include_timestamps: bool,
+    campaign_log_path: Path,
+) -> Optional[Dict[str, Any]]:
+    repro_cfg = _reproducibility_cfg(campaign_cfg)
+    if not bool(repro_cfg.get("enabled", False)):
+        return None
+
+    reference_token = str(repro_cfg.get("reference_results_csv") or "").strip()
+    if not reference_token:
+        _append_text_log(
+            campaign_log_path,
+            "Reproducibility check enabled, but reference_results_csv is empty; skipping.",
+            include_timestamps,
+        )
+        return {
+            "enabled": True,
+            "status": "skipped",
+            "reason": "reference_results_csv_missing",
+        }
+
+    reference_path = _resolve_path(output_dir, reference_token, "")
+    if not reference_path.exists() or not reference_path.is_file():
+        message = f"Reproducibility reference not found: {reference_path}"
+        if bool(repro_cfg.get("fail_on_violation", False)):
+            raise FileNotFoundError(message)
+        _append_text_log(campaign_log_path, message, include_timestamps)
+        return {
+            "enabled": True,
+            "status": "failed",
+            "reason": "reference_results_csv_not_found",
+            "reference_results_csv": str(reference_path),
+        }
+
+    current_rows = _read_csv_rows(results_path)
+    reference_rows = _read_csv_rows(reference_path)
+    comparison = _compare_results_for_reproducibility(
+        current_rows=current_rows,
+        reference_rows=reference_rows,
+        labs_cfg=labs_cfg,
+        repro_cfg=repro_cfg,
+    )
+    comparison["enabled"] = True
+    comparison["status"] = "passed" if comparison.get("pass") else "failed"
+    comparison["created_at"] = datetime.now().astimezone().isoformat()
+    comparison["current_results_csv"] = str(results_path)
+    comparison["reference_results_csv"] = str(reference_path)
+
+    report_name = str(repro_cfg.get("report_json") or "reproducibility_report.json").strip()
+    mismatch_name = str(repro_cfg.get("mismatches_csv") or "reproducibility_mismatches.csv").strip()
+    report_path = _resolve_path(output_dir, report_name, "reproducibility_report.json")
+    mismatch_path = _resolve_path(output_dir, mismatch_name, "reproducibility_mismatches.csv")
+
+    _write_json(report_path, comparison)
+    mismatch_rows = comparison.get("mismatches", [])
+    if isinstance(mismatch_rows, list) and mismatch_rows:
+        _write_csv(
+            mismatch_path,
+            ["lab_id", "seed", "mode", "field", "current", "reference", "abs_delta", "tolerance"],
+            mismatch_rows,
+        )
+    else:
+        _write_csv(
+            mismatch_path,
+            ["lab_id", "seed", "mode", "field", "current", "reference", "abs_delta", "tolerance"],
+            [],
+        )
+
+    _append_text_log(
+        campaign_log_path,
+        "Reproducibility check: "
+        f"status={comparison['status']}, shared={comparison.get('shared_key_count', 0)}, "
+        f"det_mismatch={comparison.get('deterministic_mismatches', 0)}, "
+        f"stoch_mismatch={comparison.get('stochastic_mismatches', 0)}.",
+        include_timestamps,
+    )
+    _append_text_log(campaign_log_path, f"Reproducibility report: {report_path}", include_timestamps)
+    _append_text_log(campaign_log_path, f"Reproducibility mismatches: {mismatch_path}", include_timestamps)
+
+    if bool(repro_cfg.get("fail_on_violation", False)) and not bool(comparison.get("pass", False)):
+        raise RuntimeError(
+            "Reproducibility check failed "
+            f"(deterministic_mismatches={comparison.get('deterministic_mismatches', 0)}, "
+            f"stochastic_mismatch_rate={comparison.get('stochastic_mismatch_rate', 0.0)})."
+        )
+
+    return {
+        "enabled": True,
+        "status": comparison.get("status"),
+        "pass": bool(comparison.get("pass", False)),
+        "report_json": str(report_path),
+        "mismatches_csv": str(mismatch_path),
+        "shared_key_count": comparison.get("shared_key_count", 0),
+        "deterministic_mismatches": comparison.get("deterministic_mismatches", 0),
+        "stochastic_mismatches": comparison.get("stochastic_mismatches", 0),
+        "stochastic_mismatch_rate": comparison.get("stochastic_mismatch_rate", 0.0),
+        "reference_results_csv": str(reference_path),
+    }
+
+
 def _run_campaign(
     master_config: Dict[str, Any],
     config_path: Path,
@@ -1145,6 +1461,7 @@ def _run_campaign(
         )
     )
     _set_shared_logger_timestamp_mode(include_timestamps)
+    repro_cfg = _reproducibility_cfg(campaign_cfg)
 
     if fresh_output and output_dir.exists():
         _remove_tree(output_dir)
@@ -1159,6 +1476,16 @@ def _run_campaign(
     os.environ["CORASAT_RESULTS_CSV"] = str(results_path)
     os.environ["CORASAT_LOG_DIR"] = str(output_dir / "logs")
     os.environ["CORASAT_LOG_TIMESTAMPS"] = _bool_text(include_timestamps)
+    os.environ["CORASAT_DETERMINISTIC_RUN_ID"] = _bool_text(bool(repro_cfg.get("deterministic_run_id", False)))
+    repro_strict = bool(repro_cfg.get("set_deterministic_env", False))
+    os.environ["CORASAT_REPRO_STRICT"] = _bool_text(repro_strict)
+    if repro_strict:
+        os.environ["PYTHONHASHSEED"] = str(repro_cfg.get("pythonhashseed", 0))
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = str(repro_cfg.get("cublas_workspace_config", ":4096:8"))
+        os.environ["TOKENIZERS_PARALLELISM"] = str(repro_cfg.get("tokenizers_parallelism", "false"))
+        os.environ["CORASAT_TORCH_DETERMINISTIC"] = "true"
+    else:
+        os.environ.pop("CORASAT_TORCH_DETERMINISTIC", None)
 
     labs_cfg = campaign_cfg.get("labs", [])
     if not isinstance(labs_cfg, list) or not labs_cfg:
@@ -1599,6 +1926,17 @@ def _run_campaign(
     manifest["finished_at"] = datetime.now().astimezone().isoformat()
     manifest["totals"] = campaign_totals
 
+    repro_result = _run_reproducibility_check(
+        campaign_cfg=campaign_cfg,
+        output_dir=output_dir,
+        results_path=results_path,
+        labs_cfg=labs_cfg,
+        include_timestamps=include_timestamps,
+        campaign_log_path=campaign_log_path,
+    )
+    if repro_result is not None:
+        manifest["reproducibility"] = repro_result
+
     manifest_path = output_dir / "campaign_report.json"
     _write_json(manifest_path, manifest)
 
@@ -1622,6 +1960,8 @@ def _run_campaign(
     _log(f"- Output dir: {output_dir}")
     _log(f"- Results: {results_path}")
     _log(f"- Lab results: {lab_results_path}")
+    if repro_result is not None:
+        _log(f"- Reproducibility: {repro_result.get('status')}")
     _log(f"- Campaign report: {manifest_path}")
     return 0
 
@@ -1649,13 +1989,20 @@ def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> i
     )
 
     if smoke_run:
-        smoke_seed_limit_raw = campaign_cfg.get("smoke_seed_limit", 2)
+        smoke_seed_limit_raw = (
+            campaign_cfg.get("smoke_first_n_seeds")
+            if campaign_cfg.get("smoke_first_n_seeds") is not None
+            else campaign_cfg.get("smoke_seed_limit", 2)
+        )
         try:
             smoke_seed_limit = int(smoke_seed_limit_raw)
         except Exception as exc:
-            raise ValueError(f"campaign.smoke_seed_limit must be an integer, got: {smoke_seed_limit_raw!r}") from exc
+            raise ValueError(
+                "campaign.smoke_first_n_seeds (or smoke_seed_limit) must be an integer, "
+                f"got: {smoke_seed_limit_raw!r}"
+            ) from exc
         if smoke_seed_limit < 1:
-            raise ValueError("campaign.smoke_seed_limit must be >= 1.")
+            raise ValueError("campaign.smoke_first_n_seeds must be >= 1.")
 
         smoke_output_dir = _resolve_path(
             config_dir,
@@ -1665,21 +2012,172 @@ def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> i
         smoke_skip_optuna = bool(campaign_cfg.get("smoke_skip_optuna", True))
         smoke_skip_lora = bool(campaign_cfg.get("smoke_skip_lora", True))
         smoke_export_mt = bool(campaign_cfg.get("smoke_mt_export", False))
+        smoke_repro_cfg = (
+            campaign_cfg.get("smoke_reproducibility", {})
+            if isinstance(campaign_cfg.get("smoke_reproducibility"), dict)
+            else {}
+        )
+        smoke_run_twice = bool(smoke_repro_cfg.get("enabled", False))
 
-        _log(
-            "Starting smoke run "
-            f"(seed_limit={smoke_seed_limit}, skip_optuna={smoke_skip_optuna}, skip_lora={smoke_skip_lora})."
-        )
-        _run_campaign(
-            master_config,
-            config_path,
-            run_mode="smoke",
-            seed_limit=smoke_seed_limit,
-            skip_optuna=smoke_skip_optuna,
-            skip_lora=smoke_skip_lora,
-            output_dir_override=smoke_output_dir,
-            export_mt=smoke_export_mt,
-        )
+        if smoke_run_twice:
+            smoke_run1_output = _resolve_path(
+                config_dir,
+                str(smoke_repro_cfg.get("run1_output_dir") or ""),
+                str(smoke_output_dir) + "_run1",
+            )
+            smoke_run2_output = _resolve_path(
+                config_dir,
+                str(smoke_repro_cfg.get("run2_output_dir") or ""),
+                str(smoke_output_dir) + "_run2",
+            )
+            smoke_report_path = _resolve_path(
+                config_dir,
+                str(smoke_repro_cfg.get("report_path") or ""),
+                f"campaign_runs/{campaign_name}_smoke_report.json",
+            )
+            fail_on_deviation = bool(smoke_repro_cfg.get("fail_on_deviation", False))
+            run2_fail_on_violation = bool(
+                smoke_repro_cfg.get("fail_on_violation", fail_on_deviation)
+            )
+
+            run1_error = ""
+            run2_error = ""
+            run1_success = False
+            run2_success = False
+
+            _log(
+                "Starting smoke run #1 "
+                f"(seed_limit={smoke_seed_limit}, skip_optuna={smoke_skip_optuna}, skip_lora={smoke_skip_lora})."
+            )
+            run1_master = copy.deepcopy(master_config)
+            run1_campaign = run1_master.get("campaign", {})
+            if isinstance(run1_campaign, dict):
+                repro = run1_campaign.get("reproducibility")
+                if not isinstance(repro, dict):
+                    repro = {}
+                    run1_campaign["reproducibility"] = repro
+                repro["enabled"] = False
+                repro["reference_results_csv"] = ""
+
+            try:
+                _run_campaign(
+                    run1_master,
+                    config_path,
+                    run_mode="smoke",
+                    seed_limit=smoke_seed_limit,
+                    skip_optuna=smoke_skip_optuna,
+                    skip_lora=smoke_skip_lora,
+                    output_dir_override=smoke_run1_output,
+                    export_mt=smoke_export_mt,
+                )
+                run1_success = True
+            except Exception as exc:
+                run1_error = str(exc)
+
+            if run1_success:
+                _log(
+                    "Starting smoke run #2 "
+                    f"(seed_limit={smoke_seed_limit}, skip_optuna={smoke_skip_optuna}, skip_lora={smoke_skip_lora})."
+                )
+                run2_master = copy.deepcopy(master_config)
+                run2_campaign = run2_master.get("campaign", {})
+                if isinstance(run2_campaign, dict):
+                    repro = run2_campaign.get("reproducibility")
+                    if not isinstance(repro, dict):
+                        repro = {}
+                        run2_campaign["reproducibility"] = repro
+                    repro["enabled"] = True
+                    repro["reference_results_csv"] = str((smoke_run1_output / "results.csv").resolve())
+                    repro["fail_on_violation"] = run2_fail_on_violation
+
+                try:
+                    _run_campaign(
+                        run2_master,
+                        config_path,
+                        run_mode="smoke",
+                        seed_limit=smoke_seed_limit,
+                        skip_optuna=smoke_skip_optuna,
+                        skip_lora=smoke_skip_lora,
+                        output_dir_override=smoke_run2_output,
+                        export_mt=smoke_export_mt,
+                    )
+                    run2_success = True
+                except Exception as exc:
+                    run2_error = str(exc)
+
+            run1_summary = _build_smoke_run_summary(smoke_run1_output)
+            run2_summary = _build_smoke_run_summary(smoke_run2_output)
+            run2_repro = (
+                run2_summary.get("reproducibility", {})
+                if isinstance(run2_summary.get("reproducibility"), dict)
+                else {}
+            )
+
+            det_mismatch = int(run2_repro.get("deterministic_mismatches") or 0)
+            stoch_mismatch = int(run2_repro.get("stochastic_mismatches") or 0)
+            mismatch_total = int(
+                run2_repro.get("mismatch_count")
+                or (det_mismatch + stoch_mismatch)
+            )
+            deviations_encountered = mismatch_total > 0 or not bool(run2_repro.get("pass", False))
+
+            smoke_report = {
+                "created_at": datetime.now().astimezone().isoformat(),
+                "mode": "double_smoke",
+                "seed_limit": smoke_seed_limit,
+                "smoke_run_success": bool(run1_success and run2_success),
+                "deviations_encountered": bool(deviations_encountered),
+                "overall_success": bool(run1_success and run2_success and not deviations_encountered),
+                "run_1": {
+                    "success": run1_success,
+                    "error": run1_error,
+                    **run1_summary,
+                },
+                "run_2": {
+                    "success": run2_success,
+                    "error": run2_error,
+                    **run2_summary,
+                },
+                "reproducibility": {
+                    "status": run2_repro.get("status", "missing"),
+                    "pass": bool(run2_repro.get("pass", False)),
+                    "shared_key_count": int(run2_repro.get("shared_key_count") or 0),
+                    "deterministic_mismatches": det_mismatch,
+                    "stochastic_mismatches": stoch_mismatch,
+                    "stochastic_mismatch_rate": float(run2_repro.get("stochastic_mismatch_rate") or 0.0),
+                    "mismatch_count": mismatch_total,
+                    "report_json": run2_repro.get("report_json", ""),
+                    "mismatches_csv": run2_repro.get("mismatches_csv", ""),
+                },
+            }
+            _write_json(smoke_report_path, smoke_report)
+            _log(f"Smoke reproducibility report: {smoke_report_path}")
+
+            if bool(campaign_cfg.get("stop_on_error", True)) and (not run1_success or not run2_success):
+                raise RuntimeError(
+                    "One or both smoke runs failed. "
+                    f"See {smoke_report_path}"
+                )
+            if fail_on_deviation and deviations_encountered:
+                raise RuntimeError(
+                    "Smoke reproducibility report indicates deviations. "
+                    f"See {smoke_report_path}"
+                )
+        else:
+            _log(
+                "Starting smoke run "
+                f"(seed_limit={smoke_seed_limit}, skip_optuna={smoke_skip_optuna}, skip_lora={smoke_skip_lora})."
+            )
+            _run_campaign(
+                master_config,
+                config_path,
+                run_mode="smoke",
+                seed_limit=smoke_seed_limit,
+                skip_optuna=smoke_skip_optuna,
+                skip_lora=smoke_skip_lora,
+                output_dir_override=smoke_output_dir,
+                export_mt=smoke_export_mt,
+            )
 
     if campaign_run:
         _log("Starting full campaign run.")
@@ -1694,6 +2192,37 @@ def _has_campaign_labs(config: Dict[str, Any]) -> bool:
         return False
     labs = campaign_cfg.get("labs")
     return isinstance(labs, list) and len(labs) > 0
+
+
+def _read_json_if_exists(path: Path) -> Dict[str, Any]:
+    if not path.exists() or not path.is_file():
+        return {}
+    try:
+        payload = _read_json(path)
+        if isinstance(payload, dict):
+            return payload
+        return {}
+    except Exception:
+        return {}
+
+
+def _build_smoke_run_summary(output_dir: Path) -> Dict[str, Any]:
+    manifest_path = output_dir / "campaign_report.json"
+    manifest = _read_json_if_exists(manifest_path)
+    totals = manifest.get("totals", {}) if isinstance(manifest.get("totals"), dict) else {}
+    repro = manifest.get("reproducibility", {}) if isinstance(manifest.get("reproducibility"), dict) else {}
+    summary = {
+        "output_dir": str(output_dir),
+        "manifest_path": str(manifest_path),
+        "results_csv": str(output_dir / "results.csv"),
+        "lab_results_csv": str(output_dir / "lab_results.csv"),
+        "status": "unknown",
+        "totals": totals,
+        "reproducibility": repro,
+    }
+    if manifest:
+        summary["status"] = "completed"
+    return summary
 
 
 def main() -> int:

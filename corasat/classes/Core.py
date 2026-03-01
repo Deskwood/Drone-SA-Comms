@@ -293,6 +293,17 @@ def set_global_seed(seed: Optional[int]) -> None:
         try:
             torch.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
+            if os.environ.get("CORASAT_TORCH_DETERMINISTIC", "").strip().lower() in {"1", "true", "yes", "on"}:
+                try:
+                    torch.use_deterministic_algorithms(True, warn_only=True)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(torch.backends, "cudnn"):
+                        torch.backends.cudnn.deterministic = True
+                        torch.backends.cudnn.benchmark = False
+                except Exception:
+                    pass
         except Exception:
             pass
     _log(f"Global seed set to {seed}.")

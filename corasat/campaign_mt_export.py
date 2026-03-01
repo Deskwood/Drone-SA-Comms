@@ -709,12 +709,20 @@ def export_campaign_artifacts(
     copied_results = copy_dir / "results.csv"
     copied_lab_results = copy_dir / "lab_results.csv"
     copied_manifest = copy_dir / "campaign_report.json"
+    copied_repro_report = copy_dir / "reproducibility_report.json"
+    copied_repro_mismatches = copy_dir / "reproducibility_mismatches.csv"
     if results_path.exists():
         shutil.copy2(results_path, copied_results)
     if lab_results_path.exists():
         shutil.copy2(lab_results_path, copied_lab_results)
     if manifest_path.exists():
         shutil.copy2(manifest_path, copied_manifest)
+    repro_report_src = output_dir / "reproducibility_report.json"
+    repro_mismatches_src = output_dir / "reproducibility_mismatches.csv"
+    if repro_report_src.exists() and repro_report_src.is_file():
+        shutil.copy2(repro_report_src, copied_repro_report)
+    if repro_mismatches_src.exists() and repro_mismatches_src.is_file():
+        shutil.copy2(repro_mismatches_src, copied_repro_mismatches)
 
     outputs: Dict[str, str] = {}
 
@@ -735,8 +743,17 @@ def export_campaign_artifacts(
     outputs["pairwise_table"] = str(pairwise_path)
 
     repro_cfg = mt_cfg.get("reproducibility", {}) if isinstance(mt_cfg.get("reproducibility"), dict) else {}
-    ref_results_path = _resolve_path(output_dir, str(repro_cfg.get("reference_results_csv") or ""), "")
-    ref_rows = _read_csv_rows(ref_results_path) if ref_results_path.exists() else []
+    ref_results_token = str(repro_cfg.get("reference_results_csv") or "").strip()
+    if not ref_results_token:
+        campaign_repro_cfg = campaign_cfg.get("reproducibility", {}) if isinstance(campaign_cfg.get("reproducibility"), dict) else {}
+        ref_results_token = str(campaign_repro_cfg.get("reference_results_csv") or "").strip()
+    ref_results_path: Optional[Path] = None
+    ref_rows: List[Dict[str, str]] = []
+    if ref_results_token:
+        candidate = _resolve_path(output_dir, ref_results_token, "")
+        if candidate.exists() and candidate.is_file():
+            ref_results_path = candidate
+            ref_rows = _read_csv_rows(candidate)
     repro_path = tex_generated / "reproducibility_table.tex"
     _write_text(repro_path, _build_reproducibility_tex(result_rows, ref_rows))
     outputs["reproducibility_table"] = str(repro_path)
@@ -771,6 +788,10 @@ def export_campaign_artifacts(
     outputs["copied_results_csv"] = str(copied_results)
     outputs["copied_lab_results_csv"] = str(copied_lab_results)
     outputs["copied_manifest_json"] = str(copied_manifest)
+    if copied_repro_report.exists():
+        outputs["copied_reproducibility_report_json"] = str(copied_repro_report)
+    if copied_repro_mismatches.exists():
+        outputs["copied_reproducibility_mismatches_csv"] = str(copied_repro_mismatches)
     outputs["config_used"] = str(config_path)
 
     log(f"MT artifacts exported to {tex_generated} and {fig_generated}.")

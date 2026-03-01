@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 import math
+import os
 import random
 import time
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
@@ -1602,6 +1603,43 @@ class _Drone_Language_Model:
             LOGGER.log(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
         return messages
 
+    def _ollama_seed(self) -> Optional[int]:
+        """Return deterministic seed for Ollama options when configured."""
+        sim_cfg = CONFIG.get("simulation", {})
+        strict = os.environ.get("CORASAT_REPRO_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+        if not strict and not bool(sim_cfg.get("ollama_seeded", False)):
+            return None
+
+        explicit_seed = sim_cfg.get("ollama_seed", None)
+        if explicit_seed is not None and str(explicit_seed).strip() != "":
+            try:
+                return int(explicit_seed)
+            except Exception:
+                return None
+
+        try:
+            sim_seed = int(getattr(self.drone.sim, "seed", 0) or 0)
+        except Exception:
+            sim_seed = 0
+        try:
+            drone_id = int(getattr(self.drone, "id", 0) or 0)
+        except Exception:
+            drone_id = 0
+        try:
+            round_id = int(getattr(self.drone.sim, "round", 0) or 0)
+        except Exception:
+            round_id = 0
+
+        mode = str(sim_cfg.get("ollama_seed_mode", "simulation_round") or "").strip().lower()
+        if mode == "fixed":
+            try:
+                return int(sim_cfg.get("ollama_seed_fixed", 0))
+            except Exception:
+                return 0
+        if mode == "simulation":
+            return sim_seed * 1009 + drone_id * 9176
+        return sim_seed * 1000003 + drone_id * 9176 + round_id
+
     def _use_language_model(self) -> bool:
         sim_cfg = CONFIG.get("simulation", {})
         explicit = sim_cfg.get("use_language_model", None)
@@ -1749,12 +1787,16 @@ class _Drone_Language_Model:
             raise
 
         request_started = time.perf_counter()
+        options: Dict[str, Any] = {"temperature": float(temperature)}
+        ollama_seed = self._ollama_seed()
+        if ollama_seed is not None:
+            options["seed"] = int(ollama_seed)
         response = ollama_chat(
             model=self.model,
             messages=messages,
             stream=False,
             format="json",
-            options={"temperature": float(temperature)},
+            options=options,
         )
         elapsed = time.perf_counter() - request_started
         content = response["message"]["content"]

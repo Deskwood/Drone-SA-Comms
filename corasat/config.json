@@ -24,7 +24,9 @@
     },
     "watchdog_timeout_s": 900,
     "communication_id": "C0",
-    "communication_mode": "co_located_action_cost"
+    "communication_mode": "co_located_action_cost",
+    "ollama_seeded": true,
+    "ollama_seed_mode": "simulation_round"
   },
   "gui": {
     "cell_size": 80,
@@ -79,10 +81,18 @@
     "name": "mt_full_rerun",
     "smoke_run": true,
     "campaign_run": true,
+    "smoke_first_n_seeds": 2,
     "smoke_seed_limit": 2,
     "smoke_skip_optuna": false,
     "smoke_skip_lora": false,
     "smoke_output_dir": "campaign_runs/mt_full_rerun_smoke",
+    "smoke_reproducibility": {
+      "enabled": true,
+      "run1_output_dir": "campaign_runs/mt_full_rerun_smoke_run1",
+      "run2_output_dir": "campaign_runs/mt_full_rerun_smoke_run2",
+      "report_path": "campaign_runs/mt_full_rerun_smoke_report.json",
+      "fail_on_deviation": false
+    },
     "smoke_mt_export": false,
     "output_dir": "campaign_runs/mt_full_rerun",
     "fresh_output": true,
@@ -95,6 +105,32 @@
     "use_gui": false,
     "logging": {
       "include_timestamps": true
+    },
+    "reproducibility": {
+      "enabled": false,
+      "reference_results_csv": "",
+      "fail_on_violation": false,
+      "allow_missing_keys": false,
+      "numeric_tolerance": 0.0,
+      "stochastic_numeric_tolerance": 1e-06,
+      "max_stochastic_mismatch_rate": 0.0,
+      "deterministic_run_id": true,
+      "set_deterministic_env": true,
+      "pythonhashseed": 0,
+      "cublas_workspace_config": ":4096:8",
+      "tokenizers_parallelism": "false",
+      "report_json": "reproducibility_report.json",
+      "mismatches_csv": "reproducibility_mismatches.csv",
+      "fields": [
+        "mission_score",
+        "norm_score",
+        "correct_edges",
+        "false_edges",
+        "rendezvous_success",
+        "prompt_tokens_total",
+        "completion_tokens_total",
+        "lm_total_tokens"
+      ]
     },
     "mt_export": {
       "enabled": true,

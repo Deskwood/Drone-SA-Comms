@@ -212,8 +212,19 @@ def _compute_coverage_ratio(sim: Any) -> Optional[float]:
         return None
 
 
-def _build_run_id(seed: Optional[Any]) -> str:
-    """Create a unique run identifier including timestamp and seed."""
+def _build_run_id(seed: Optional[Any], campaign: Optional[Any] = None, lab_id: Optional[Any] = None) -> str:
+    """Create a run identifier.
+
+    In deterministic mode (CORASAT_DETERMINISTIC_RUN_ID=true), derive from
+    campaign/lab/seed so that reruns are directly comparable.
+    """
+    if _env_bool("CORASAT_DETERMINISTIC_RUN_ID", False):
+        campaign_part = re.sub(r"\s+", "_", str(campaign or "campaign").strip()) or "campaign"
+        lab_part = re.sub(r"\s+", "_", str(lab_id or "lab").strip()) or "lab"
+        seed_part = str(seed) if seed is not None else "noseed"
+        return f"{campaign_part}-{lab_part}-{seed_part}"
+
+    # Non-deterministic default: timestamp + random suffix to avoid collisions.
     base = datetime.now().strftime("%Y%m%d-%H%M%S")
     seed_part = str(seed) if seed is not None else "noseed"
     return f"{base}-{seed_part}-{uuid.uuid4().hex[:6]}"
@@ -316,7 +327,7 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
             if isinstance(false_edges, (int, float)):
                 false_edge_rate = round(false_edges / total_gt_edges, 5)
         row = {
-            "run_id": _build_run_id(seed),
+            "run_id": _build_run_id(seed, campaign=campaign_name, lab_id=lab_id),
             "timestamp": timestamp,
             "campaign": campaign_name,
             "lab_id": lab_id,

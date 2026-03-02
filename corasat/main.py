@@ -1136,6 +1136,82 @@ def _coerce_float(value: Any) -> Optional[float]:
         return None
 
 
+def _coerce_positive_int(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        number = int(value)
+    except Exception:
+        return None
+    if number <= 0:
+        return None
+    return number
+
+
+def _resolve_sim_model_name(sim_cfg: Dict[str, Any]) -> str:
+    model_name = ""
+    models = sim_cfg.get("models") if isinstance(sim_cfg, dict) and "models" in sim_cfg else None
+    index_raw = sim_cfg.get("model_index") if isinstance(sim_cfg, dict) and "model_index" in sim_cfg else None
+    if isinstance(models, list) and index_raw is not None:
+        try:
+            idx = int(index_raw)
+        except Exception:
+            idx = None
+        if idx is not None and 0 <= idx < len(models):
+            model_name = str(models[idx] or "").strip()
+    if not model_name and isinstance(sim_cfg, dict):
+        if "selected_model" in sim_cfg:
+            model_name = str(sim_cfg.get("selected_model") or "").strip()
+        elif "runtime_model" in sim_cfg:
+            model_name = str(sim_cfg.get("runtime_model") or "").strip()
+    return model_name
+
+
+def _apply_watchdog_timeout_overrides(
+    *,
+    runtime_cfg: Dict[str, Any],
+    lab_cfg: Dict[str, Any],
+    campaign_cfg: Dict[str, Any],
+    run_mode: str,
+) -> None:
+    """Apply mode/lab/model watchdog overrides to runtime simulation config."""
+    sim_cfg = runtime_cfg.setdefault("simulation", {})
+    if not isinstance(sim_cfg, dict):
+        return
+
+    candidates: List[int] = []
+    if "watchdog_timeout_s" in sim_cfg:
+        current_timeout = _coerce_positive_int(sim_cfg.get("watchdog_timeout_s"))
+        if current_timeout is not None:
+            candidates.append(current_timeout)
+
+    mode_key = "smoke_watchdog_timeout_s" if run_mode == "smoke" else "campaign_watchdog_timeout_s"
+    mode_timeout = _coerce_positive_int(campaign_cfg.get(mode_key))
+    if mode_timeout is not None:
+        candidates.append(mode_timeout)
+
+    lab_id = str(lab_cfg.get("id") or lab_cfg.get("lab_id") or "").strip()
+    lab_timeout_map = campaign_cfg.get("watchdog_timeout_by_lab", {})
+    if isinstance(lab_timeout_map, dict) and lab_id:
+        lab_timeout = _coerce_positive_int(lab_timeout_map.get(lab_id))
+        if lab_timeout is not None:
+            candidates.append(lab_timeout)
+
+    model_timeout_map = campaign_cfg.get("watchdog_timeout_by_model", {})
+    if isinstance(model_timeout_map, dict):
+        model_name = _resolve_sim_model_name(sim_cfg)
+        if model_name:
+            model_timeout = _coerce_positive_int(model_timeout_map.get(model_name))
+            if model_timeout is not None:
+                candidates.append(model_timeout)
+
+    if not candidates:
+        return
+
+    # Use the most permissive timeout among active sources to avoid spurious watchdog aborts.
+    sim_cfg["watchdog_timeout_s"] = max(candidates)
+
+
 def _lab_is_stochastic_by_id(lab_id: str, lab_cfg_by_id: Dict[str, Dict[str, Any]], cache: Dict[str, bool]) -> bool:
     if lab_id in cache:
         return cache[lab_id]
@@ -1451,6 +1527,7 @@ def _run_campaign(
         )
     fresh_output = bool(campaign_cfg.get("fresh_output", True))
     stop_on_error = bool(campaign_cfg.get("stop_on_error", True))
+    stop_on_watchdog_abort = bool(campaign_cfg.get("stop_on_watchdog_abort", False))
 
     global_logging_cfg = master_config.get("logging", {}) if isinstance(master_config.get("logging"), dict) else {}
     campaign_logging_cfg = campaign_cfg.get("logging", {}) if isinstance(campaign_cfg.get("logging"), dict) else {}
@@ -1706,6 +1783,12 @@ def _run_campaign(
             runtime_cfg.setdefault("simulation", {})["seed_list"] = _seed_object_from_values(lab_seeds)
             runtime_cfg["simulation"]["max_rounds"] = int(lab_cfg.get("max_rounds", global_max_rounds))
             runtime_cfg["simulation"]["use_gui"] = bool(lab_cfg.get("use_gui", global_use_gui))
+            _apply_watchdog_timeout_overrides(
+                runtime_cfg=runtime_cfg,
+                lab_cfg=lab_cfg,
+                campaign_cfg=campaign_cfg,
+                run_mode=run_mode,
+            )
 
             runtime_cfg["campaign_context"] = {
                 "campaign_name": campaign_name,
@@ -1830,6 +1913,11 @@ def _run_campaign(
                         )
                         if stop_on_error and status in {"init_error", "run_error"}:
                             raise RuntimeError(f"{lab_id}: seed {seed} failed with status={status}{suffix}")
+                        if stop_on_watchdog_abort and status == "watchdog_abort":
+                            raise RuntimeError(
+                                f"{lab_id}: seed {seed} aborted by watchdog{suffix}. "
+                                "Increase watchdog timeout or reduce workload."
+                            )
 
                 if abort_requested:
                     _append_text_log(

@@ -47,10 +47,16 @@ Reasoning Priorities:
 - Honor your assigned sector and rendezvous timing.
 - Use broadcasts to share knowledge and plans, but only when co-located.
 
+Decision Support Usage:
+- Treat Decision Support as support, not as a command.
+- Use it as an informed suggestion, then decide with your own judgment.
+- You may deviate when legal moves, mission timing, sector goals, or communication needs indicate a better action.
+- If you deviate from the Decision Support Summary, state the reason briefly in your rationale.
+
 Waypoint Disambiguation (STRICT):
 - The active movement target is the current waypoint in "Plan focus" (leg start -> leg end), not the sector corners.
 - "Sector directive" defines allowed operating area only; do not move to sector corners unless they are the current waypoint.
-- If "Decision Support Summary" recommends "move <direction>", follow that direction unless it is not in Legal moves.
+- If "Decision Support Summary" recommends "move <direction>", treat it as advisory and apply it only when it fits your own reasoning and current constraints.
 - In your rationale, refer to waypoint progress (or timing/slack) rather than sector corner coordinates.
 
 Memory Discipline:

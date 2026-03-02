@@ -1607,10 +1607,11 @@ class _Drone_Language_Model:
         """Return deterministic seed for Ollama options when configured."""
         sim_cfg = CONFIG.get("simulation", {})
         strict = os.environ.get("CORASAT_REPRO_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
-        if not strict and not bool(sim_cfg.get("ollama_seeded", False)):
+        seeded_enabled = bool(sim_cfg.get("ollama_seeded")) if "ollama_seeded" in sim_cfg else False
+        if not strict and not seeded_enabled:
             return None
 
-        explicit_seed = sim_cfg.get("ollama_seed", None)
+        explicit_seed = sim_cfg["ollama_seed"] if "ollama_seed" in sim_cfg else None
         if explicit_seed is not None and str(explicit_seed).strip() != "":
             try:
                 return int(explicit_seed)
@@ -1630,10 +1631,12 @@ class _Drone_Language_Model:
         except Exception:
             round_id = 0
 
-        mode = str(sim_cfg.get("ollama_seed_mode", "simulation_round") or "").strip().lower()
+        mode_raw = sim_cfg["ollama_seed_mode"] if "ollama_seed_mode" in sim_cfg else "simulation_round"
+        mode = str(mode_raw or "").strip().lower()
         if mode == "fixed":
+            fixed_seed = sim_cfg["ollama_seed_fixed"] if "ollama_seed_fixed" in sim_cfg else 0
             try:
-                return int(sim_cfg.get("ollama_seed_fixed", 0))
+                return int(fixed_seed)
             except Exception:
                 return 0
         if mode == "simulation":

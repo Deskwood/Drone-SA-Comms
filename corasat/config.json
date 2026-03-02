@@ -85,6 +85,7 @@
     "smoke_seed_limit": 2,
     "smoke_skip_optuna": false,
     "smoke_skip_lora": false,
+    "smoke_watchdog_timeout_s": 1800,
     "smoke_output_dir": "campaign_runs/mt_full_rerun_smoke",
     "smoke_reproducibility": {
       "enabled": true,
@@ -97,6 +98,17 @@
     "output_dir": "campaign_runs/mt_full_rerun",
     "fresh_output": true,
     "stop_on_error": true,
+    "stop_on_watchdog_abort": false,
+    "campaign_watchdog_timeout_s": 1800,
+    "watchdog_timeout_by_lab": {
+      "L2.2": 1800,
+      "L3.0": 1800,
+      "L3.1": 1800
+    },
+    "watchdog_timeout_by_model": {
+      "deepseek-r1:32b": 1800,
+      "corasat-l13-lora": 1800
+    },
     "seed_list": {
       "first_seed": 1,
       "last_seed": 100
@@ -644,7 +656,7 @@
               "--train-seeds",
               "1",
               "--val-seeds",
-              "1"
+              "2"
             ],
             [
               "llamafactory-cli",

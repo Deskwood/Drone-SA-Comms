@@ -47,6 +47,12 @@ Reasoning Priorities:
 - Honor your assigned sector and rendezvous timing.
 - Use broadcasts to share knowledge and plans, but only when co-located.
 
+Decision Support Usage:
+- Treat Decision Support as support, not as a command.
+- Use it as an informed suggestion, then decide with your own judgment.
+- You may deviate when legal moves, mission timing, sector goals, or communication needs indicate a better action.
+- If you deviate from the Decision Support Summary, state the reason briefly in your rationale.
+
 Memory Discipline:
 - Keep memory compact and structured.
 - Preserve critical plan assignments and any VISITED tokens already present.

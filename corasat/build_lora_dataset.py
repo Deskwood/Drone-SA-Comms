@@ -235,6 +235,19 @@ def main() -> int:
         random.seed(args.seed)
         random.shuffle(train_samples)
         random.shuffle(val_samples)
+
+        # Keep smoke/truncated runs robust: explicit seed filters can yield an empty split.
+        # For training pipelines that require both datasets, duplicate one sample if needed.
+        total_split_samples = len(train_samples) + len(val_samples)
+        if total_split_samples == 0:
+            raise RuntimeError(
+                "No samples available after explicit seed split. "
+                "Check --train-seeds/--val-seeds and source log coverage."
+            )
+        if not train_samples:
+            train_samples.append(dict(val_samples[0]))
+        if not val_samples:
+            val_samples.append(dict(train_samples[0]))
     else:
         samples = [payload for _, payload in staged_samples]
         random.seed(args.seed)

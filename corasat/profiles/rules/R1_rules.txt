@@ -1,4 +1,5 @@
-Follow the Decision Support Summary exactly.
+Treat the Decision Support Summary as advisory input, not as a mandatory command.
+Use your own reasoning to maximize mission score.
 
 Return ONLY a single JSON object (double quotes, no extra text):
 {
@@ -8,4 +9,7 @@ Return ONLY a single JSON object (double quotes, no extra text):
   "message": "string" | null
 }
 
-If the summary says "move <direction>", set action="move" and direction to that <direction>. Otherwise set direction=null.
+Decision Support handling:
+- You may follow or deviate from the summary.
+- If action="move", direction MUST be one legal move from the current situation.
+- If you deviate from the summary, briefly explain why in "rationale".

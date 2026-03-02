@@ -82,7 +82,6 @@
     "smoke_run": true,
     "campaign_run": true,
     "smoke_first_n_seeds": 2,
-    "smoke_seed_limit": 2,
     "smoke_skip_optuna": false,
     "smoke_skip_lora": false,
     "smoke_watchdog_timeout_s": 3600,
@@ -100,24 +99,6 @@
     "stop_on_error": true,
     "stop_on_watchdog_abort": false,
     "campaign_watchdog_timeout_s": 3600,
-    "watchdog_timeout_by_lab": {
-      "L2.2": 3600,
-      "L3.0": 3600,
-      "L3.1": 3600
-    },
-    "watchdog_timeout_by_model": {
-      "deepseek-r1:32b": 3600,
-      "corasat-l13-lora": 3600
-    },
-    "seed_list": {
-      "first_seed": 1,
-      "last_seed": 100
-    },
-    "max_rounds": 32,
-    "use_gui": false,
-    "logging": {
-      "include_timestamps": true
-    },
     "reproducibility": {
       "enabled": false,
       "reference_results_csv": "",
@@ -546,8 +527,9 @@
         "communication_id": "C0",
         "optuna": {
           "enabled": true,
-          "trials": 96,
-          "seeds": "1-8",
+          "trials": 128,
+          "seeds": "1-10",
+          "study_name": "mt_l2_3_optuna_strong",
           "sampler_seed": 1,
           "max_rounds": 32,
           "no_prune": false
@@ -705,7 +687,7 @@
       }
     ],
     "smoke_optuna": {
-      "trials": 8,
+      "trials": 10,
       "seeds": "1-2",
       "max_rounds": 16,
       "no_prune": true

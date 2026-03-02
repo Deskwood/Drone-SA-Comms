@@ -11,6 +11,7 @@ import csv
 from datetime import datetime
 import json
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -160,11 +161,12 @@ def _weighted_mean(seed_scores: Dict[int, float], seed_weights: Dict[int, float]
 
 def _run_seed_via_main(config_path: Path, seed: int, game_index: int, total_games: int) -> Tuple[str, Optional[float]]:
     # Import lazily to avoid side effects when running argparse/help paths.
-    from main import run_seed
-
+    os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
     previous_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
+        from main import run_seed
+
         run_entry, _abort_requested = run_seed(
             seed=seed,
             game_index=game_index,

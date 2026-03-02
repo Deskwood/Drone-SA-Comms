@@ -1,0 +1,72 @@
+{
+  "board": {
+    "width": 8,
+    "height": 8
+  },
+  "rules_path": "profiles/rules/R2_rules.txt",
+  "simulation": {
+    "create_py_export": false,
+    "use_gui": false,
+    "model_index": 4,
+    "models": ["manual", "deepseek-r1:32b", "qwen3:30b", "deepseek-r1:14b", "llama3.1:8b"],
+    "num_drones": 2,
+    "max_rounds": 2,
+    "temperature": 0.0,
+    "seed_list": [1],
+    "watchdog_timeout_s": 3600,
+    "communication_id": "C0",
+    "communication_mode": "co_located_action_cost",
+    "ollama_seeded": true,
+    "ollama_seed_mode": "simulation_round",
+    "use_language_model": false
+  },
+  "gui": {
+    "cell_size": 80,
+    "margin": 8,
+    "figure_image_dir": "./img",
+    "sidebar_width": 600
+  },
+  "logging": {
+    "print_prompt_stats": false,
+    "include_timestamps": true
+  },
+  "decision_support": {
+    "enabled": false,
+    "output": {
+      "include_scoring": true,
+      "include_summary": true
+    },
+    "scoring": {
+      "move": {
+        "waypoint_progress_bonus": 1.1,
+        "waypoint_delay_penalty": -1.75,
+        "unknown_tile_bonus": 1.8,
+        "no_figures_left_behind_bonus": 1.65,
+        "neighborhood_potential": 0.21,
+        "figure_hint_bonus": 1.3,
+        "possible_target_bonus": 1.1,
+        "neighborhood_weight_any_figure": 1.8,
+        "neighborhood_weight_possible_target": 1.95,
+        "border_bonus": 0.75,
+        "cross_track_penalty_per_step_squared": -0.8,
+        "sector_compliance_bonus": 1.05,
+        "revisit_penalty": -1.3
+      },
+      "broadcast": {
+        "base_broadcast_value": -0.15,
+        "first_turn_coordination_bonus": 0.4,
+        "last_turn_coordination_bonus": 1.0
+      },
+      "wait": {
+        "base_wait_value": -2.95
+      }
+    }
+  },
+  "prompt_requests": {
+    "rationale": "Rationale: Less than four sentences, why you chose to follow Decision Support recommendations or do something different.",
+    "action": "Action: Choose one of wait, move, broadcast.",
+    "action_move": "Direction: If action is move,choose ONLY from Legal moves.",
+    "action_broadcast": "Message: If action is broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
+    "memory_update": "Memory: Store any information relevant for future decisions."
+  }
+}

@@ -10,9 +10,8 @@ import copy
 import csv
 from datetime import datetime
 import json
-import os
+import logging
 from pathlib import Path
-import subprocess
 import sys
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -21,19 +20,6 @@ import optuna
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "config.json"
-
-
-def _resolve_results_path() -> Path:
-    env_path = os.environ.get("CORASAT_RESULTS_CSV", "").strip()
-    if env_path:
-        path = Path(env_path)
-        if not path.is_absolute():
-            path = (BASE_DIR / path).resolve()
-        return path
-    return BASE_DIR / "results.csv"
-
-
-RESULTS_PATH = _resolve_results_path()
 
 PARAM_SPACE = {
     "decision_support.scoring.move.waypoint_progress_bonus": (0.0, 2.0, 0.05),
@@ -118,12 +104,30 @@ def _params_from_config(cfg: Dict[str, object]) -> Dict[str, float]:
 
 
 def _parse_seeds(seed_text: str) -> List[int]:
-    seeds = []
+    seeds: List[int] = []
+    seen: set[int] = set()
     for token in seed_text.split(","):
         token = token.strip()
         if not token:
             continue
-        seeds.append(int(token))
+
+        if "-" in token:
+            left, right = token.split("-", 1)
+            start = int(left.strip())
+            end = int(right.strip())
+            step = 1 if end >= start else -1
+            for seed in range(start, end + step, step):
+                if seed in seen:
+                    continue
+                seen.add(seed)
+                seeds.append(seed)
+            continue
+
+        seed = int(token)
+        if seed in seen:
+            continue
+        seen.add(seed)
+        seeds.append(seed)
     return seeds
 
 
@@ -154,37 +158,44 @@ def _weighted_mean(seed_scores: Dict[int, float], seed_weights: Dict[int, float]
     return weighted_sum / total_weight if total_weight else 0.0
 
 
-def _read_results_rows() -> List[Dict[str, str]]:
-    if not RESULTS_PATH.exists():
-        return []
-    with RESULTS_PATH.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        return list(reader)
+def _run_seed_via_main(config_path: Path, seed: int, game_index: int, total_games: int) -> Tuple[str, Optional[float]]:
+    # Import lazily to avoid side effects when running argparse/help paths.
+    from main import run_seed
 
+    previous_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    try:
+        run_entry, _abort_requested = run_seed(
+            seed=seed,
+            game_index=game_index,
+            total_games=total_games,
+            config_path=str(config_path),
+            include_timestamps=False,
+            context={"mode": "optuna"},
+        )
+    finally:
+        logging.disable(previous_disable)
+    if not isinstance(run_entry, dict):
+        return "run_error", None
 
-def _run_simulation(config_path: Path) -> int:
-    return subprocess.run(
-        [sys.executable, "main.py", "--config", str(config_path)],
-        cwd=str(BASE_DIR),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    ).returncode
+    status = str(run_entry.get("status") or "run_error")
+    if status != "ok":
+        return status, None
 
+    sim = run_entry.get("sim")
+    if sim is None:
+        return "run_error", None
 
-def _extract_norm_score(rows: List[Dict[str, str]], seed: int) -> Optional[float]:
-    seed_str = str(seed)
-    for row in reversed(rows):
-        if str(row.get("seed")) != seed_str:
-            continue
-        value = row.get("norm_score")
-        if value in (None, ""):
-            continue
-        try:
-            return float(value)
-        except ValueError:
-            return None
-    return None
+    gt_edges = getattr(sim, "gt_edges", None)
+    score = getattr(sim, "score", None)
+    if not gt_edges or score is None:
+        return "run_error", None
+
+    try:
+        norm_score = float(score) / max(1, len(gt_edges))
+    except Exception:
+        return "run_error", None
+    return "ok", norm_score
 
 
 def _suggest_params(trial: optuna.Trial) -> Dict[str, float]:
@@ -217,13 +228,13 @@ def _evaluate_trial(
             _set_path(cfg, key, value)
         _write_config(cfg, config_path)
 
-        before_rows = _read_results_rows()
-        rc = _run_simulation(config_path)
-        after_rows = _read_results_rows()
-        new_rows = after_rows[len(before_rows) :]
-
-        score = _extract_norm_score(new_rows, seed)
-        if score is None or rc != 0:
+        status, score = _run_seed_via_main(
+            config_path,
+            seed=seed,
+            game_index=step_idx + 1,
+            total_games=len(seeds),
+        )
+        if status != "ok" or score is None:
             score = 0.0
         seed_scores[seed] = score
 

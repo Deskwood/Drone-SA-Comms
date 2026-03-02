@@ -546,8 +546,8 @@
         "communication_id": "C0",
         "optuna": {
           "enabled": true,
-          "trials": 55,
-          "seeds": "1,2,3",
+          "trials": 96,
+          "seeds": "1-8",
           "sampler_seed": 1,
           "max_rounds": 32,
           "no_prune": false
@@ -705,9 +705,9 @@
       }
     ],
     "smoke_optuna": {
-      "trials": 3,
-      "seeds": "1",
-      "max_rounds": 8,
+      "trials": 8,
+      "seeds": "1-2",
+      "max_rounds": 16,
       "no_prune": true
     },
     "smoke_lora": {

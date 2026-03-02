@@ -105,6 +105,19 @@ LAB_RESULTS_FIELDS = [
     "notes",
 ]
 
+ERROR_SUMMARY_FIELDS = [
+    "timestamp",
+    "scope",
+    "lab_id",
+    "label",
+    "seed",
+    "status",
+    "reason",
+    "runtime_config",
+    "seed_report_path",
+    "logfile",
+]
+
 REPRO_COMPARE_FIELDS = [
     "mission_score",
     "norm_score",
@@ -598,6 +611,22 @@ def _summarize_lab_seed_reports(seed_reports: Sequence[Dict[str, Any]]) -> Dict[
         "total_completion_tokens": int(completion_tokens),
         "total_lm_tokens": int(lm_tokens),
         "total_lm_inference_time_s": round(lm_time, 6),
+    }
+
+
+def _summarize_error_entries(error_entries: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    by_status: Dict[str, int] = {}
+    by_lab: Dict[str, int] = {}
+    for entry in error_entries:
+        status = str(entry.get("status") or "unknown").strip() or "unknown"
+        lab_id = str(entry.get("lab_id") or "unknown").strip() or "unknown"
+        by_status[status] = by_status.get(status, 0) + 1
+        by_lab[lab_id] = by_lab.get(lab_id, 0) + 1
+
+    return {
+        "entry_count": len(error_entries),
+        "by_status": by_status,
+        "by_lab": by_lab,
     }
 
 
@@ -1646,6 +1675,21 @@ def _run_campaign(
     lab_rows_by_id: Dict[str, Dict[str, Any]] = {}
     lab_reports_by_id: Dict[str, Dict[str, Any]] = {}
     completed_lab_logfiles: Dict[str, str] = {}
+    error_entries: List[Dict[str, Any]] = []
+    error_summary_json_path = output_dir / "error_summary.json"
+    error_summary_csv_path = output_dir / "error_summary.csv"
+
+    def _persist_error_summary() -> Dict[str, Any]:
+        payload = {
+            "campaign_name": campaign_name,
+            "run_mode": run_mode,
+            "generated_at": datetime.now().astimezone().isoformat(),
+            "summary": _summarize_error_entries(error_entries),
+            "entries": error_entries,
+        }
+        _write_json(error_summary_json_path, payload)
+        _write_csv(error_summary_csv_path, ERROR_SUMMARY_FIELDS, error_entries)
+        return payload
 
     for index, lab_cfg_raw in enumerate(labs_cfg, start=1):
         if not isinstance(lab_cfg_raw, dict):
@@ -1906,6 +1950,20 @@ def _run_campaign(
                     else:
                         status_note = str(seed_payload.get("error") or seed_payload.get("abort_reason") or "").strip()
                         suffix = f" ({status_note})" if status_note else ""
+                        error_entries.append(
+                            {
+                                "timestamp": datetime.now().astimezone().isoformat(),
+                                "scope": "seed",
+                                "lab_id": lab_id,
+                                "label": lab_label,
+                                "seed": seed_payload.get("seed"),
+                                "status": status,
+                                "reason": status_note,
+                                "runtime_config": str(runtime_config_path),
+                                "seed_report_path": str(seed_report_path),
+                                "logfile": str(seed_payload.get("logfile") or ""),
+                            }
+                        )
                         _append_text_log(
                             lab_log_path,
                             f"Seed {seed} completed with status={status}{suffix}.",
@@ -1986,6 +2044,21 @@ def _run_campaign(
             _append_text_log(lab_log_path, "Lab completed.", include_timestamps)
         except Exception as exc:
             error_message = f"[{lab_id}] failed: {exc}"
+            error_entries.append(
+                {
+                    "timestamp": datetime.now().astimezone().isoformat(),
+                    "scope": "lab",
+                    "lab_id": lab_id,
+                    "label": lab_label,
+                    "seed": "",
+                    "status": "lab_exception",
+                    "reason": str(exc),
+                    "runtime_config": "",
+                    "seed_report_path": "",
+                    "logfile": str(lab_log_path),
+                }
+            )
+            _persist_error_summary()
             _append_text_log(campaign_log_path, error_message, include_timestamps)
             _append_text_log(lab_log_path, error_message, include_timestamps)
             _append_text_log(lab_log_path, traceback.format_exc(), include_timestamps)
@@ -2013,6 +2086,14 @@ def _run_campaign(
 
     manifest["finished_at"] = datetime.now().astimezone().isoformat()
     manifest["totals"] = campaign_totals
+
+    error_summary_payload = _persist_error_summary()
+    manifest["error_summary"] = {
+        "json_path": str(error_summary_json_path),
+        "csv_path": str(error_summary_csv_path),
+        "entry_count": error_summary_payload["summary"].get("entry_count", 0),
+        "by_status": error_summary_payload["summary"].get("by_status", {}),
+    }
 
     repro_result = _run_reproducibility_check(
         campaign_cfg=campaign_cfg,
@@ -2043,11 +2124,20 @@ def _run_campaign(
 
     _append_text_log(campaign_log_path, f"Campaign completed (mode={run_mode}).", include_timestamps)
     _append_text_log(campaign_log_path, f"Manifest: {manifest_path}", include_timestamps)
+    _append_text_log(
+        campaign_log_path,
+        f"Error summary: {error_summary_json_path} | entries={error_summary_payload['summary'].get('entry_count', 0)}",
+        include_timestamps,
+    )
 
     _log(f"Campaign completed (mode={run_mode}).")
     _log(f"- Output dir: {output_dir}")
     _log(f"- Results: {results_path}")
     _log(f"- Lab results: {lab_results_path}")
+    _log(
+        f"- Error summary: {error_summary_json_path} "
+        f"(entries={error_summary_payload['summary'].get('entry_count', 0)})"
+    )
     if repro_result is not None:
         _log(f"- Reproducibility: {repro_result.get('status')}")
     _log(f"- Campaign report: {manifest_path}")
@@ -2299,14 +2389,17 @@ def _build_smoke_run_summary(output_dir: Path) -> Dict[str, Any]:
     manifest = _read_json_if_exists(manifest_path)
     totals = manifest.get("totals", {}) if isinstance(manifest.get("totals"), dict) else {}
     repro = manifest.get("reproducibility", {}) if isinstance(manifest.get("reproducibility"), dict) else {}
+    error_summary = manifest.get("error_summary", {}) if isinstance(manifest.get("error_summary"), dict) else {}
     summary = {
         "output_dir": str(output_dir),
         "manifest_path": str(manifest_path),
         "results_csv": str(output_dir / "results.csv"),
         "lab_results_csv": str(output_dir / "lab_results.csv"),
+        "error_summary_csv": str(output_dir / "error_summary.csv"),
         "status": "unknown",
         "totals": totals,
         "reproducibility": repro,
+        "error_summary": error_summary,
     }
     if manifest:
         summary["status"] = "completed"

@@ -22,7 +22,7 @@
       "first_seed": 1,
       "last_seed": 100
     },
-    "watchdog_timeout_s": 900,
+    "watchdog_timeout_s": 3600,
     "communication_id": "C0",
     "communication_mode": "co_located_action_cost",
     "ollama_seeded": true,
@@ -71,11 +71,11 @@
     }
   },
   "prompt_requests": {
-    "rationale": "Rationale: <=2 sentences. Mention the top Decision Support factor(s) or the mandatory rule you are following.",
-    "action": "Action: choose one of wait, move, broadcast. Follow rules; if Special directive says Drone 1 on round 1, you MUST broadcast.",
-    "action_move": "Direction: choose ONLY from Legal moves.",
-    "action_broadcast": "Message: If broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
-    "memory_update": "Memory: Use tags PLAN:, SECTOR:, RV:, FIG:, POSSIBLE:, NOTE:, VISITED:. Keep existing VISITED lines. Do NOT copy Decision Support, Legal movements, or Broadcast Rx Buffer."
+    "rationale": "Rationale: Less than four sentences, why you chose to follow Decision Support recommendations or do something different.",
+    "action": "Action: Choose one of wait, move, broadcast.",
+    "action_move": "Direction: If action is move,choose ONLY from Legal moves.",
+    "action_broadcast": "Message: If action is broadcast, send the JSON coverage plan on the first turn. Otherwise send a brief update only when co-located drones need it.",
+    "memory_update": "Memory: Store any information relevant for future decisions."
   },
   "campaign": {
     "name": "mt_full_rerun",
@@ -85,7 +85,7 @@
     "smoke_seed_limit": 2,
     "smoke_skip_optuna": false,
     "smoke_skip_lora": false,
-    "smoke_watchdog_timeout_s": 1800,
+    "smoke_watchdog_timeout_s": 3600,
     "smoke_output_dir": "campaign_runs/mt_full_rerun_smoke",
     "smoke_reproducibility": {
       "enabled": true,
@@ -99,15 +99,15 @@
     "fresh_output": true,
     "stop_on_error": true,
     "stop_on_watchdog_abort": false,
-    "campaign_watchdog_timeout_s": 1800,
+    "campaign_watchdog_timeout_s": 3600,
     "watchdog_timeout_by_lab": {
-      "L2.2": 1800,
-      "L3.0": 1800,
-      "L3.1": 1800
+      "L2.2": 3600,
+      "L3.0": 3600,
+      "L3.1": 3600
     },
     "watchdog_timeout_by_model": {
-      "deepseek-r1:32b": 1800,
-      "corasat-l13-lora": 1800
+      "deepseek-r1:32b": 3600,
+      "corasat-l13-lora": 3600
     },
     "seed_list": {
       "first_seed": 1,

@@ -214,6 +214,7 @@ def _evaluate_trial(
     seeds: List[int],
     seed_weights: Dict[int, float],
     max_rounds: Optional[int],
+    tune_without_lm: bool,
     log_writer: csv.DictWriter,
     weight_display: str,
 ) -> float:
@@ -224,6 +225,9 @@ def _evaluate_trial(
         cfg = copy.deepcopy(base_config)
         cfg.setdefault("simulation", {})["seed_list"] = [seed]
         cfg["simulation"]["use_gui"] = False
+        if tune_without_lm:
+            cfg.setdefault("simulation", {})["use_language_model"] = False
+            cfg.setdefault("decision_support", {})["enabled"] = True
         if max_rounds is not None:
             cfg["simulation"]["max_rounds"] = max_rounds
         for key, value in params.items():
@@ -288,6 +292,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--no-prune", action="store_true", help="Disable pruning.")
     parser.add_argument("--no-apply-best", action="store_true", help="Do not write best params back to config.json.")
+    parser.add_argument(
+        "--tune-without-lm",
+        action="store_true",
+        help="Tune decision-support weights with language-model policy disabled (DS-only objective).",
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -362,6 +371,7 @@ def main() -> int:
                     seeds,
                     seed_weights,
                     max_rounds,
+                    args.tune_without_lm,
                     writer,
                     weight_display,
                 )
@@ -373,9 +383,7 @@ def main() -> int:
 
             study.optimize(_objective, n_trials=args.trials)
     finally:
-        cfg = _load_config(config_path)
-        cfg.setdefault("simulation", {})["seed_list"] = original_cfg.get("simulation", {}).get("seed_list", [])
-        cfg["simulation"]["use_gui"] = original_cfg.get("simulation", {}).get("use_gui", True)
+        cfg = copy.deepcopy(original_cfg)
         if not args.no_apply_best and best_params:
             for key, value in best_params.items():
                 _set_path(cfg, key, float(value))

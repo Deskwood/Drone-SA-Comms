@@ -916,6 +916,8 @@ def _build_optuna_args(optuna_cfg: Dict[str, Any]) -> List[str]:
         args.append("--no-prune")
     if bool(optuna_cfg.get("no_apply_best", False)):
         args.append("--no-apply-best")
+    if bool(optuna_cfg.get("tune_without_lm", False)):
+        args.append("--tune-without-lm")
     if bool(optuna_cfg.get("verbose", False)):
         args.append("--verbose")
     return args

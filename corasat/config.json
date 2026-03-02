@@ -517,7 +517,7 @@
         "label": "L2.3 [R3,P3,DS3,M2,FT0,A3,C0]",
         "parent_lab": "L2.2",
         "changed_item": "optuna",
-        "notes": "Runs Optuna optimization for the configured decision-support parameter space.",
+        "notes": "Runs Optuna optimization for decision-support parameters using a DS-only objective (LM disabled during tuning).",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS3",
@@ -529,10 +529,11 @@
           "enabled": true,
           "trials": 128,
           "seeds": "1-10",
-          "study_name": "mt_l2_3_optuna_strong",
+          "study_name": "mt_l2_3_optuna_ds_only",
           "sampler_seed": 1,
           "max_rounds": 32,
-          "no_prune": false
+          "no_prune": false,
+          "tune_without_lm": true
         },
         "lora": {
           "enabled": false,

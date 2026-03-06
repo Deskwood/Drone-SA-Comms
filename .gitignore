@@ -211,6 +211,7 @@ corasat/*_runs_*.csv
 corasat/archive/
 corasat/.lab_state/
 corasat/campaign_runs/
+corasat/runtime_logs/
 corasat/lora/output_*/
 corasat/lora/**/checkpoint-*/
 corasat/lora/experiments/**/mode_*/output/

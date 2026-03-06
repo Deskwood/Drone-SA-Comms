@@ -684,7 +684,6 @@ def export_campaign_artifacts(
     manifest_path: Path,
     logger: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, str]:
-    _ = master_config
     log = logger or print
 
     mt_cfg = campaign_cfg.get("mt_export", {}) if isinstance(campaign_cfg.get("mt_export"), dict) else {}
@@ -699,6 +698,10 @@ def export_campaign_artifacts(
 
     labs = campaign_cfg.get("labs", []) if isinstance(campaign_cfg.get("labs"), list) else []
     labs = [lab for lab in labs if isinstance(lab, dict) and bool(lab.get("enabled", True))]
+    seed_spec = campaign_cfg.get("seed_list")
+    if seed_spec in (None, "", {}):
+        sim_cfg = master_config.get("simulation", {}) if isinstance(master_config.get("simulation"), dict) else {}
+        seed_spec = sim_cfg.get("seed_list")
 
     result_rows = _read_csv_rows(results_path)
     lab_rows = _read_csv_rows(lab_results_path)
@@ -767,7 +770,7 @@ def export_campaign_artifacts(
             copied_results if copied_results.exists() else results_path,
             copied_lab_results if copied_lab_results.exists() else lab_results_path,
             labs,
-            campaign_cfg.get("seed_list"),
+            seed_spec,
         ),
     )
     outputs["campaign_overview"] = str(overview_path)

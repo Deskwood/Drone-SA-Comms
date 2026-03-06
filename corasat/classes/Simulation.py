@@ -1,6 +1,7 @@
 """Simulation orchestrator for Corasat games."""
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 import pprint
@@ -67,6 +68,8 @@ class Simulation:
         self.score = 0.0
         self.broadcast_count = 0
         self.wait_actions = 0
+        self.wait_reason_counts: Dict[str, int] = {}
+        self.wait_events: List[Dict[str, object]] = []
         self.total_actions = 0
         self.wait_rate: Optional[float] = None
         self.broadcast_rate: Optional[float] = None
@@ -82,6 +85,11 @@ class Simulation:
         self.completion_tokens_total = 0
         self.lm_total_tokens = 0
         self.lm_inference_time_s = 0.0
+        self.lm_parse_failures = 0
+        self.lm_request_failures = 0
+        self.lm_request_timeouts = 0
+        self.lm_last_error: Optional[str] = None
+        self.lm_error_events: List[Dict[str, object]] = []
         self.timeout_count = 0
         self.timeout_reason: Optional[str] = None
         self._metrics_finalized = False
@@ -118,6 +126,36 @@ class Simulation:
             self.completion_tokens_total += max(0, completion)
             self.lm_total_tokens = self.prompt_tokens_total + self.completion_tokens_total
             self.lm_inference_time_s += max(0.0, elapsed)
+
+    def record_lm_failure(
+        self,
+        kind: str,
+        detail: Optional[str] = None,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> None:
+        """Track recoverable LM failures for reporting and diagnostics."""
+        token = str(kind or "").strip().lower()
+        with self.state_lock:
+            if token == "parse_error":
+                self.lm_parse_failures += 1
+            elif token == "request_timeout":
+                self.lm_request_timeouts += 1
+                self.lm_request_failures += 1
+            else:
+                self.lm_request_failures += 1
+            if detail:
+                self.lm_last_error = str(detail)[:500]
+            event: Dict[str, object] = {
+                "timestamp": datetime.now().isoformat(),
+                "kind": token or "unknown",
+                "detail": str(detail or "")[:500],
+                "round": int(getattr(self, "round", 0) or 0),
+                "turn": int(getattr(self, "turn", 0) or 0),
+            }
+            if isinstance(metadata, dict):
+                for key, value in metadata.items():
+                    event[str(key)] = value
+            self.lm_error_events.append(event)
 
     def _board_center_cartesian(self) -> tuple:
         width = max(1, int(CONFIG.get("board", {}).get("width", 8)))
@@ -360,6 +398,8 @@ class Simulation:
             f"Wait actions: {self.wait_actions} / {self.total_actions} | "
             f"Visits: total={self.total_visits}, unique={self.unique_visits}, redundant={self.redundant_visits}"
         )
+        if self.wait_reason_counts:
+            LOGGER.log(f"Wait reasons: {json.dumps(self.wait_reason_counts, sort_keys=True)}")
 
         LOGGER.log("\nEdge summary:")
         correct_edges = []
@@ -404,6 +444,37 @@ class Simulation:
                     visited.add(tuple(pos))
         return total_visits, len(visited)
 
+    def _normalize_wait_reason(self, reason: Optional[str]) -> str:
+        token = str(reason or "").strip()
+        if not token:
+            return "unspecified_wait"
+        return token[:160]
+
+    def _record_wait_event(
+        self,
+        *,
+        drone_id: int,
+        reason: Optional[str],
+        rationale: Optional[str],
+        errors: Optional[List[str]],
+    ) -> None:
+        reason_token = self._normalize_wait_reason(reason)
+        self.wait_reason_counts[reason_token] = self.wait_reason_counts.get(reason_token, 0) + 1
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "round": int(getattr(self, "round", 0) or 0),
+            "turn": int(getattr(self, "turn", 0) or 0),
+            "drone_id": int(drone_id),
+            "reason": reason_token,
+            "rationale": str(rationale or "")[:300],
+            "errors": [str(item)[:300] for item in (errors or [])],
+        }
+        self.wait_events.append(event)
+        LOGGER.log(
+            f"Drone {drone_id} WAIT | reason={reason_token} | "
+            f"errors={event['errors']} | rationale={event['rationale']}"
+        )
+
     def _finalize_metrics(self) -> None:
         if self._metrics_finalized:
             return
@@ -412,6 +483,8 @@ class Simulation:
         if self.total_actions < expected_actions:
             missing = expected_actions - self.total_actions
             self.wait_actions += missing
+            autofill_key = "autofill_missing_turn"
+            self.wait_reason_counts[autofill_key] = self.wait_reason_counts.get(autofill_key, 0) + missing
             self.total_actions = expected_actions
         total_visits, unique_visits = self._compute_visit_metrics()
         self.total_visits = total_visits
@@ -508,21 +581,39 @@ class Simulation:
             rationale = outcome.get("rationale", "")
             self.post_info(f"Rationale: {rationale}")
 
-            for error in outcome.get("errors", []) or []:
+            errors = outcome.get("errors", []) or []
+            if not isinstance(errors, list):
+                errors = [str(errors)]
+            for error in errors:
                 self.post_info(error)
 
-            action = outcome.get("action", "wait")
+            action = str(outcome.get("action", "wait") or "wait").strip().lower()
+            wait_reason = str(outcome.get("wait_reason") or "").strip()
+            if action not in {"move", "broadcast", "wait"}:
+                wait_reason = wait_reason or f"invalid_action:{action or 'empty'}"
+                action = "wait"
+
+            moved = bool(outcome.get("moved"))
+            if action == "move" and not moved:
+                action = "wait"
+                wait_reason = wait_reason or "move_not_executed"
+                if not errors:
+                    errors = ["Move was not executed; action treated as wait."]
+
             self.total_actions += 1
             if action == "wait":
                 self.wait_actions += 1
+                self._record_wait_event(
+                    drone_id=drone.id,
+                    reason=wait_reason or "model_selected_wait",
+                    rationale=rationale,
+                    errors=errors,
+                )
             elif action == "broadcast":
                 self._broadcast_correct_sum += self.correct_edge_counter
             if action == "move":
                 direction = outcome.get("direction")
-                if outcome.get("moved"):
-                    self.post_info(f"Move {direction} to {cartesian_to_chess(drone.position)}")
-                else:
-                    self.post_info("Wait")
+                self.post_info(f"Move {direction} to {cartesian_to_chess(drone.position)}")
             elif action == "broadcast":
                 msg = outcome.get("broadcast_message") or ""
                 if not msg:
@@ -531,7 +622,7 @@ class Simulation:
                     self.post_info("Broadcast")
                 self.post_info(msg or "<no message>")
             else:
-                self.post_info("Wait")
+                self.post_info(f"Wait ({wait_reason or 'model_selected_wait'})")
 
             if action != "broadcast" and bool(outcome.get("free_broadcast")):
                 self._broadcast_correct_sum += self.correct_edge_counter
@@ -542,6 +633,15 @@ class Simulation:
             self.post_info("\n")
         except Exception as exc:
             LOGGER.log(f"Error finishing Drone {drone.id}'s turn: {exc}")
+            self.total_actions += 1
+            self.wait_actions += 1
+            self._record_wait_event(
+                drone_id=drone.id,
+                reason="turn_exception",
+                rationale="",
+                errors=[str(exc)],
+            )
+            self.post_info(f"Wait (turn_exception: {exc})")
 
         self._thinking = False
         self._current_future = None

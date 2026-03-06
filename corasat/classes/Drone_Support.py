@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 import json
 import math
 import os
+from pathlib import Path
 import random
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -30,6 +33,39 @@ def _optional_config_value(mapping: Any, key: str, default: Any = None) -> Any:
     if isinstance(mapping, dict) and key in mapping:
         return mapping[key]
     return default
+
+
+def _json_safe(value: Any) -> Any:
+    try:
+        json.dumps(value, ensure_ascii=True)
+        return value
+    except Exception:
+        return str(value)
+
+
+def _append_lm_trace_event(drone: "_Drone", event: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    trace_raw = os.environ.get("CORASAT_LM_TRACE_FILE", "").strip()
+    if not trace_raw:
+        return
+    trace_path = Path(trace_raw)
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    sim = getattr(drone, "sim", None)
+    base: Dict[str, Any] = {
+        "timestamp": datetime.now().isoformat(),
+        "event": str(event or "").strip().lower(),
+        "campaign": os.environ.get("CORASAT_TRACE_CAMPAIGN", ""),
+        "lab_id": os.environ.get("CORASAT_TRACE_LAB_ID", ""),
+        "seed": getattr(sim, "seed", None) if sim else None,
+        "round": int(getattr(sim, "round", 0) or 0) if sim else 0,
+        "turn": int(getattr(sim, "turn", 0) or 0) if sim else 0,
+        "drone_id": int(getattr(drone, "id", 0) or 0),
+        "model": str(getattr(drone, "model", "") or ""),
+    }
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            base[str(key)] = _json_safe(value)
+    with trace_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(base, ensure_ascii=True) + "\n")
 
 
 def _board_center_cartesian() -> Tuple[int, int]:
@@ -1643,6 +1679,40 @@ class _Drone_Language_Model:
             return sim_seed * 1009 + drone_id * 9176
         return sim_seed * 1000003 + drone_id * 9176 + round_id
 
+    def _ollama_request_timeout_s(self) -> Optional[float]:
+        sim_cfg = CONFIG.get("simulation", {})
+        raw = _optional_config_value(sim_cfg, "ollama_request_timeout_s", None)
+        if raw in (None, ""):
+            return None
+        try:
+            timeout_s = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if timeout_s <= 0:
+            return None
+        return timeout_s
+
+    def _ollama_max_output_tokens(self) -> Optional[int]:
+        sim_cfg = CONFIG.get("simulation", {})
+        raw = _optional_config_value(sim_cfg, "ollama_max_output_tokens", None)
+        if raw in (None, ""):
+            return None
+        try:
+            token_budget = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if token_budget <= 0:
+            return None
+        return token_budget
+
+    def _record_lm_failure(self, kind: str, detail: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        recorder = getattr(self.drone.sim, "record_lm_failure", None)
+        if callable(recorder):
+            try:
+                recorder(kind=kind, detail=detail, metadata=metadata if isinstance(metadata, dict) else None)
+            except Exception:
+                pass
+
     def _use_language_model(self) -> bool:
         sim_cfg = CONFIG.get("simulation", {})
         explicit = sim_cfg.get("use_language_model", None)
@@ -1690,6 +1760,7 @@ class _Drone_Language_Model:
                 "rationale": "No legal move available.",
                 "action": "wait",
                 "memory": "NOTE: seeded_random_policy_wait",
+                "wait_reason": "no_legal_moves",
             }
 
         rng = self._seeded_policy_rng()
@@ -1742,6 +1813,7 @@ class _Drone_Language_Model:
             else:
                 response["action"] = "wait"
                 response["rationale"] = "Decision-support move lacked direction; waiting."
+                response["wait_reason"] = "decision_support_missing_direction"
         elif action == "broadcast":
             suggestion = snapshot.get("coordination_suggestion") if isinstance(snapshot, dict) else None
             if isinstance(suggestion, dict) and suggestion.get("plan"):
@@ -1750,6 +1822,7 @@ class _Drone_Language_Model:
                 response["message"] = "Decision-support baseline broadcast."
         else:
             response["action"] = "wait"
+            response["wait_reason"] = "decision_support_selected_wait"
 
         return response
 
@@ -1784,7 +1857,7 @@ class _Drone_Language_Model:
             return self._append_policy_message(messages, payload, prompt_char_len)
 
         try:
-            from ollama import chat as ollama_chat
+            from ollama import Client as OllamaClient
         except Exception as exc:
             LOGGER.log(f"Ollama unavailable: {exc}")
             raise
@@ -1794,15 +1867,74 @@ class _Drone_Language_Model:
         ollama_seed = self._ollama_seed()
         if ollama_seed is not None:
             options["seed"] = int(ollama_seed)
-        response = ollama_chat(
-            model=self.model,
-            messages=messages,
-            stream=False,
-            format="json",
-            options=options,
+        max_output_tokens = self._ollama_max_output_tokens()
+        if max_output_tokens is not None:
+            options["num_predict"] = int(max_output_tokens)
+
+        request_timeout_s = self._ollama_request_timeout_s()
+        _append_lm_trace_event(
+            self.drone,
+            "lm_request",
+            {
+                "request_timeout_s": request_timeout_s,
+                "options": options,
+                "messages": messages,
+            },
         )
+        client_kwargs: Dict[str, Any] = {}
+        if request_timeout_s is not None:
+            client_kwargs["timeout"] = request_timeout_s
+        client = OllamaClient(**client_kwargs) if client_kwargs else OllamaClient()
+        try:
+            response = client.chat(
+                model=self.model,
+                messages=messages,
+                stream=False,
+                format="json",
+                options=options,
+            )
+        except Exception as exc:
+            detail = str(exc)
+            lowered = detail.lower()
+            failure_kind = "request_timeout" if "timeout" in lowered else "request_error"
+            metadata = {
+                "drone_id": int(getattr(self.drone, "id", 0) or 0),
+                "model": str(self.model or ""),
+            }
+            self._record_lm_failure(failure_kind, detail, metadata=metadata)
+            _append_lm_trace_event(
+                self.drone,
+                "lm_request_error",
+                {
+                    "kind": failure_kind,
+                    "error": detail,
+                    "request_timeout_s": request_timeout_s,
+                    "options": options,
+                },
+            )
+            LOGGER.log(f"Drone {self.drone.id} LM request failed: {detail}")
+            fallback_payload = {
+                "rationale": "LM request failed; defaulting to wait.",
+                "action": "wait",
+                "direction": None,
+                "message": None,
+                "memory": "NOTE: lm_request_failed",
+                "wait_reason": "lm_request_failed",
+            }
+            return self._append_policy_message(messages, fallback_payload, prompt_char_len)
         elapsed = time.perf_counter() - request_started
         content = response["message"]["content"]
+        _append_lm_trace_event(
+            self.drone,
+            "lm_response",
+            {
+                "response_content": content,
+                "prompt_eval_count": response.get("prompt_eval_count"),
+                "eval_count": response.get("eval_count"),
+                "eval_duration": response.get("eval_duration"),
+                "elapsed_s": elapsed,
+            },
+        )
         messages.append({"role": "assistant", "content": content})
         prompt_tokens = response.get("prompt_eval_count")
         completion_tokens = response.get("eval_count")
@@ -1890,6 +2022,61 @@ class _Drone_Aftermath:
                 return str(value)
         return str(value)
 
+    def _max_response_chars(self) -> int:
+        sim_cfg = CONFIG.get("simulation", {})
+        raw = _optional_config_value(sim_cfg, "lm_response_max_chars", 12000)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = 12000
+        return max(1000, value)
+
+    def _parse_json_payload(self, raw_content: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        text = str(raw_content or "").strip()
+        if not text:
+            return None, "empty_response"
+
+        variants: List[str] = [text]
+        fenced_blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, flags=re.IGNORECASE | re.DOTALL)
+        for block in fenced_blocks:
+            candidate = block.strip()
+            if candidate:
+                variants.append(candidate)
+
+        decoder = json.JSONDecoder()
+        last_error = ""
+        for candidate in variants:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed, None
+                last_error = f"json_root_not_object:{type(parsed).__name__}"
+            except Exception as exc:
+                last_error = str(exc)
+
+            starts: List[int] = []
+            if candidate:
+                starts.append(0)
+            first_obj = candidate.find("{")
+            if first_obj >= 0 and first_obj not in starts:
+                starts.append(first_obj)
+            cursor = first_obj
+            while cursor >= 0 and len(starts) < 12:
+                cursor = candidate.find("{", cursor + 1)
+                if cursor >= 0 and cursor not in starts:
+                    starts.append(cursor)
+
+            for start in starts:
+                snippet = candidate[start:]
+                try:
+                    parsed, _end = decoder.raw_decode(snippet)
+                except Exception:
+                    continue
+                if isinstance(parsed, dict):
+                    return parsed, None
+
+        return None, last_error or "invalid_json"
+
     @contextmanager
     def _state_guard(self):
         lock = getattr(self.drone.sim, "state_lock", None)
@@ -1908,6 +2095,9 @@ class _Drone_Aftermath:
         errors: List[str] = []
         if parse_error:
             errors.append(parse_error)
+        wait_reason = self._normalize_token(result.get("wait_reason")).strip()
+        if parse_error and not wait_reason:
+            wait_reason = "lm_parse_error"
 
         policy_mode = "llm"
         try:
@@ -1969,6 +2159,8 @@ class _Drone_Aftermath:
                     result["action"] = "wait"
                     if not result.get("rationale"):
                         result["rationale"] = "Holding rendezvous for final coordination."
+                    if not result.get("wait_reason"):
+                        result["wait_reason"] = "rendezvous_hold"
 
         action = self._normalize_token(result.get("action") or "wait").strip().lower()
         rationale = self._normalize_text(result.get("rationale")).strip()
@@ -1985,12 +2177,24 @@ class _Drone_Aftermath:
             moved, move_error = self._execute_move(direction)
             if move_error:
                 errors.append(move_error)
+                action = "wait"
+                direction = None
+                if not wait_reason:
+                    wait_reason = "invalid_move_response"
         elif action == "broadcast":
             broadcast_message, broadcast_payload, broadcast_error = self._execute_broadcast(result.get("message"))
             if broadcast_error:
                 errors.append(broadcast_error)
         else:
+            if not wait_reason:
+                if action:
+                    wait_reason = f"invalid_or_wait_action:{action}"
+                else:
+                    wait_reason = "missing_action"
             action = "wait"
+
+        if action == "wait" and not wait_reason:
+            wait_reason = "model_selected_wait"
 
         # In free-channel communication modes, non-broadcast actions can still share intel.
         if action != "broadcast" and _communication_free_channel_enabled():
@@ -2027,6 +2231,7 @@ class _Drone_Aftermath:
             "rationale": rationale,
             "position": self.drone.position,
             "moved": moved,
+            "wait_reason": wait_reason,
             "errors": errors,
             "decision_support": decision_snapshot,
         }
@@ -2038,10 +2243,53 @@ class _Drone_Aftermath:
     def _parse_messages(self, messages: Optional[List[dict]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         if not messages:
             return None, "ERROR: Empty model response; defaulting to wait."
+        assistant_raw = messages[-1].get("content", "") if isinstance(messages[-1], dict) else ""
+        assistant_content = self._normalize_text(assistant_raw)
+        content_len = len(assistant_content)
+        response_max_chars = self._max_response_chars()
+        parsed, parse_detail = self._parse_json_payload(assistant_content)
+        if isinstance(parsed, dict):
+            return parsed, None
+
+        parse_reason = parse_detail or "invalid_json"
+        if content_len > response_max_chars:
+            parse_reason = (
+                f"response_too_long:{content_len}_chars; "
+                f"max_allowed={response_max_chars}; parse_detail={parse_reason}"
+            )
         try:
-            return json.loads(messages[-1]["content"]), None
-        except Exception as exc:
-            LOGGER.log(f"Drone {self.drone.id} response parse failed: {exc}")
+            recorder = getattr(self.drone.sim, "record_lm_failure", None)
+            if callable(recorder):
+                try:
+                    recorder(
+                        kind="parse_error",
+                        detail=parse_reason,
+                        metadata={
+                            "drone_id": int(getattr(self.drone, "id", 0) or 0),
+                            "model": str(getattr(self.drone, "model", "") or ""),
+                            "content_length": content_len,
+                            "max_response_chars": response_max_chars,
+                        },
+                    )
+                except Exception:
+                    pass
+            _append_lm_trace_event(
+                self.drone,
+                "lm_parse_error",
+                {
+                    "error": parse_reason,
+                    "content_length": content_len,
+                    "max_response_chars": response_max_chars,
+                    "assistant_content": assistant_content[:4000],
+                },
+            )
+            LOGGER.log(
+                "Drone "
+                f"{self.drone.id} response parse failed: {parse_reason} "
+                f"(content_length={content_len})"
+            )
+            return None, "ERROR: Invalid or oversized JSON response; defaulting to wait."
+        except Exception:
             return None, "ERROR: Invalid JSON response; defaulting to wait."
 
     def _execute_move(self, direction: str) -> Tuple[bool, Optional[str]]:

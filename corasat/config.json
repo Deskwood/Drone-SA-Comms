@@ -26,7 +26,10 @@
     "communication_id": "C0",
     "communication_mode": "co_located_action_cost",
     "ollama_seeded": true,
-    "ollama_seed_mode": "simulation_round"
+    "ollama_seed_mode": "simulation_round",
+    "ollama_request_timeout_s": 300,
+    "ollama_max_output_tokens": 384,
+    "lm_response_max_chars": 12000
   },
   "gui": {
     "cell_size": 80,

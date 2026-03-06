@@ -250,10 +250,12 @@ def persist_run_results(run_exports: List[Dict[str, Any]]) -> None:
     if not run_exports:
         return
     commit_sha = _safe_commit_sha()
-    logfile = getattr(LOGGER, "log_path", None)
-    logfile_entry = _format_logfile_entry(logfile)
     rows: List[Dict[str, Any]] = []
     for entry in run_exports:
+        entry_logfile = entry.get("logfile")
+        if entry_logfile in (None, ""):
+            entry_logfile = getattr(LOGGER, "log_path", None)
+        logfile_entry = _format_logfile_entry(entry_logfile)
         sim = entry.get("sim")
         config = entry.get("config")
         seed = entry.get("seed")

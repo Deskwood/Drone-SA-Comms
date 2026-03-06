@@ -97,6 +97,9 @@ LAB_RESULTS_FIELDS = [
     "total_completion_tokens",
     "total_lm_tokens",
     "total_lm_inference_time_s",
+    "total_lm_parse_failures",
+    "total_lm_request_failures",
+    "total_lm_request_timeouts",
     "total_runtime_s",
     "mean_runtime_s",
     "runtime_config",
@@ -116,6 +119,7 @@ ERROR_SUMMARY_FIELDS = [
     "runtime_config",
     "seed_report_path",
     "logfile",
+    "lm_trace_log",
 ]
 
 REPRO_COMPARE_FIELDS = [
@@ -130,6 +134,32 @@ REPRO_COMPARE_FIELDS = [
 ]
 
 PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z0-9_]+)(?::([^}]+))?\}")
+
+LM_CONVERSATION_OVERVIEW_FIELDS = [
+    "timestamp",
+    "campaign",
+    "lab_id",
+    "label",
+    "seed",
+    "status",
+    "seed_outcome",
+    "conversation_log",
+    "simulation_log",
+    "runtime_config",
+    "rounds",
+    "mission_score",
+    "norm_score",
+    "prompt_tokens_total",
+    "completion_tokens_total",
+    "lm_total_tokens",
+    "lm_inference_time_s",
+    "lm_parse_failures",
+    "lm_request_failures",
+    "lm_request_timeouts",
+    "lm_last_error",
+    "abort_reason",
+    "error",
+]
 
 
 def _init_logger():
@@ -219,6 +249,24 @@ def _write_csv(path: Path, fieldnames: Sequence[str], rows: Sequence[Dict[str, A
             writer.writerow({field: row.get(field, "") for field in fieldnames})
 
 
+def _upsert_csv_row(
+    path: Path,
+    *,
+    fieldnames: Sequence[str],
+    row: Dict[str, Any],
+    key_fields: Sequence[str],
+) -> None:
+    existing = _read_csv_rows(path)
+    key = tuple(str(row.get(field, "")) for field in key_fields)
+    filtered: List[Dict[str, Any]] = []
+    for item in existing:
+        item_key = tuple(str(item.get(field, "")) for field in key_fields)
+        if item_key != key:
+            filtered.append(item)
+    filtered.append({field: row.get(field, "") for field in fieldnames})
+    _write_csv(path, fieldnames, filtered)
+
+
 def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
     if not path.exists():
         return []
@@ -235,6 +283,112 @@ def _append_text_log(path: Path, message: str, include_timestamps: bool) -> None
         line = message
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
+
+
+def _sanitize_filename_token(value: str, max_len: int = 48) -> str:
+    token = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "").strip())
+    token = token.strip("-")
+    if not token:
+        token = "na"
+    return token[:max(8, int(max_len))]
+
+
+def _lab_config_tag(ids: Dict[str, str]) -> str:
+    ordered_keys = [
+        "rules_id",
+        "prompt_id",
+        "drone_support_id",
+        "model_id",
+        "fine_tuning_id",
+        "action_policy_id",
+        "communication_id",
+    ]
+    parts: List[str] = []
+    for key in ordered_keys:
+        value = str(ids.get(key) or "").strip().upper()
+        if value:
+            parts.append(value)
+    return "-".join(parts) if parts else "CFG"
+
+
+def _build_lab_log_stem(lab_id: str, ids: Dict[str, str], idea: str) -> str:
+    lab_token = _sanitize_filename_token(lab_id, max_len=16)
+    config_token = _sanitize_filename_token(_lab_config_tag(ids), max_len=48)
+    idea_token = _sanitize_filename_token(idea, max_len=40)
+    return f"{lab_token}__{config_token}__{idea_token}"
+
+
+def _seed_outcome_tag(run_entry: Dict[str, Any]) -> str:
+    status = str(run_entry.get("status") or "ok").strip().lower()
+    if status != "ok":
+        return "FAIL"
+    sim = run_entry.get("sim")
+    if sim is None:
+        return "FAIL"
+    parse_failures = int(getattr(sim, "lm_parse_failures", 0) or 0)
+    request_failures = int(getattr(sim, "lm_request_failures", 0) or 0)
+    request_timeouts = int(getattr(sim, "lm_request_timeouts", 0) or 0)
+    if parse_failures > 0 or request_failures > 0 or request_timeouts > 0:
+        return "FAIL"
+    return "PASS"
+
+
+def _rename_with_outcome_tag(path: Path, outcome_tag: str) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    if stem.endswith("__PASS") or stem.endswith("__FAIL"):
+        stem = stem.rsplit("__", 1)[0]
+    target = path.with_name(f"{stem}__{outcome_tag}{path.suffix}")
+    if target.exists() and target != path:
+        target.unlink()
+    if target != path:
+        try:
+            path.replace(target)
+        except PermissionError:
+            try:
+                shutil.copy2(path, target)
+            except Exception:
+                return path
+    return target
+
+
+def _finalize_seed_artifacts(
+    run_entry: Dict[str, Any],
+    *,
+    lm_trace_tmp_path: Optional[Path],
+) -> Dict[str, Any]:
+    outcome_tag = _seed_outcome_tag(run_entry)
+    run_entry["seed_outcome"] = outcome_tag
+
+    logfile_raw = str(run_entry.get("logfile") or "").strip()
+    if logfile_raw:
+        logfile_path = Path(logfile_raw)
+        if logfile_path.exists():
+            renamed_log = _rename_with_outcome_tag(logfile_path, outcome_tag)
+            run_entry["logfile"] = str(renamed_log)
+
+    if lm_trace_tmp_path is None:
+        run_entry["lm_trace_log"] = ""
+        return run_entry
+
+    final_name = lm_trace_tmp_path.name
+    suffix = ".inprogress.jsonl"
+    if final_name.endswith(suffix):
+        final_name = final_name[: -len(suffix)] + f"__{outcome_tag}.jsonl"
+    else:
+        stem = lm_trace_tmp_path.stem
+        final_name = f"{stem}__{outcome_tag}{lm_trace_tmp_path.suffix}"
+    final_path = lm_trace_tmp_path.with_name(final_name)
+    if final_path.exists() and final_path != lm_trace_tmp_path:
+        final_path.unlink()
+    if lm_trace_tmp_path.exists() and final_path != lm_trace_tmp_path:
+        lm_trace_tmp_path.replace(final_path)
+    elif lm_trace_tmp_path.exists():
+        final_path = lm_trace_tmp_path
+
+    run_entry["lm_trace_log"] = str(final_path)
+    return run_entry
 
 
 def _resolve_config_path(config_path: str) -> Path:
@@ -564,8 +718,52 @@ def _run_entry_to_seed_report(
         "completion_tokens_total": getattr(sim, "completion_tokens_total", 0) if sim else 0,
         "lm_total_tokens": getattr(sim, "lm_total_tokens", 0) if sim else 0,
         "lm_inference_time_s": getattr(sim, "lm_inference_time_s", 0.0) if sim else 0.0,
+        "lm_parse_failures": getattr(sim, "lm_parse_failures", 0) if sim else 0,
+        "lm_request_failures": getattr(sim, "lm_request_failures", 0) if sim else 0,
+        "lm_request_timeouts": getattr(sim, "lm_request_timeouts", 0) if sim else 0,
+        "lm_last_error": getattr(sim, "lm_last_error", "") if sim else "",
+        "lm_error_events": list(getattr(sim, "lm_error_events", []) or []) if sim else [],
+        "wait_reason_counts": dict(getattr(sim, "wait_reason_counts", {}) or {}) if sim else {},
+        "wait_event_count": len(getattr(sim, "wait_events", []) or []) if sim else 0,
+        "lm_trace_log": run_entry.get("lm_trace_log") or "",
+        "seed_outcome": run_entry.get("seed_outcome") or "",
     }
     return report
+
+
+def _lm_overview_row_from_seed(
+    *,
+    campaign_name: str,
+    lab_id: str,
+    label: str,
+    runtime_config_path: Path,
+    seed_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "timestamp": seed_payload.get("timestamp", ""),
+        "campaign": campaign_name,
+        "lab_id": lab_id,
+        "label": label,
+        "seed": seed_payload.get("seed", ""),
+        "status": seed_payload.get("status", ""),
+        "seed_outcome": seed_payload.get("seed_outcome", ""),
+        "conversation_log": seed_payload.get("lm_trace_log", ""),
+        "simulation_log": seed_payload.get("logfile", ""),
+        "runtime_config": str(runtime_config_path),
+        "rounds": seed_payload.get("rounds", ""),
+        "mission_score": seed_payload.get("mission_score", ""),
+        "norm_score": seed_payload.get("norm_score", ""),
+        "prompt_tokens_total": seed_payload.get("prompt_tokens_total", 0),
+        "completion_tokens_total": seed_payload.get("completion_tokens_total", 0),
+        "lm_total_tokens": seed_payload.get("lm_total_tokens", 0),
+        "lm_inference_time_s": seed_payload.get("lm_inference_time_s", 0.0),
+        "lm_parse_failures": seed_payload.get("lm_parse_failures", 0),
+        "lm_request_failures": seed_payload.get("lm_request_failures", 0),
+        "lm_request_timeouts": seed_payload.get("lm_request_timeouts", 0),
+        "lm_last_error": seed_payload.get("lm_last_error", ""),
+        "abort_reason": seed_payload.get("abort_reason", ""),
+        "error": seed_payload.get("error", ""),
+    }
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -591,6 +789,9 @@ def _summarize_lab_seed_reports(seed_reports: Sequence[Dict[str, Any]]) -> Dict[
     completion_tokens = sum(int(item.get("completion_tokens_total") or 0) for item in ok_reports)
     lm_tokens = sum(int(item.get("lm_total_tokens") or 0) for item in ok_reports)
     lm_time = sum(float(item.get("lm_inference_time_s") or 0.0) for item in ok_reports)
+    lm_parse_failures = sum(int(item.get("lm_parse_failures") or 0) for item in seed_reports)
+    lm_request_failures = sum(int(item.get("lm_request_failures") or 0) for item in seed_reports)
+    lm_request_timeouts = sum(int(item.get("lm_request_timeouts") or 0) for item in seed_reports)
 
     failed_statuses = {"init_error", "run_error"}
     aborted_statuses = {"watchdog_abort", "user_abort"}
@@ -611,6 +812,9 @@ def _summarize_lab_seed_reports(seed_reports: Sequence[Dict[str, Any]]) -> Dict[
         "total_completion_tokens": int(completion_tokens),
         "total_lm_tokens": int(lm_tokens),
         "total_lm_inference_time_s": round(lm_time, 6),
+        "total_lm_parse_failures": int(lm_parse_failures),
+        "total_lm_request_failures": int(lm_request_failures),
+        "total_lm_request_timeouts": int(lm_request_timeouts),
     }
 
 
@@ -638,14 +842,51 @@ def run_seed(
     config_path: str,
     seed_log_dir: Optional[Path] = None,
     seed_log_file: str = "",
+    lm_trace_dir: Optional[Path] = None,
     include_timestamps: bool = True,
     context: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
     """Run a single seed and return (run_entry, abort_requested)."""
+    resolved_log_name = seed_log_file or f"seed_{seed}.log"
     if seed_log_dir is not None:
         seed_log_dir.mkdir(parents=True, exist_ok=True)
-        resolved_log_name = seed_log_file or f"seed_{seed}.log"
         _switch_shared_log_file(seed_log_dir, resolved_log_name, include_timestamps)
+
+    if context:
+        os.environ["CORASAT_TRACE_CAMPAIGN"] = str(context.get("campaign", ""))
+        os.environ["CORASAT_TRACE_LAB_ID"] = str(context.get("lab_id", ""))
+    else:
+        os.environ["CORASAT_TRACE_CAMPAIGN"] = ""
+        os.environ["CORASAT_TRACE_LAB_ID"] = ""
+    os.environ["CORASAT_TRACE_SEED"] = "" if seed is None else str(seed)
+
+    lm_trace_tmp_path: Optional[Path] = None
+    if lm_trace_dir is not None:
+        lm_trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_stem = Path(resolved_log_name).stem
+        lm_trace_tmp_path = lm_trace_dir / f"{trace_stem}.lmtrace.inprogress.jsonl"
+        if lm_trace_tmp_path.exists():
+            lm_trace_tmp_path.unlink()
+        lm_trace_tmp_path.touch()
+        os.environ["CORASAT_LM_TRACE_FILE"] = str(lm_trace_tmp_path)
+    else:
+        os.environ.pop("CORASAT_LM_TRACE_FILE", None)
+
+    def _finalize(run_entry: Dict[str, Any], abort_requested: bool) -> Tuple[Optional[Dict[str, Any]], bool]:
+        fallback_log_dir_raw = os.environ.get("CORASAT_LOG_DIR", "").strip()
+        fallback_log_dir = Path(fallback_log_dir_raw) if fallback_log_dir_raw else (seed_log_dir or CORASAT_ROOT / "logs")
+        _switch_shared_log_file(
+            fallback_log_dir,
+            "_campaign_runtime.log",
+            include_timestamps,
+        )
+        finalized = _finalize_seed_artifacts(
+            run_entry,
+            lm_trace_tmp_path=lm_trace_tmp_path,
+        )
+        _persist_results(finalized)
+        os.environ.pop("CORASAT_LM_TRACE_FILE", None)
+        return finalized, abort_requested
 
     _log(f"==== Running seed {seed} (game {game_index}/{total_games}) ====")
     _set_global_seed(seed)
@@ -665,8 +906,7 @@ def run_seed(
         }
         if context:
             run_entry["context"] = dict(context)
-        _persist_results(run_entry)
-        return run_entry, False
+        return _finalize(run_entry, False)
 
     _log("Launching simulation.")
     run_started = time.time()
@@ -677,6 +917,7 @@ def run_seed(
         run_success = True
     except KeyboardInterrupt:
         _log("Interrupted by user (Ctrl+C).")
+        os.environ.pop("CORASAT_LM_TRACE_FILE", None)
         raise
     except Exception as exc:
         run_error = str(exc)
@@ -703,8 +944,7 @@ def run_seed(
         }
         if context:
             run_entry["context"] = dict(context)
-        _persist_results(run_entry)
-        return run_entry, False
+        return _finalize(run_entry, False)
 
     if getattr(sim, "_watchdog_triggered", False):
         reason = getattr(sim, "_abort_reason", "") or "watchdog timeout"
@@ -726,8 +966,7 @@ def run_seed(
         }
         if context:
             run_entry["context"] = dict(context)
-        _persist_results(run_entry)
-        return run_entry, False
+        return _finalize(run_entry, False)
 
     if getattr(sim, "_abort_requested", False):
         reason = getattr(sim, "_abort_reason", "") or "GUI closed"
@@ -749,8 +988,7 @@ def run_seed(
         }
         if context:
             run_entry["context"] = dict(context)
-        _persist_results(run_entry)
-        return run_entry, True
+        return _finalize(run_entry, True)
 
     runtime_s = time.time() - run_started
     sim_runtime = getattr(sim, "runtime_s", None)
@@ -767,8 +1005,7 @@ def run_seed(
     }
     if context:
         run_entry["context"] = dict(context)
-    _persist_results(run_entry)
-    return run_entry, False
+    return _finalize(run_entry, False)
 
 
 def _build_lab_runtime_config(
@@ -1570,19 +1807,25 @@ def _run_campaign(
     )
     _set_shared_logger_timestamp_mode(include_timestamps)
     repro_cfg = _reproducibility_cfg(campaign_cfg)
+    runtime_logs_root = (CORASAT_ROOT / "runtime_logs" / output_dir.name).resolve()
 
     if fresh_output and output_dir.exists():
         _remove_tree(output_dir)
+    if fresh_output and runtime_logs_root.exists():
+        _remove_tree(runtime_logs_root)
     output_dir.mkdir(parents=True, exist_ok=True)
+    runtime_logs_root.mkdir(parents=True, exist_ok=True)
 
     results_path = output_dir / "results.csv"
     lab_results_path = output_dir / "lab_results.csv"
     campaign_log_path = output_dir / "campaign.log"
     runtime_dir = output_dir / "runtime_configs"
     labs_root = output_dir / "labs"
+    lm_error_summary_csv = runtime_logs_root / "lm_error_summary.csv"
+    _write_csv(lm_error_summary_csv, LM_CONVERSATION_OVERVIEW_FIELDS, [])
 
     os.environ["CORASAT_RESULTS_CSV"] = str(results_path)
-    os.environ["CORASAT_LOG_DIR"] = str(output_dir / "logs")
+    os.environ["CORASAT_LOG_DIR"] = str(runtime_logs_root / "shared_logs")
     os.environ["CORASAT_LOG_TIMESTAMPS"] = _bool_text(include_timestamps)
     os.environ["CORASAT_DETERMINISTIC_RUN_ID"] = _bool_text(bool(repro_cfg.get("deterministic_run_id", False)))
     repro_strict = bool(repro_cfg.get("set_deterministic_env", False))
@@ -1655,8 +1898,10 @@ def _run_campaign(
         "config_path": str(config_path),
         "started_at": datetime.now().astimezone().isoformat(),
         "output_dir": str(output_dir),
+        "runtime_logs_root": str(runtime_logs_root),
         "results_csv": str(results_path),
         "lab_results_csv": str(lab_results_path),
+        "lm_error_summary_csv": str(lm_error_summary_csv),
         "include_timestamps": include_timestamps,
         "seed_limit": int(seed_limit) if seed_limit is not None else None,
         "skip_optuna": bool(skip_optuna),
@@ -1672,6 +1917,12 @@ def _run_campaign(
         include_timestamps,
     )
     _append_text_log(campaign_log_path, f"Output dir: {output_dir}", include_timestamps)
+    _append_text_log(campaign_log_path, f"Runtime logs dir: {runtime_logs_root}", include_timestamps)
+    _append_text_log(
+        campaign_log_path,
+        f"LM error summary CSV: {lm_error_summary_csv}",
+        include_timestamps,
+    )
 
     lab_rows: List[Dict[str, Any]] = []
     lab_rows_by_id: Dict[str, Dict[str, Any]] = {}
@@ -1704,6 +1955,17 @@ def _run_campaign(
         lab_label = str(lab_cfg.get("label") or lab_id).strip()
         lab_notes = str(lab_cfg.get("notes") or "").strip()
         lab_fine_tuning_id = str(lab_cfg.get("fine_tuning_id") or "").strip().upper()
+        lab_config_ids = {
+            "rules_id": str(lab_cfg.get("rules_id") or "").strip().upper(),
+            "prompt_id": str(lab_cfg.get("prompt_id") or "").strip().upper(),
+            "drone_support_id": str(
+                lab_cfg.get("drone_support_id") or lab_cfg.get("decision_support_id") or ""
+            ).strip().upper(),
+            "model_id": str(lab_cfg.get("model_id") or "").strip().upper(),
+            "fine_tuning_id": str(lab_cfg.get("fine_tuning_id") or "").strip().upper(),
+            "action_policy_id": str(lab_cfg.get("action_policy_id") or "").strip().upper(),
+            "communication_id": str(lab_cfg.get("communication_id") or "").strip().upper(),
+        }
 
         if skip_lora and lab_fine_tuning_id == "FT1":
             _append_text_log(
@@ -1715,13 +1977,20 @@ def _run_campaign(
 
         lab_dir = labs_root / lab_id
         seeds_dir = lab_dir / "seed_reports"
-        seed_logs_dir = lab_dir / "seed_logs"
-        lab_log_path = lab_dir / "lab.log"
+        lab_runtime_logs_dir = runtime_logs_root / lab_id
+        seed_logs_dir = lab_runtime_logs_dir / "seed_logs"
+        lm_trace_dir = lab_runtime_logs_dir / "lm_conversations"
+        lab_log_stem = _build_lab_log_stem(lab_id, lab_config_ids, lab_notes or lab_label)
+        lab_log_path = lab_runtime_logs_dir / f"{lab_log_stem}.lab.log"
         lab_report_path = lab_dir / "lab_report.json"
-        lab_simulation_log_path = lab_dir / "lab_simulation.log"
+        lab_simulation_log_path = lab_runtime_logs_dir / f"{lab_log_stem}.sim.log"
         reference_lab_id = str(lab_cfg.get("reference_lab") or "").strip()
 
-        _append_text_log(campaign_log_path, f"[{lab_id}] start", include_timestamps)
+        _append_text_log(
+            campaign_log_path,
+            f"[{lab_id}] start | log={lab_log_path.name}",
+            include_timestamps,
+        )
         _append_text_log(lab_log_path, f"Lab {lab_id} started.", include_timestamps)
 
         if reference_lab_id:
@@ -1761,6 +2030,7 @@ def _run_campaign(
                 "runtime_config": str(runtime_config_path),
                 "lab_log": str(lab_log_path),
                 "lab_simulation_log": source_lab_sim_log,
+                "lm_error_summary_csv": str(lm_error_summary_csv),
                 "seed_reports": list(source_seed_reports) if isinstance(source_seed_reports, list) else [],
                 "metrics": source_metrics if isinstance(source_metrics, dict) else {},
             }
@@ -1783,6 +2053,9 @@ def _run_campaign(
                 "total_completion_tokens": source_row.get("total_completion_tokens"),
                 "total_lm_tokens": source_row.get("total_lm_tokens"),
                 "total_lm_inference_time_s": source_row.get("total_lm_inference_time_s"),
+                "total_lm_parse_failures": source_row.get("total_lm_parse_failures"),
+                "total_lm_request_failures": source_row.get("total_lm_request_failures"),
+                "total_lm_request_timeouts": source_row.get("total_lm_request_timeouts"),
                 "total_runtime_s": source_row.get("total_runtime_s"),
                 "mean_runtime_s": source_row.get("mean_runtime_s"),
                 "runtime_config": str(runtime_config_path),
@@ -1913,6 +2186,39 @@ def _run_campaign(
             for game_index, seed in enumerate(lab_seeds, start=1):
                 seed_log_name = f"{lab_id}_seed_{int(seed):04d}.log"
                 _append_text_log(lab_log_path, f"Seed {seed} started.", include_timestamps)
+                seed_log_path = seed_logs_dir / seed_log_name
+                seed_trace_stem = Path(seed_log_name).stem
+                seed_trace_inprogress = lm_trace_dir / f"{seed_trace_stem}.lmtrace.inprogress.jsonl"
+                _upsert_csv_row(
+                    lm_error_summary_csv,
+                    fieldnames=LM_CONVERSATION_OVERVIEW_FIELDS,
+                    row={
+                        "timestamp": datetime.now().astimezone().isoformat(),
+                        "campaign": campaign_name,
+                        "lab_id": lab_id,
+                        "label": lab_label,
+                        "seed": seed,
+                        "status": "running",
+                        "seed_outcome": "RUNNING",
+                        "conversation_log": str(seed_trace_inprogress),
+                        "simulation_log": str(seed_log_path),
+                        "runtime_config": str(runtime_config_path),
+                        "rounds": "",
+                        "mission_score": "",
+                        "norm_score": "",
+                        "prompt_tokens_total": 0,
+                        "completion_tokens_total": 0,
+                        "lm_total_tokens": 0,
+                        "lm_inference_time_s": 0.0,
+                        "lm_parse_failures": 0,
+                        "lm_request_failures": 0,
+                        "lm_request_timeouts": 0,
+                        "lm_last_error": "",
+                        "abort_reason": "",
+                        "error": "",
+                    },
+                    key_fields=("campaign", "lab_id", "seed"),
+                )
                 run_entry, abort_requested = run_seed(
                     seed,
                     game_index,
@@ -1920,6 +2226,7 @@ def _run_campaign(
                     config_path=str(runtime_config_path),
                     seed_log_dir=seed_logs_dir,
                     seed_log_file=seed_log_name,
+                    lm_trace_dir=lm_trace_dir,
                     include_timestamps=include_timestamps,
                     context={"campaign": campaign_name, "lab_id": lab_id},
                 )
@@ -1934,19 +2241,37 @@ def _run_campaign(
                     _write_json(seed_report_path, seed_payload)
                     seed_payload["seed_report_path"] = str(seed_report_path)
                     seed_reports.append(seed_payload)
+                    overview_row = _lm_overview_row_from_seed(
+                        campaign_name=campaign_name,
+                        lab_id=lab_id,
+                        label=lab_label,
+                        runtime_config_path=runtime_config_path,
+                        seed_payload=seed_payload,
+                    )
+                    _upsert_csv_row(
+                        lm_error_summary_csv,
+                        fieldnames=LM_CONVERSATION_OVERVIEW_FIELDS,
+                        row=overview_row,
+                        key_fields=("campaign", "lab_id", "seed"),
+                    )
 
                     status = str(seed_payload.get("status") or "ok")
                     norm_score = seed_payload.get("norm_score")
+                    parse_failures = int(seed_payload.get("lm_parse_failures") or 0)
+                    request_failures = int(seed_payload.get("lm_request_failures") or 0)
+                    timeout_failures = int(seed_payload.get("lm_request_timeouts") or 0)
                     if status == "ok" and isinstance(norm_score, (int, float)):
                         _append_text_log(
                             lab_log_path,
-                            f"Seed {seed} completed. norm_score={float(norm_score):.5f}",
+                            f"Seed {seed} completed. norm_score={float(norm_score):.5f} "
+                            f"(parse_failures={parse_failures}, request_failures={request_failures}, request_timeouts={timeout_failures})",
                             include_timestamps,
                         )
                     elif status == "ok":
                         _append_text_log(
                             lab_log_path,
-                            f"Seed {seed} completed. norm_score=n/a",
+                            f"Seed {seed} completed. norm_score=n/a "
+                            f"(parse_failures={parse_failures}, request_failures={request_failures}, request_timeouts={timeout_failures})",
                             include_timestamps,
                         )
                     else:
@@ -1964,6 +2289,7 @@ def _run_campaign(
                                 "runtime_config": str(runtime_config_path),
                                 "seed_report_path": str(seed_report_path),
                                 "logfile": str(seed_payload.get("logfile") or ""),
+                                "lm_trace_log": str(seed_payload.get("lm_trace_log") or ""),
                             }
                         )
                         _append_text_log(
@@ -1978,6 +2304,20 @@ def _run_campaign(
                                 f"{lab_id}: seed {seed} aborted by watchdog{suffix}. "
                                 "Increase watchdog timeout or reduce workload."
                             )
+                    _append_text_log(
+                        campaign_log_path,
+                        f"[{lab_id}] seed {game_index}/{total_games} (seed={seed}) status={status}"
+                        + (
+                            f", norm_score={float(norm_score):.5f}"
+                            if status == "ok" and isinstance(norm_score, (int, float))
+                            else ""
+                        )
+                        + (
+                            f", parse_failures={parse_failures}, request_failures={request_failures}, "
+                            f"request_timeouts={timeout_failures}"
+                        ),
+                        include_timestamps,
+                    )
 
                 if abort_requested:
                     _append_text_log(
@@ -2004,6 +2344,7 @@ def _run_campaign(
                 "runtime_config": str(runtime_config_path),
                 "lab_log": str(lab_log_path),
                 "lab_simulation_log": str(lab_simulation_log_path),
+                "lm_error_summary_csv": str(lm_error_summary_csv),
                 "seed_reports": [item.get("seed_report_path", "") for item in seed_reports],
                 "metrics": summary,
             }
@@ -2026,6 +2367,9 @@ def _run_campaign(
                 "total_completion_tokens": summary["total_completion_tokens"],
                 "total_lm_tokens": summary["total_lm_tokens"],
                 "total_lm_inference_time_s": summary["total_lm_inference_time_s"],
+                "total_lm_parse_failures": summary["total_lm_parse_failures"],
+                "total_lm_request_failures": summary["total_lm_request_failures"],
+                "total_lm_request_timeouts": summary["total_lm_request_timeouts"],
                 "total_runtime_s": summary["total_runtime_s"],
                 "mean_runtime_s": summary["mean_runtime_s"],
                 "runtime_config": str(runtime_config_path),
@@ -2058,6 +2402,7 @@ def _run_campaign(
                     "runtime_config": "",
                     "seed_report_path": "",
                     "logfile": str(lab_log_path),
+                    "lm_trace_log": "",
                 }
             )
             _persist_error_summary()
@@ -2083,6 +2428,9 @@ def _run_campaign(
             sum(float(row.get("total_lm_inference_time_s") or 0.0) for row in lab_rows),
             6,
         ),
+        "total_lm_parse_failures": sum(int(row.get("total_lm_parse_failures") or 0) for row in lab_rows),
+        "total_lm_request_failures": sum(int(row.get("total_lm_request_failures") or 0) for row in lab_rows),
+        "total_lm_request_timeouts": sum(int(row.get("total_lm_request_timeouts") or 0) for row in lab_rows),
         "total_runtime_s": round(sum(float(row.get("total_runtime_s") or 0.0) for row in lab_rows), 6),
     }
 

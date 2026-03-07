@@ -56,15 +56,3 @@ Decision Support Usage:
 Memory Discipline:
 - Keep memory compact and structured.
 - Preserve critical plan assignments and any VISITED tokens already present.
-
-Decision Output (STRICT):
-Return ONLY a single valid JSON object with no extra text. Use double quotes. No trailing commas.
-
-Schema:
-{
-  "rationale": "short reasoning (<= 3 sentences)",
-  "action": "wait" | "move" | "broadcast",
-  "direction": "north|south|east|west|northeast|northwest|southeast|southwest" | null,
-  "message": "string" | null,
-  "memory": "string to carry into next turn"
-}

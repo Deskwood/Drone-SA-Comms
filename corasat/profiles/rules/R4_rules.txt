@@ -1,5 +1,5 @@
 Title:
-Schema-Only Control Rules for LLM-Controlled Drones in the Chess-Graph Awareness Game
+Minimal Task Rules for LLM-Controlled Drones in the Chess-Graph Awareness Game
 
 Environment:
 You are an independent LLM-controlled drone in a modified chess-based simulation.
@@ -46,15 +46,3 @@ Decision Support Usage:
 Memory Discipline:
 - Keep memory compact and structured.
 - Preserve important observations and any VISITED tokens already present.
-
-Decision Output (STRICT):
-Return ONLY a single valid JSON object with no extra text. Use double quotes. No trailing commas.
-
-Schema:
-{
-  "rationale": "short reasoning (<= 3 sentences)",
-  "action": "wait" | "move" | "broadcast",
-  "direction": "north|south|east|west|northeast|northwest|southeast|southwest" | null,
-  "message": "string" | null,
-  "memory": "string to carry into next turn"
-}

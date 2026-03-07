@@ -16,6 +16,13 @@ Each lab is a compact tuple of profile IDs:
 - `model_id` (`M*`)
 - `fine_tuning_id` (`FT*`)
 - `action_policy_id` (`A*`)
+- `communication_id` (`C*`)
+
+Additional lab graph fields:
+- `parent_lab`: Declared parent for one-change-at-a-time comparisons.
+- `reference_lab`: Reuse an earlier lab's results without rerunning the simulation.
+- `changed_item`: Human-readable marker for the intended intervention.
+- `evaluate_runtime`: Optional flag for preparation-only labs that run setup steps without executing seeds.
 
 Optional per-lab execution blocks:
 - `optuna.enabled`
@@ -23,14 +30,21 @@ Optional per-lab execution blocks:
 
 ## Runtime flow (`main.py`)
 1. Load `config.json`.
-2. For each enabled lab, build runtime config by resolving profile IDs.
-3. Run optional Optuna and LoRA stages for that lab.
-4. Execute configured seeds and write seed/lab/campaign logs and reports.
-5. Export MT-ready tables/figures when `campaign.mt_export.enabled=true`.
+2. Validate the enabled lab graph, profile references, and one-change parent-child comparisons.
+3. For each enabled lab, build runtime config by resolving profile IDs.
+4. Run optional Optuna and LoRA stages for that lab.
+5. If `evaluate_runtime=true`, execute the configured seeds and write seed, lab, and campaign outputs.
+6. If `reference_lab` is set, copy the referenced metrics into the current lab entry without rerunning.
+7. Export MT-ready tables and figures when `campaign.mt_export.enabled=true`.
 
 ## Outputs
-Primary outputs are written to:
+All run artifacts now live under one directory:
 - `corasat/campaign_runs/<campaign_name>/...`
+
+Important subpaths inside a run directory:
+- `runtime_configs/`: Resolved per-lab runtime configs.
+- `labs/<lab_id>/`: Per-lab reports and per-seed reports.
+- `runtime_logs/<lab_id>/`: Verbose lab logs, per-seed logs, and LM conversation traces.
 
 MT-ready generated artifacts are written to:
 - `Document/Overleaf/tex/generated/`

@@ -1,0 +1,10 @@
+{
+  "id": "P4",
+  "name": "Strategic-memory neutral prompts",
+  "description": "Prompt requests that encourage independent planning and compact strategic memory without explicitly preferring decision support.",
+  "rationale": "Rationale: <=2 sentences. State the immediate objective, coordination reason, or mandatory rule behind the action; do not restate the whole prompt.",
+  "action": "Action: choose one of wait, move, broadcast. Follow mandatory rules and any Special directive if present.",
+  "action_move": "Direction: choose ONLY from Legal moves. Prefer moves that support your own plan, memory, and teammate coordination.",
+  "action_broadcast": "Message: If broadcast, send only the information teammates need now. On Drone 1 round 1, send the required JSON coverage plan.",
+  "memory_update": "Memory: Store only future-use strategy and commitments using tags ROLE:, PLAN:, TEAM:, RV:, FIG:, POSSIBLE:, AVOID:, TRIGGER:, NOTE:, VISITED:. Do NOT copy Decision Support, Legal moves, or current prompt facts."
+}

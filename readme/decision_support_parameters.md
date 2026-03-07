@@ -1,13 +1,13 @@
 # Decision Support Parameters (current implementation)
 
-Source of truth: `Code/corasat/config.json` and `Code/corasat/classes/Drone_Support.py` (`_compute_decision_support`).
+Source of truth: `corasat/config.json` and `corasat/classes/Drone_Support.py` (`_compute_decision_support`).
 
 Notes:
 - Move scores start at 0.0 and add each component; the final score is rounded to 2 decimals in the log.
 - All movement components use the drone's `local_board` knowledge (not ground truth).
 - Chebyshev distance is used for waypoint timing and sector distance; leg corridor distance uses Euclidean distance.
 - Neighborhood potential notes include per-direction bonuses (n, ne, e, se, s, sw, w, nw) scaled by `neighborhood_potential`, plus the total.
-- Parameter values live in `Code/corasat/config.json` under `decision_support.scoring`.
+- Parameter values live in `corasat/config.json` under `decision_support.scoring`.
 - When a config key is missing, the default in `Drone_Support.py` is used (see "Config keys expected by code but missing").
 - Waypoint timing in the log includes the current turn (`turns_remaining` definition below).
 - Waypoint regression uses remaining turns after the candidate move (one less than `turns_remaining`).

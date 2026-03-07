@@ -1,0 +1,40 @@
+{
+  "id": "DS5",
+  "name": "Mission context only",
+  "description": "Keeps waypoint and sector guidance in the prompt while removing scored DS action recommendations and coordination JSON.",
+  "enabled": false,
+  "output": {
+    "include_scoring": false,
+    "include_summary": false,
+    "include_opening_directive": false,
+    "include_waypoint_context": true,
+    "include_sector_context": true,
+    "include_coordination_suggestion": false,
+    "include_intel_ledger": false
+  },
+  "scoring": {
+    "move": {
+      "waypoint_progress_bonus": 0.0,
+      "waypoint_delay_penalty": 0.0,
+      "unknown_tile_bonus": 0.0,
+      "no_figures_left_behind_bonus": 0.0,
+      "neighborhood_potential": 0.0,
+      "figure_hint_bonus": 0.0,
+      "possible_target_bonus": 0.0,
+      "neighborhood_weight_any_figure": 0.0,
+      "neighborhood_weight_possible_target": 0.0,
+      "border_bonus": 0.0,
+      "cross_track_penalty_per_step_squared": 0.0,
+      "sector_compliance_bonus": 0.0,
+      "revisit_penalty": 0.0
+    },
+    "broadcast": {
+      "base_broadcast_value": 0.0,
+      "first_turn_coordination_bonus": 0.0,
+      "last_turn_coordination_bonus": 0.0
+    },
+    "wait": {
+      "base_wait_value": 0.0
+    }
+  }
+}

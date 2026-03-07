@@ -111,6 +111,14 @@ class _Drone:
         if bool(CONFIG.get("logging", {}).get("print_prompt_stats", False)):
             LOGGER.log(f"Context length (chars): {prompt_char_len}")
         signature = inspect.signature(self.language_model.generate)
+        if "snapshot" in signature.parameters and "prompt_context" in signature.parameters:
+            return self.language_model.generate(
+                prompt_data["messages"],
+                temperature,
+                prompt_char_len,
+                prompt_data.get("snapshot"),
+                prompt_data.get("prompt_context"),
+            )
         if "snapshot" in signature.parameters:
             return self.language_model.generate(
                 prompt_data["messages"],

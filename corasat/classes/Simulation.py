@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 import pprint
 import random
 import threading
@@ -27,6 +28,10 @@ from classes.Core import (
 from classes.Drone import _Drone
 from classes.Exporter import LOGGER
 from classes.GUI import _SimulationGUI
+
+STRUCTURE_PROMPT_PATH = (
+    Path(__file__).resolve().parent.parent / "profiles" / "structure" / "output_contract.txt"
+)
 
 
 class Simulation:
@@ -198,12 +203,20 @@ class Simulation:
         )
 
     def _load_rules(self) -> str:
-        """Load and personalize rules for this simulation instance."""
+        """Load the system prompt, combining output structure and task rules."""
+        structure_text = ""
+        if STRUCTURE_PROMPT_PATH.exists():
+            with open(STRUCTURE_PROMPT_PATH, "r", encoding="utf-8") as file_handle:
+                structure_text = file_handle.read().strip()
+
         rules_path = CONFIG.get("rules_path", "profiles/rules/R1_rules.txt")
         resolved = resolve_data_path(str(rules_path))
         with open(resolved, "r", encoding="utf-8") as file_handle:
-            rules = file_handle.read()
-        return rules.replace("NUMBER_OF_DRONES", str(CONFIG["simulation"]["num_drones"]))
+            rules = file_handle.read().strip()
+
+        parts = [part for part in (structure_text, rules) if part]
+        combined = "\n\n".join(parts)
+        return combined.replace("NUMBER_OF_DRONES", str(CONFIG["simulation"]["num_drones"]))
 
     def _normalize_game_count(self, total_games: int) -> int:
         if not isinstance(total_games, int) or total_games <= 0:

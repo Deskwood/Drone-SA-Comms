@@ -1388,6 +1388,80 @@ def _validate_lab_profiles(labs_cfg: Sequence[Dict[str, Any]], config_dir: Path)
                 )
 
 
+def _lab_evaluate_runtime(lab_cfg: Dict[str, Any]) -> bool:
+    return bool(lab_cfg.get("evaluate_runtime", True))
+
+
+def _validate_lab_parent_diffs(labs_cfg: Sequence[Dict[str, Any]]) -> None:
+    """Require one-variable parent-child runtime comparisons outside reference/prep labs."""
+    enabled_labs: List[Dict[str, Any]] = []
+    for index, lab_cfg_raw in enumerate(labs_cfg, start=1):
+        if not isinstance(lab_cfg_raw, dict):
+            continue
+        if not bool(lab_cfg_raw.get("enabled", True)):
+            continue
+        lab_cfg = dict(lab_cfg_raw)
+        lab_cfg["_resolved_lab_id"] = _resolve_lab_id(lab_cfg_raw, index)
+        enabled_labs.append(lab_cfg)
+
+    labs_by_id = {str(lab["_resolved_lab_id"]): lab for lab in enabled_labs}
+    profile_fields = (
+        "rules_id",
+        "prompt_id",
+        "drone_support_id",
+        "model_id",
+        "fine_tuning_id",
+        "action_policy_id",
+        "communication_id",
+    )
+
+    for lab_cfg in enabled_labs:
+        lab_id = str(lab_cfg.get("_resolved_lab_id") or "").strip()
+        parent_id = str(lab_cfg.get("parent_lab") or "").strip()
+        if not lab_id or not parent_id:
+            continue
+        if str(lab_cfg.get("reference_lab") or "").strip():
+            continue
+        if not _lab_evaluate_runtime(lab_cfg):
+            continue
+
+        parent_cfg = labs_by_id.get(parent_id)
+        if parent_cfg is None:
+            raise ValueError(f"{lab_id}: parent_lab '{parent_id}' must reference an enabled lab defined earlier.")
+
+        diff_items: List[str] = []
+        short_names = {
+            "rules_id": "R",
+            "prompt_id": "P",
+            "drone_support_id": "DS",
+            "model_id": "M",
+            "fine_tuning_id": "FT",
+            "action_policy_id": "A",
+            "communication_id": "C",
+        }
+        for field in profile_fields:
+            left = str(lab_cfg.get(field) or "").strip().upper()
+            right = str(parent_cfg.get(field) or "").strip().upper()
+            if left != right:
+                diff_items.append(short_names[field])
+
+        child_optuna = lab_cfg.get("optuna", {})
+        parent_optuna = parent_cfg.get("optuna", {})
+        if not isinstance(child_optuna, dict):
+            child_optuna = {}
+        if not isinstance(parent_optuna, dict):
+            parent_optuna = {}
+        if json.dumps(child_optuna, sort_keys=True) != json.dumps(parent_optuna, sort_keys=True):
+            diff_items.append("optuna")
+
+        if len(diff_items) != 1:
+            changed = ", ".join(diff_items) if diff_items else "none"
+            raise ValueError(
+                f"{lab_id}: runtime-evaluated non-reference labs must differ from parent_lab by exactly one "
+                f"profile item or one Optuna stage. Found {changed} relative to {parent_id}."
+            )
+
+
 def _reproducibility_cfg(campaign_cfg: Dict[str, Any]) -> Dict[str, Any]:
     cfg = campaign_cfg.get("reproducibility", {})
     if not isinstance(cfg, dict):
@@ -1807,12 +1881,10 @@ def _run_campaign(
     )
     _set_shared_logger_timestamp_mode(include_timestamps)
     repro_cfg = _reproducibility_cfg(campaign_cfg)
-    runtime_logs_root = (CORASAT_ROOT / "runtime_logs" / output_dir.name).resolve()
+    runtime_logs_root = (output_dir / "runtime_logs").resolve()
 
     if fresh_output and output_dir.exists():
         _remove_tree(output_dir)
-    if fresh_output and runtime_logs_root.exists():
-        _remove_tree(runtime_logs_root)
     output_dir.mkdir(parents=True, exist_ok=True)
     runtime_logs_root.mkdir(parents=True, exist_ok=True)
 
@@ -1874,6 +1946,7 @@ def _run_campaign(
         completed_ids.add(lab_id)
 
     _validate_lab_profiles(labs_cfg, config_dir)
+    _validate_lab_parent_diffs(labs_cfg)
 
     global_seed_spec = campaign_cfg.get("seed_list")
     if global_seed_spec is None:
@@ -2179,6 +2252,71 @@ def _run_campaign(
                             include_timestamps,
                         )
                     _run_lora_commands(effective_lora_cfg, env_base, context=completed_lab_logfiles)
+
+            if not _lab_evaluate_runtime(lab_cfg):
+                lab_simulation_log_path.parent.mkdir(parents=True, exist_ok=True)
+                lab_simulation_log_path.write_text("", encoding="utf-8")
+                stage_note = f"{lab_notes} (preparation stage; no simulation executed)".strip()
+                lab_report = {
+                    "campaign": campaign_name,
+                    "lab_id": lab_id,
+                    "label": lab_label,
+                    "notes": stage_note,
+                    "resolved_ids": resolved_ids,
+                    "runtime_evaluated": False,
+                    "seed_count_planned": 0,
+                    "seed_range": "",
+                    "seed_spec": "",
+                    "runtime_config": str(runtime_config_path),
+                    "lab_log": str(lab_log_path),
+                    "lab_simulation_log": str(lab_simulation_log_path),
+                    "lm_error_summary_csv": str(lm_error_summary_csv),
+                    "seed_reports": [],
+                    "metrics": {},
+                }
+                _write_json(lab_report_path, lab_report)
+
+                lab_row = {
+                    "timestamp": datetime.now().astimezone().isoformat(),
+                    "lab_id": lab_id,
+                    "label": lab_label,
+                    "seed_count_planned": 0,
+                    "seed_count_recorded": 0,
+                    "seed_count_completed": 0,
+                    "seed_count_non_ok": 0,
+                    "seed_count_failed": 0,
+                    "seed_count_aborted": 0,
+                    "seed_range": "",
+                    "mean_norm_score": "",
+                    "std_norm_score": "",
+                    "total_prompt_tokens": 0,
+                    "total_completion_tokens": 0,
+                    "total_lm_tokens": 0,
+                    "total_lm_inference_time_s": 0.0,
+                    "total_lm_parse_failures": 0,
+                    "total_lm_request_failures": 0,
+                    "total_lm_request_timeouts": 0,
+                    "total_runtime_s": 0.0,
+                    "mean_runtime_s": "",
+                    "runtime_config": str(runtime_config_path),
+                    "lab_log": str(lab_log_path),
+                    "lab_simulation_log": str(lab_simulation_log_path),
+                    "notes": stage_note,
+                }
+                lab_rows.append(lab_row)
+                lab_rows_by_id[lab_id] = dict(lab_row)
+                manifest["labs"].append(lab_report)
+                lab_reports_by_id[lab_id] = dict(lab_report)
+                completed_lab_logfiles[lab_id] = str(lab_simulation_log_path)
+                completed_lab_logfiles[lab_label] = str(lab_simulation_log_path)
+
+                _append_text_log(
+                    campaign_log_path,
+                    f"[{lab_id}] completed as preparation-only stage.",
+                    include_timestamps,
+                )
+                _append_text_log(lab_log_path, "Lab completed (preparation only).", include_timestamps)
+                continue
 
             seed_reports: List[Dict[str, Any]] = []
             total_games = max(1, len(lab_seeds))

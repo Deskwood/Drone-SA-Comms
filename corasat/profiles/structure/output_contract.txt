@@ -1,0 +1,19 @@
+Output Contract (MANDATORY):
+Return ONLY a single valid JSON object with no extra text. Use double quotes. No trailing commas.
+
+Schema:
+{
+  "rationale": "short reasoning (<= 3 sentences)",
+  "action": "wait" | "move" | "broadcast",
+  "direction": "north|south|east|west|northeast|northwest|southeast|southwest" | null,
+  "message": "string" | null,
+  "memory": "string to carry into next turn"
+}
+
+Field Constraints:
+- "action" MUST be exactly one of: wait, move, broadcast.
+- If "action" is "move", "direction" MUST be one of the legal moves listed in the situation.
+- If "action" is not "move", set "direction" to null.
+- If "action" is "broadcast", set "message" to the broadcast payload.
+- If "action" is not "broadcast", set "message" to null.
+- Keep "memory" compact and useful for the next turn.

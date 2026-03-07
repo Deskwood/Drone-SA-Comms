@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+STRUCTURE_PROMPT_PATH = Path(__file__).resolve().parent / "profiles" / "structure" / "output_contract.txt"
+
 
 SITUATION_RE = re.compile(r"Drone (\d+) Situation:")
 RESPONSE_RE = re.compile(r"Drone (\d+) response:")
@@ -183,6 +185,8 @@ def main() -> int:
 
     log_text = _read_text(log_path)
     rules_text = _read_text(rules_path).strip()
+    structure_text = _read_text(STRUCTURE_PROMPT_PATH).strip() if STRUCTURE_PROMPT_PATH.exists() else ""
+    system_prompt = "\n\n".join(part for part in (structure_text, rules_text) if part)
     include_seeds = _parse_seed_spec(args.include_seeds)
     train_seed_set = _parse_seed_spec(args.train_seeds)
     val_seed_set = _parse_seed_spec(args.val_seeds)
@@ -210,7 +214,7 @@ def main() -> int:
             continue
         payload = {
             "messages": [
-                {"from": "system", "value": rules_text},
+                {"from": "system", "value": system_prompt},
                 {"from": "human", "value": situation_text},
                 {"from": "gpt", "value": json.dumps(response, ensure_ascii=True)},
             ]

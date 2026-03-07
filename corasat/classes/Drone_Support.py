@@ -10,7 +10,7 @@ from pathlib import Path
 import random
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
 from classes.Core import (
     CONFIG,
@@ -66,6 +66,97 @@ def _append_lm_trace_event(drone: "_Drone", event: str, payload: Optional[Dict[s
             base[str(key)] = _json_safe(value)
     with trace_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(base, ensure_ascii=True) + "\n")
+
+
+def _decision_support_output_flags() -> Dict[str, bool]:
+    """Return prompt-output toggles for DS-derived context."""
+    ds_output_cfg = CONFIG.get("decision_support", {}).get("output", {})
+
+    def _flag(key: str, default: bool) -> bool:
+        value = ds_output_cfg.get(key, default)
+        return value if isinstance(value, bool) else default
+
+    return {
+        "include_scoring": _flag("include_scoring", True),
+        "include_summary": _flag("include_summary", True),
+        "include_opening_directive": _flag("include_opening_directive", True),
+        "include_waypoint_context": _flag("include_waypoint_context", True),
+        "include_sector_context": _flag("include_sector_context", True),
+        "include_coordination_suggestion": _flag("include_coordination_suggestion", True),
+        "include_intel_ledger": _flag("include_intel_ledger", True),
+    }
+
+
+def _decision_support_top_choice(snapshot: Optional[Dict[str, object]]) -> Dict[str, object]:
+    """Extract the current top-ranked DS action from a prompt snapshot."""
+    if not isinstance(snapshot, dict):
+        return {}
+    scores = snapshot.get("scores")
+    if not isinstance(scores, list) or not scores:
+        return {}
+    best = scores[0] if isinstance(scores[0], dict) else {}
+    second = scores[1] if len(scores) > 1 and isinstance(scores[1], dict) else {}
+    top_action = str(best.get("action") or "").strip().lower()
+    top_label = str(best.get("label") or "").strip().lower()
+    top_score = best.get("score") if isinstance(best.get("score"), (int, float)) else None
+    second_score = second.get("score") if isinstance(second.get("score"), (int, float)) else None
+    score_margin = None
+    if isinstance(top_score, (int, float)) and isinstance(second_score, (int, float)):
+        score_margin = round(float(top_score) - float(second_score), 4)
+    return {
+        "top_action": top_action,
+        "top_label": top_label,
+        "top_score": top_score,
+        "second_score": second_score,
+        "score_margin": score_margin,
+        "score_count": len(scores),
+    }
+
+
+def _decision_support_trace_context(snapshot: Optional[Dict[str, object]]) -> Dict[str, object]:
+    """Return compact structured prompt metadata for LM-trace analysis."""
+    context = dict(_decision_support_output_flags())
+    context["ds_enabled"] = _decision_support_enabled()
+    context.update(_decision_support_top_choice(snapshot))
+    return context
+
+
+def _decision_support_alignment_payload(
+    prompt_context: Optional[Dict[str, object]],
+    *,
+    action: str,
+    direction: str,
+    rationale: str,
+) -> Dict[str, object]:
+    """Compare the LM-selected action with the prompt-time DS top choice."""
+    if not isinstance(prompt_context, dict):
+        return {}
+    top_action = str(prompt_context.get("top_action") or "").strip().lower()
+    top_label = str(prompt_context.get("top_label") or "").strip().lower()
+    if not top_action:
+        return {}
+
+    action_norm = str(action or "").strip().lower()
+    direction_norm = str(direction or "").strip().lower()
+    rationale_norm = str(rationale or "").strip().lower()
+
+    match_action = bool(action_norm) and action_norm == top_action
+    match_top_choice = match_action
+    if top_action == "move":
+        match_top_choice = match_action and bool(direction_norm) and direction_norm == top_label
+
+    payload = {
+        "selected_action": action_norm,
+        "selected_direction": direction_norm,
+        "match_action": match_action,
+        "match_top_choice": match_top_choice,
+        "rationale_mentions_decision_support": "decision support" in rationale_norm,
+        "rationale_mentions_best_choice": "best choice" in rationale_norm,
+    }
+    for key in ("top_action", "top_label", "top_score", "second_score", "score_margin", "score_count"):
+        if key in prompt_context:
+            payload[key] = prompt_context.get(key)
+    return payload
 
 
 def _board_center_cartesian() -> Tuple[int, int]:
@@ -825,15 +916,16 @@ class _Drone_Decision_Support:
         """Compute decision support scores and helper metadata."""
         return self._compute_decision_support()
 
-    def format_lines(self, snapshot: Dict[str, object]) -> Tuple[List[str], List[str]]:
-        """Format decision support output for UI display."""
+    def format_lines(self, snapshot: Dict[str, object]) -> Tuple[List[str], List[str], List[str]]:
+        """Format raw situation lines plus DS-derived prompt context."""
         drone = self.drone
-        lines: List[str] = []
+        base_lines: List[str] = []
+        ds_lines: List[str] = []
         ledger_lines: List[str] = []
 
         max_rounds = CONFIG["simulation"]["max_rounds"]
-        lines.append(f"Round: {drone.sim.round}/{max_rounds}")
-        lines.append(f"Position: {cartesian_to_chess(drone.position)}")
+        base_lines.append(f"Round: {drone.sim.round}/{max_rounds}")
+        base_lines.append(f"Position: {cartesian_to_chess(drone.position)}")
 
         same_tile_drones = [
             f"Drone {other.id}"
@@ -845,7 +937,7 @@ class _Drone_Decision_Support:
         tile_here = drone.sim.board[drone.position[0]][drone.position[1]]
         if tile_here.figure:
             fig_here = tile_here.figure.figure_type
-        lines.append(f"Visible: drones={visible_drones}; figure={fig_here}")
+        base_lines.append(f"Visible: drones={visible_drones}; figure={fig_here}")
 
         legal_entries: List[str] = []
         for step in drone._legal_movement_steps():
@@ -866,70 +958,79 @@ class _Drone_Decision_Support:
             else:
                 legal_entries.append(f"{step['direction']} to {tile}")
         legal_moves = ", ".join(legal_entries) or "none"
-        lines.append(f"Legal moves: {legal_moves}")
+        base_lines.append(f"Legal moves: {legal_moves}")
 
         memory_text = drone.memory.strip()
         memory_text = memory_text.replace("\n", " | ") if memory_text else "None"
-        lines.append(f"Memory (previous rounds): {memory_text}")
+        base_lines.append(f"Memory (previous rounds): {memory_text}")
 
-        if getattr(drone, "rendezvous_directive", None):
+        output_flags = _decision_support_output_flags()
+        include_opening_directive = output_flags.get("include_opening_directive", True)
+        include_waypoint_context = output_flags.get("include_waypoint_context", True)
+        include_sector_context = output_flags.get("include_sector_context", True)
+        include_coordination_suggestion = output_flags.get("include_coordination_suggestion", True)
+        include_intel_ledger = output_flags.get("include_intel_ledger", True)
+
+        if getattr(drone, "rendezvous_directive", None) and include_waypoint_context:
             rv = drone.rendezvous_directive
-            lines.append(f"Rendezvous: {rv['target']} on turn {rv['turn']}")
+            ds_lines.append(f"Rendezvous: {rv['target']} on turn {rv['turn']}")
 
-        if drone.id == 1 and getattr(drone.sim, "round", None) == 1 and getattr(drone.sim, "turn", None) == 1:
+        if (
+            include_opening_directive
+            and drone.id == 1
+            and getattr(drone.sim, "round", None) == 1
+            and getattr(drone.sim, "turn", None) == 1
+        ):
             total_drones = CONFIG["simulation"].get("num_drones", len(getattr(drone.sim, "drones", [])))
-            lines.append(
+            ds_lines.append(
                 "Special directive: Drone 1 must broadcast a coverage plan on the opening turn "
                 f"(JSON plan->assignments for all {total_drones} drones) before other actions; "
                 "overrides decision support ranking."
             )
 
-        waypoint = snapshot.get("next_waypoint")
-        if waypoint:
-            if waypoint.get("leg_start") and waypoint.get("leg_end"):
-                leg_id = waypoint.get("leg_id", "?")
-                start_vec = waypoint.get("leg_start")
-                end_vec = waypoint.get("leg_end")
-                start = cartesian_to_chess(tuple(start_vec)) if start_vec else "?"
-                target = cartesian_to_chess(tuple(end_vec)) if end_vec else "?"
-                lines.append(f"Plan focus: leg {leg_id} {start} -> {target} (turn {waypoint.get('turn', '?')})")
-            else:
-                target_vec = waypoint.get("leg_end")
-                target = cartesian_to_chess(tuple(target_vec)) if target_vec else "?"
-                lines.append(f"Plan focus: {target} by turn {waypoint.get('turn', '?')}")
-        timing = snapshot.get("waypoint_timing")
-        if timing:
-            dist = timing.get("distance")
-            turns_left = timing.get("turns_remaining")
-            slack = timing.get("slack")
-            if dist is not None and turns_left is not None:
-                lines.append(
-                    f"Waypoint timing: {dist} steps away, {turns_left} turns left (slack {slack}, incl. current turn)."
-                )
-                if slack is not None:
-                    if slack < 0:
-                        lines.append(
-                            "Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint."
-                        )
-                    else:
-                        lines.append("Timing rule: on schedule -> no timing bias unless distance exceeds turns left.")
+        if include_waypoint_context:
+            waypoint = snapshot.get("next_waypoint")
+            if waypoint:
+                if waypoint.get("leg_start") and waypoint.get("leg_end"):
+                    leg_id = waypoint.get("leg_id", "?")
+                    start_vec = waypoint.get("leg_start")
+                    end_vec = waypoint.get("leg_end")
+                    start = cartesian_to_chess(tuple(start_vec)) if start_vec else "?"
+                    target = cartesian_to_chess(tuple(end_vec)) if end_vec else "?"
+                    ds_lines.append(f"Plan focus: leg {leg_id} {start} -> {target} (turn {waypoint.get('turn', '?')})")
+                else:
+                    target_vec = waypoint.get("leg_end")
+                    target = cartesian_to_chess(tuple(target_vec)) if target_vec else "?"
+                    ds_lines.append(f"Plan focus: {target} by turn {waypoint.get('turn', '?')}")
+            timing = snapshot.get("waypoint_timing")
+            if timing:
+                dist = timing.get("distance")
+                turns_left = timing.get("turns_remaining")
+                slack = timing.get("slack")
+                if dist is not None and turns_left is not None:
+                    ds_lines.append(
+                        f"Waypoint timing: {dist} steps away, {turns_left} turns left (slack {slack}, incl. current turn)."
+                    )
+                    if slack is not None:
+                        if slack < 0:
+                            ds_lines.append(
+                                "Timing rule: behind schedule -> prioritize reducing Chebyshev distance to the waypoint."
+                            )
+                        else:
+                            ds_lines.append("Timing rule: on schedule -> no timing bias unless distance exceeds turns left.")
 
-        if getattr(drone, "assigned_sector", None):
-            lines.append(f"Sector directive: {drone.sector_summary()}")
+        if include_sector_context and getattr(drone, "assigned_sector", None):
+            ds_lines.append(f"Sector directive: {drone.sector_summary()}")
 
         suggestion = snapshot.get("coordination_suggestion")
-        if suggestion:
-            lines.append("Suggested coordination broadcast JSON:")
+        if include_coordination_suggestion and suggestion:
+            ds_lines.append("Suggested coordination broadcast JSON:")
             plan_json = json.dumps(suggestion.get("plan", {}), indent=2)
             for line in plan_json.splitlines():
-                lines.append(f"  {line}")
+                ds_lines.append(f"  {line}")
 
-        ds_output_cfg = CONFIG.get("decision_support", {}).get("output", {})
-        show_scoring = ds_output_cfg.get("include_scoring", True)
-        show_summary = ds_output_cfg.get("include_summary", True)
-        if not _decision_support_enabled():
-            show_scoring = False
-            show_summary = False
+        show_scoring = output_flags.get("include_scoring", True) and _decision_support_enabled()
+        show_summary = output_flags.get("include_summary", True) and _decision_support_enabled()
 
         score_entries = snapshot.get("scores", [])
         sorted_scores = sorted(
@@ -1042,9 +1143,9 @@ class _Drone_Decision_Support:
             move_entries = [entry for entry in sorted_scores if entry.get("action") == "move"]
             other_entries = [entry for entry in sorted_scores if entry.get("action") != "move"]
             if show_scoring:
-                lines.extend(_build_score_table(move_entries, "Movement scoring:", move_component_keys))
+                ds_lines.extend(_build_score_table(move_entries, "Movement scoring:", move_component_keys))
                 if other_entries:
-                    lines.append("Other actions scoring:")
+                    ds_lines.append("Other actions scoring:")
                     for entry in other_entries:
                         action = (entry.get("action") or "-").strip()
                         label = (entry.get("label") or "").strip()
@@ -1058,7 +1159,7 @@ class _Drone_Decision_Support:
                             f"{key}={value:+.2f}" for key, value in components.items()
                         ) or "n/a"
                         notes = "; ".join(entry.get("notes") or []) or "n/a"
-                        lines.append(f"{action_text}: score {score_text}; components: {comp_text}; notes: {notes}")
+                        ds_lines.append(f"{action_text}: score {score_text}; components: {comp_text}; notes: {notes}")
 
             if show_summary:
                 best_entry = sorted_scores[0]
@@ -1089,17 +1190,18 @@ class _Drone_Decision_Support:
                         f"Decision Support Summary: best choice {best_action_text} "
                         f"(score {best_score_text}) because {reason_text}."
                     )
-                lines.append(summary_line)
+                ds_lines.append(summary_line)
 
-        for ledger in snapshot.get("intel_ledger", []):
-            last_round = ledger.get("last_round")
-            age = ledger.get("age", 0)
-            if last_round is None:
-                ledger_lines.append(f"Drone {ledger['drone']}: never shared (age {age} rounds)")
-            else:
-                ledger_lines.append(f"Drone {ledger['drone']}: last shared round {last_round} (age {age})")
+        if include_intel_ledger:
+            for ledger in snapshot.get("intel_ledger", []):
+                last_round = ledger.get("last_round")
+                age = ledger.get("age", 0)
+                if last_round is None:
+                    ledger_lines.append(f"Drone {ledger['drone']}: never shared (age {age} rounds)")
+                else:
+                    ledger_lines.append(f"Drone {ledger['drone']}: last shared round {last_round} (age {age})")
 
-        return lines, ledger_lines
+        return base_lines, ds_lines, ledger_lines
 
     def build_situation(self, snapshot: Dict[str, object]) -> str:
         """Assemble the situation text that fuels the language model prompt."""
@@ -1115,7 +1217,8 @@ class _Drone_Decision_Support:
                 rx_buffer = rx_buffer[:300].rstrip() + "...(truncated)"
         lines.append(f"Broadcast Rx Buffer: {rx_buffer or 'None'}")
 
-        ds_lines, ledger_lines = self.format_lines(snapshot)
+        base_lines, ds_lines, ledger_lines = self.format_lines(snapshot)
+        lines.extend(base_lines)
         if ds_lines:
             lines.append("Decision Support:")
             lines.extend([f"  {entry}" for entry in ds_lines])
@@ -1130,6 +1233,9 @@ class _Drone_Decision_Support:
     def build_prompt(self, rules: str) -> Dict[str, object]:
         """Create the prompt payload for the language model."""
         snapshot = self.snapshot()
+        prompt_context = _decision_support_trace_context(snapshot)
+        self.drone.last_prompt_snapshot = snapshot
+        self.drone.last_prompt_context = prompt_context
         situation = self.build_situation(snapshot)
 
         prompt_requests = CONFIG.get("prompt_requests", {})
@@ -1153,6 +1259,7 @@ class _Drone_Decision_Support:
             "messages": messages,
             "prompt_char_len": prompt_char_len,
             "snapshot": snapshot,
+            "prompt_context": prompt_context,
             "user_content": user_content,
         }
 
@@ -1715,6 +1822,73 @@ class _Drone_Language_Model:
             return None
         return token_budget
 
+    def _coerce_ollama_payload(self, response: Any) -> Dict[str, Any]:
+        if isinstance(response, dict):
+            return response
+        if hasattr(response, "model_dump"):
+            return response.model_dump()
+        if hasattr(response, "dict"):
+            return response.dict()
+        try:
+            return dict(response)
+        except Exception:
+            return {}
+
+    def _extract_ollama_content(self, response_payload: Dict[str, Any]) -> Tuple[str, str]:
+        message_payload = response_payload.get("message")
+        if not isinstance(message_payload, dict):
+            message_payload = {}
+        content = str(message_payload.get("content") or "")
+        thinking = str(message_payload.get("thinking") or "")
+        return content, thinking
+
+    def _append_ollama_response_trace(
+        self,
+        event_name: str,
+        response_payload: Dict[str, Any],
+        content: str,
+        thinking: str,
+        elapsed_s: float,
+    ) -> None:
+        _append_lm_trace_event(
+            self.drone,
+            event_name,
+            {
+                "response_content": content,
+                "thinking_present": bool(thinking.strip()),
+                "thinking_length": len(thinking),
+                "prompt_eval_count": response_payload.get("prompt_eval_count"),
+                "eval_count": response_payload.get("eval_count"),
+                "eval_duration": response_payload.get("eval_duration"),
+                "done_reason": response_payload.get("done_reason"),
+                "elapsed_s": elapsed_s,
+            },
+        )
+
+    def _should_retry_empty_response(
+        self,
+        response_payload: Dict[str, Any],
+        content: str,
+        thinking: str,
+        options: Dict[str, Any],
+    ) -> bool:
+        if str(content or "").strip():
+            return False
+        current_budget = options.get("num_predict")
+        if not isinstance(current_budget, int) or current_budget <= 0:
+            return False
+        done_reason = str(response_payload.get("done_reason") or "").strip().lower()
+        eval_count = response_payload.get("eval_count")
+        exhausted_budget = isinstance(eval_count, (int, float)) and int(eval_count) >= current_budget
+        return done_reason == "length" or bool(str(thinking or "").strip()) or exhausted_budget
+
+    def _retry_output_token_budget(self, current_budget: Optional[int]) -> Optional[int]:
+        if not isinstance(current_budget, int) or current_budget <= 0:
+            return None
+        if current_budget >= 2048:
+            return None
+        return min(2048, max(current_budget * 2, current_budget + 512))
+
     def _record_lm_failure(self, kind: str, detail: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         recorder = getattr(self.drone.sim, "record_lm_failure", None)
         if callable(recorder):
@@ -1842,8 +2016,20 @@ class _Drone_Language_Model:
         temperature: float,
         prompt_char_len: Optional[int] = None,
         snapshot: Optional[Dict[str, object]] = None,
+        prompt_context: Optional[Dict[str, object]] = None,
     ) -> List[dict]:
         """Return a list of messages including the model response."""
+        mode = self.policy_mode()
+        trace_payload = (
+            dict(prompt_context)
+            if isinstance(prompt_context, dict)
+            else _decision_support_trace_context(snapshot)
+        )
+        trace_payload["policy_mode"] = mode
+        if prompt_char_len is not None:
+            trace_payload["prompt_char_len"] = prompt_char_len
+        _append_lm_trace_event(self.drone, "lm_prompt_context", trace_payload)
+
         if self.model == "manual":
             try:
                 import pyperclip
@@ -1858,7 +2044,6 @@ class _Drone_Language_Model:
                 LOGGER.log(f"Context length: ~{approx_tokens} tokens ({prompt_char_len} chars)")
             return messages
 
-        mode = self.policy_mode()
         if mode == "random":
             payload = self._random_policy_response(snapshot)
             return self._append_policy_message(messages, payload, prompt_char_len)
@@ -1933,41 +2118,88 @@ class _Drone_Language_Model:
             }
             return self._append_policy_message(messages, fallback_payload, prompt_char_len)
         elapsed = time.perf_counter() - request_started
-        if isinstance(response, dict):
-            response_payload = response
-        elif hasattr(response, "model_dump"):
-            response_payload = response.model_dump()
-        elif hasattr(response, "dict"):
-            response_payload = response.dict()
-        else:
-            try:
-                response_payload = dict(response)
-            except Exception:
-                response_payload = {}
+        response_payload = self._coerce_ollama_payload(response)
+        content, thinking = self._extract_ollama_content(response_payload)
+        self._append_ollama_response_trace("lm_response", response_payload, content, thinking, elapsed)
 
-        message_payload = response_payload.get("message")
-        if not isinstance(message_payload, dict):
-            message_payload = {}
-        content = str(message_payload.get("content") or "")
-        thinking = str(message_payload.get("thinking") or "")
-        _append_lm_trace_event(
-            self.drone,
-            "lm_response",
-            {
-                "response_content": content,
-                "thinking_present": bool(thinking.strip()),
-                "thinking_length": len(thinking),
-                "prompt_eval_count": response_payload.get("prompt_eval_count"),
-                "eval_count": response_payload.get("eval_count"),
-                "eval_duration": response_payload.get("eval_duration"),
-                "done_reason": response_payload.get("done_reason"),
-                "elapsed_s": elapsed,
-            },
-        )
-        messages.append({"role": "assistant", "content": content})
         prompt_tokens = response_payload.get("prompt_eval_count")
         completion_tokens = response_payload.get("eval_count")
         eval_duration = response_payload.get("eval_duration")
+
+        if self._should_retry_empty_response(response_payload, content, thinking, options):
+            retry_budget = self._retry_output_token_budget(options.get("num_predict"))
+            if retry_budget is not None:
+                retry_options = dict(options)
+                retry_options["num_predict"] = retry_budget
+                _append_lm_trace_event(
+                    self.drone,
+                    "lm_retry",
+                    {
+                        "reason": "empty_or_reasoning_only_response",
+                        "previous_done_reason": response_payload.get("done_reason"),
+                        "previous_eval_count": response_payload.get("eval_count"),
+                        "previous_content_length": len(content),
+                        "previous_thinking_length": len(thinking),
+                        "options": retry_options,
+                    },
+                )
+                retry_started = time.perf_counter()
+                try:
+                    retry_response = client.chat(
+                        model=self.model,
+                        messages=messages,
+                        stream=False,
+                        format="json",
+                        options=retry_options,
+                    )
+                except Exception as exc:
+                    _append_lm_trace_event(
+                        self.drone,
+                        "lm_retry_error",
+                        {
+                            "error": str(exc),
+                            "options": retry_options,
+                        },
+                    )
+                else:
+                    retry_elapsed = time.perf_counter() - retry_started
+                    retry_payload = self._coerce_ollama_payload(retry_response)
+                    retry_content, retry_thinking = self._extract_ollama_content(retry_payload)
+                    self._append_ollama_response_trace(
+                        "lm_retry_response",
+                        retry_payload,
+                        retry_content,
+                        retry_thinking,
+                        retry_elapsed,
+                    )
+                    elapsed += retry_elapsed
+                    if isinstance(prompt_tokens, (int, float)) and isinstance(
+                        retry_payload.get("prompt_eval_count"), (int, float)
+                    ):
+                        prompt_tokens = int(prompt_tokens) + int(retry_payload.get("prompt_eval_count"))
+                    elif retry_payload.get("prompt_eval_count") is not None:
+                        prompt_tokens = retry_payload.get("prompt_eval_count")
+
+                    if isinstance(completion_tokens, (int, float)) and isinstance(
+                        retry_payload.get("eval_count"), (int, float)
+                    ):
+                        completion_tokens = int(completion_tokens) + int(retry_payload.get("eval_count"))
+                    elif retry_payload.get("eval_count") is not None:
+                        completion_tokens = retry_payload.get("eval_count")
+
+                    if isinstance(eval_duration, (int, float)) and isinstance(
+                        retry_payload.get("eval_duration"), (int, float)
+                    ):
+                        eval_duration = float(eval_duration) + float(retry_payload.get("eval_duration"))
+                    elif retry_payload.get("eval_duration") is not None:
+                        eval_duration = retry_payload.get("eval_duration")
+
+                    if str(retry_content or "").strip():
+                        response_payload = retry_payload
+                        content = retry_content
+                        thinking = retry_thinking
+
+        messages.append({"role": "assistant", "content": content})
         duration_seconds = None
         if isinstance(eval_duration, (int, float)) and eval_duration > 0:
             duration_seconds = eval_duration / 1_000_000_000
@@ -2060,6 +2292,129 @@ class _Drone_Aftermath:
             value = 12000
         return max(1000, value)
 
+    def _normalize_result_payload(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+
+        normalized = dict(payload)
+
+        def _first_value(*keys: str) -> Any:
+            for key in keys:
+                if key in payload and payload[key] not in (None, ""):
+                    return payload[key]
+            return None
+
+        action_raw = _first_value("action", "Action", "decision", "Decision", "selected_action")
+        direction_raw = _first_value("direction", "Direction", "move_direction", "MoveDirection")
+        rationale_raw = _first_value(
+            "rationale",
+            "Rationale",
+            "reason",
+            "Reason",
+            "reasoning",
+            "Reasoning",
+            "explanation",
+            "Explanation",
+        )
+        message_raw = _first_value("message", "Message", "broadcast_message", "BroadcastMessage")
+        memory_raw = _first_value("memory", "Memory", "note", "Note", "notes", "Notes")
+        wait_reason_raw = _first_value("wait_reason", "waitReason", "WaitReason")
+
+        for key in ("coverage_plan", "coveragePlan", "plan", "Plan"):
+            if message_raw in (None, "") and key in payload and payload[key] not in (None, ""):
+                message_raw = payload[key]
+                if action_raw in (None, ""):
+                    action_raw = "broadcast"
+                break
+
+        action_text = self._normalize_token(action_raw).strip()
+        direction_text = self._normalize_token(direction_raw).strip()
+        lowered_action = action_text.lower()
+        if lowered_action.startswith("move "):
+            action_text = "move"
+            direction_text = lowered_action.split(None, 1)[1].strip()
+        elif lowered_action in DIRECTION_MAP:
+            action_text = "move"
+            direction_text = lowered_action
+        elif lowered_action in {"broadcast", "wait", "move"}:
+            action_text = lowered_action
+
+        if not action_text and direction_text:
+            action_text = "move"
+        if not action_text and message_raw not in (None, ""):
+            action_text = "broadcast"
+
+        if action_text:
+            normalized["action"] = action_text
+        if direction_text:
+            normalized["direction"] = direction_text.lower()
+        if rationale_raw not in (None, ""):
+            normalized["rationale"] = rationale_raw
+        if message_raw not in (None, ""):
+            normalized["message"] = message_raw
+        if memory_raw not in (None, ""):
+            normalized["memory"] = memory_raw
+        if wait_reason_raw not in (None, ""):
+            normalized["wait_reason"] = wait_reason_raw
+        return normalized
+
+    def _repair_partial_json_payload(self, raw_content: str) -> Optional[Dict[str, Any]]:
+        text = str(raw_content or "")
+        if not text.strip():
+            return None
+
+        def _extract_string(*keys: str) -> str:
+            for key in keys:
+                pattern = rf'"{re.escape(key)}"\s*:\s*"([^"]*)"'
+                match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+                if match:
+                    return match.group(1).strip()
+            return ""
+
+        repaired: Dict[str, Any] = {}
+        action_value = _extract_string("action", "Action", "decision", "Decision", "selected_action")
+        direction_value = _extract_string("direction", "Direction", "move_direction", "MoveDirection")
+        rationale_value = _extract_string(
+            "rationale",
+            "Rationale",
+            "reason",
+            "Reason",
+            "reasoning",
+            "Reasoning",
+            "explanation",
+            "Explanation",
+        )
+        memory_value = _extract_string("memory", "Memory", "note", "Note", "notes", "Notes")
+        message_value = _extract_string("message", "Message", "broadcast_message", "BroadcastMessage")
+
+        lowered_action = action_value.lower()
+        if lowered_action.startswith("move "):
+            repaired["action"] = "move"
+            repaired["direction"] = lowered_action.split(None, 1)[1].strip()
+        elif lowered_action in DIRECTION_MAP:
+            repaired["action"] = "move"
+            repaired["direction"] = lowered_action
+        elif lowered_action in {"move", "broadcast", "wait"}:
+            repaired["action"] = lowered_action
+
+        if direction_value and "direction" not in repaired:
+            repaired["direction"] = direction_value.strip().lower()
+        if "direction" in repaired and "action" not in repaired:
+            repaired["action"] = "move"
+        if message_value:
+            repaired["message"] = message_value
+            if "action" not in repaired:
+                repaired["action"] = "broadcast"
+        if rationale_value:
+            repaired["rationale"] = rationale_value
+        if memory_value:
+            repaired["memory"] = memory_value
+
+        normalized = self._normalize_result_payload(repaired)
+        if normalized.get("action") or normalized.get("direction") or normalized.get("message"):
+            return normalized
+        return None
+
     def _parse_json_payload(self, raw_content: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         text = str(raw_content or "").strip()
         if not text:
@@ -2120,6 +2475,7 @@ class _Drone_Aftermath:
         result, parse_error = self._parse_messages(messages)
         if result is None:
             result = {}
+        result = self._normalize_result_payload(result)
 
         errors: List[str] = []
         if parse_error:
@@ -2133,6 +2489,20 @@ class _Drone_Aftermath:
             policy_mode = str(self.drone.language_model.policy_mode())
         except Exception:
             policy_mode = "llm"
+
+        raw_action = self._normalize_token(result.get("action")).strip().lower()
+        raw_direction = self._normalize_token(result.get("direction")).strip().lower()
+        raw_rationale = self._normalize_text(result.get("rationale")).strip()
+        if policy_mode == "llm":
+            prompt_context = getattr(self.drone, "last_prompt_context", None)
+            alignment_payload = _decision_support_alignment_payload(
+                prompt_context,
+                action=raw_action,
+                direction=raw_direction,
+                rationale=raw_rationale,
+            )
+            if alignment_payload:
+                _append_lm_trace_event(self.drone, "lm_ds_alignment", alignment_payload)
 
         is_first_coordination_turn = (
             self.drone.id == 1 and getattr(self.drone.sim, "round", None) == 1 and getattr(self.drone.sim, "turn", None) == 1
@@ -2278,7 +2648,25 @@ class _Drone_Aftermath:
         response_max_chars = self._max_response_chars()
         parsed, parse_detail = self._parse_json_payload(assistant_content)
         if isinstance(parsed, dict):
-            return parsed, None
+            return self._normalize_result_payload(parsed), None
+
+        repaired = self._repair_partial_json_payload(assistant_content)
+        if isinstance(repaired, dict):
+            _append_lm_trace_event(
+                self.drone,
+                "lm_parse_repair",
+                {
+                    "fields": sorted(repaired.keys()),
+                    "content_length": content_len,
+                    "repair_basis": parse_detail or "invalid_json",
+                    "assistant_content": assistant_content[:1200],
+                },
+            )
+            LOGGER.log(
+                f"Drone {self.drone.id} response repaired after parse failure "
+                f"(fields={sorted(repaired.keys())}, content_length={content_len})."
+            )
+            return repaired, None
 
         parse_reason = parse_detail or "invalid_json"
         if content_len > response_max_chars:
@@ -2397,79 +2785,104 @@ class _Drone_Aftermath:
         return msg, payload, None
 
     def _sanitize_memory(self, mem_txt: str, prior_mem: str) -> str:
-        allowed_prefixes = ("PLAN:", "SECTOR:", "RV:", "FIG:", "POSSIBLE:", "NOTE:", "VISITED:")
-        max_chars = 800
-        max_line_len = 200
-        blocked_tokens = ("legal movements", "decision support", "broadcast rx buffer")
+        keep_prefixes = (
+            "ROLE:",
+            "PLAN:",
+            "SECTOR:",
+            "TEAM:",
+            "RV:",
+            "FIG:",
+            "POSSIBLE:",
+            "AVOID:",
+            "TRIGGER:",
+            "NOTE:",
+        )
+        max_chars = 320
+        max_line_len = 120
+        max_tagged_lines = 6
+        max_visited = 12
+        blocked_tokens = ("legal movements", "legal moves", "decision support", "broadcast rx buffer")
+        helpful_keywords = ("sector", "rendezvous", "plan", "team", "role", "avoid", "trigger")
 
-        def _lines(text: str) -> List[str]:
-            return [line.strip() for line in text.splitlines() if line.strip()]
+        def _segments(text: str) -> List[str]:
+            segments: List[str] = []
+            for raw_line in text.splitlines():
+                for part in raw_line.split("|"):
+                    cleaned = re.sub(r"\s+", " ", part).strip()
+                    if cleaned:
+                        segments.append(cleaned)
+            return segments
 
-        prior_lines = _lines(prior_mem)
-        new_lines = _lines(mem_txt)
+        def _normalize_segment(segment: str) -> str:
+            cleaned = str(segment or "").strip()
+            if cleaned.lower().startswith("memory:"):
+                cleaned = cleaned.split(":", 1)[1].strip()
+            cleaned = re.sub(r"\s+", " ", cleaned)
+            return cleaned[:max_line_len]
 
-        selected: List[str] = []
-        for line in new_lines:
-            if line.lower().startswith("memory:"):
-                line = line.split(":", 1)[1].strip()
-            if line.startswith(allowed_prefixes):
-                selected.append(line[:max_line_len])
+        def _append_unique(bucket: List[str], value: str) -> None:
+            if value and value not in bucket:
+                bucket.append(value)
+
+        prior_segments = [_normalize_segment(segment) for segment in _segments(prior_mem)]
+        new_segments = [_normalize_segment(segment) for segment in _segments(mem_txt)]
+
+        tagged: List[str] = []
+        fallback: List[str] = []
+        for segment in new_segments + prior_segments:
+            if not segment:
                 continue
-            lowered = line.lower()
+            lowered = segment.lower()
             if any(token in lowered for token in blocked_tokens):
                 continue
-            if any(token in lowered for token in ("sector", "rendezvous", "plan")) and len(line) <= 120:
-                selected.append(line[:max_line_len])
+            if segment.startswith("VISITED:"):
+                continue
+            if segment.startswith(keep_prefixes):
+                _append_unique(tagged, segment)
+                continue
+            if any(keyword in lowered for keyword in helpful_keywords):
+                _append_unique(tagged, f"NOTE: {segment}"[:max_line_len])
+                continue
+            if len(fallback) < 3:
+                _append_unique(fallback, f"NOTE: {segment}"[:max_line_len])
 
-        def _ensure_prefix(prefix: str) -> None:
-            if any(line.startswith(prefix) for line in selected):
-                return
-            for line in prior_lines:
-                if line.startswith(prefix):
-                    selected.append(line[:max_line_len])
-                    return
+        recent_visited_rev: List[str] = []
+        seen_visited: Set[str] = set()
+        for segment in reversed(prior_segments + new_segments):
+            if not segment.startswith("VISITED:"):
+                continue
+            if segment in seen_visited:
+                continue
+            seen_visited.add(segment)
+            recent_visited_rev.append(segment)
+            if len(recent_visited_rev) >= max_visited:
+                break
+        recent_visited = list(reversed(recent_visited_rev))
 
-        for prefix in ("PLAN:", "SECTOR:", "RV:"):
-            _ensure_prefix(prefix)
-
-        for line in prior_lines:
-            if line.startswith("VISITED:") and line not in selected:
-                selected.append(line[:max_line_len])
-
+        selected = tagged[:max_tagged_lines] + recent_visited
         if not selected:
-            for line in new_lines:
-                lowered = line.lower()
-                if any(token in lowered for token in blocked_tokens):
-                    continue
-                selected.append(line[:max_line_len])
-                if len(selected) >= 3:
-                    break
+            selected = fallback[:]
 
-        deduped: List[str] = []
-        for line in selected:
-            if line not in deduped:
-                deduped.append(line)
+        while selected and len("\n".join(selected)) > max_chars and recent_visited:
+            recent_visited.pop(0)
+            selected = tagged[:max_tagged_lines] + recent_visited
 
-        joined = "\n".join(deduped)
-        if len(joined) > max_chars:
-            trimmed: List[str] = []
-            total = 0
-            for line in deduped:
-                extra = len(line) + (1 if trimmed else 0)
-                if total + extra > max_chars:
-                    continue
-                trimmed.append(line)
-                total += extra
-            joined = "\n".join(trimmed) if trimmed else joined[:max_chars]
+        while selected and len("\n".join(selected)) > max_chars:
+            selected.pop()
+
+        joined = "\n".join(selected).strip()
+        if not joined and fallback:
+            joined = "\n".join(fallback)[:max_chars].strip()
         return joined
 
     def _update_memory(self, result: Dict[str, Any]) -> None:
+        current_memory = str(self.drone.memory or "").strip()
         mem_txt = self._normalize_text(result.get("memory")).strip()
         if mem_txt:
-            self.drone.memory = self._sanitize_memory(mem_txt, self.drone.memory)
-        self.drone.memory = self._sanitize_memory(self.drone.memory, self.drone.memory)
+            current_memory = self._sanitize_memory(mem_txt, current_memory)
         vx, vy = self.drone.position
         token = f"VISITED: {cartesian_to_chess((vx, vy))}"
-        if token not in self.drone.memory:
-            self.drone.memory += ("" if self.drone.memory.endswith("\n") else "\n") + token
+        if token and token not in current_memory:
+            current_memory = (current_memory + ("\n" if current_memory else "") + token).strip()
+        self.drone.memory = self._sanitize_memory(current_memory, current_memory)
 

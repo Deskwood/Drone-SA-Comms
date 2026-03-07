@@ -22,7 +22,7 @@ This file documents what remains in `Code/corasat` after cleanup for clean-slate
 ## Lab Profile System
 Each campaign lab references profile IDs. Profile files are global and reusable.
 
-- Rules: `profiles/rules/R0_rules.txt`, `profiles/rules/R1_rules.txt`, `profiles/rules/R2_rules.txt`, `profiles/rules/R3_rules.txt`
+- Rules: `profiles/rules/R0_rules.txt`, `profiles/rules/R1_rules.txt`, `profiles/rules/R2_rules.txt`, `profiles/rules/R3_rules.txt`, `profiles/rules/R4_rules.txt`
 - Prompt requests: `profiles/prompt_requests/P0_prompt_requests.json`, `profiles/prompt_requests/P1_prompt_requests.json`, `profiles/prompt_requests/P2_prompt_requests.json`, `profiles/prompt_requests/P3_prompt_requests.json`
 - Decision support: `profiles/decision_support/DS0_decision_support.json`, `profiles/decision_support/DS1_decision_support.json`, `profiles/decision_support/DS2_decision_support.json`, `profiles/decision_support/DS3_decision_support.json`
 - Model: `profiles/model/M0_model.json`, `profiles/model/M1_model.json`, `profiles/model/M2_model.json`

@@ -59,6 +59,7 @@ RULES_NAME_OVERRIDES: Dict[str, Tuple[str, str]] = {
     "R1": ("Reduced rules", "Compact rule set with core constraints."),
     "R2": ("Full rules", "Full rule set with complete mission directives."),
     "R3": ("Waypoint-clarified rules", "Full rules plus waypoint-vs-sector clarification."),
+    "R4": ("Schema-only rules", "Environment mechanics and strict JSON schema without mission-strategy directives."),
 }
 
 

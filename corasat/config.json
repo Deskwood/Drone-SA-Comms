@@ -28,7 +28,7 @@
     "ollama_seeded": true,
     "ollama_seed_mode": "simulation_round",
     "ollama_request_timeout_s": 300,
-    "ollama_max_output_tokens": 384,
+    "ollama_max_output_tokens": 768,
     "lm_response_max_chars": 12000
   },
   "gui": {
@@ -84,6 +84,7 @@
     "name": "mt_full_rerun",
     "smoke_run": true,
     "campaign_run": true,
+    "use_gui": true,
     "smoke_first_n_seeds": 2,
     "smoke_skip_optuna": false,
     "smoke_skip_lora": false,
@@ -233,8 +234,30 @@
         "label": "L0.4 [R0,P0,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.3",
         "changed_item": "A",
-        "notes": "Enables LM decision-making with DS, without rules/prompt templates.",
+        "notes": "Enables LM decision-making with DS, without rules/prompt templates; this also removes schema scaffolding.",
         "rules_id": "R0",
+        "prompt_id": "P0",
+        "drone_support_id": "DS1",
+        "model_id": "M1",
+        "fine_tuning_id": "FT0",
+        "action_policy_id": "A3",
+        "communication_id": "C0",
+        "optuna": {
+          "enabled": false
+        },
+        "lora": {
+          "enabled": false,
+          "commands": []
+        }
+      },
+      {
+        "id": "L0.45",
+        "enabled": true,
+        "label": "L0.45 [R4,P0,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.4",
+        "changed_item": "R",
+        "notes": "Adds schema-only rules to preserve the JSON/action contract while withholding mission-strategy guidance.",
+        "rules_id": "R4",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
         "model_id": "M1",
@@ -253,9 +276,9 @@
         "id": "L0.5",
         "enabled": true,
         "label": "L0.5 [R2,P0,DS1,M1,FT0,A3,C0]",
-        "parent_lab": "L0.4",
+        "parent_lab": "L0.45",
         "changed_item": "R",
-        "notes": "Adds full rules while keeping prompts minimal.",
+        "notes": "Adds full mission rules while keeping prompt requests minimal.",
         "rules_id": "R2",
         "prompt_id": "P0",
         "drone_support_id": "DS1",

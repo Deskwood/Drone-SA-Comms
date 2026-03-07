@@ -37,6 +37,7 @@ This file describes each tracked file in `Code/` and its purpose for campaign ex
 - `corasat/profiles/rules/R1_rules.txt`: Reduced rules profile.
 - `corasat/profiles/rules/R2_rules.txt`: Full rules profile.
 - `corasat/profiles/rules/R3_rules.txt`: Full rules with waypoint clarification.
+- `corasat/profiles/rules/R4_rules.txt`: Schema-only control rules that preserve the JSON contract without mission guidance.
 
 ### Prompt Request Profiles
 - `corasat/profiles/prompt_requests/P0_prompt_requests.json`: No prompt-request guidance.

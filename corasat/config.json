@@ -29,6 +29,10 @@
     "ollama_seed_mode": "simulation_round",
     "ollama_request_timeout_s": 300,
     "ollama_max_output_tokens": 768,
+    "ollama_max_output_tokens_by_model": {
+      "deepseek-r1:32b": 1280,
+      "deepseek-r1:14b": 1024
+    },
     "lm_response_max_chars": 12000
   },
   "gui": {
@@ -84,7 +88,7 @@
     "name": "mt_full_rerun",
     "smoke_run": true,
     "campaign_run": true,
-    "use_gui": true,
+    "use_gui": false,
     "smoke_first_n_seeds": 2,
     "smoke_skip_optuna": false,
     "smoke_skip_lora": false,
@@ -256,7 +260,7 @@
         "label": "L0.45 [R4,P0,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.4",
         "changed_item": "R",
-        "notes": "Adds schema-only rules to preserve the JSON/action contract while withholding mission-strategy guidance.",
+        "notes": "Adds schema-only system rules to preserve the JSON/action contract while leaving strategy guidance to decision support.",
         "rules_id": "R4",
         "prompt_id": "P0",
         "drone_support_id": "DS1",
@@ -278,7 +282,7 @@
         "label": "L0.5 [R2,P0,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.45",
         "changed_item": "R",
-        "notes": "Adds full mission rules while keeping prompt requests minimal.",
+        "notes": "Adds full mission rules on top of the schema-only control while keeping prompt requests minimal.",
         "rules_id": "R2",
         "prompt_id": "P0",
         "drone_support_id": "DS1",

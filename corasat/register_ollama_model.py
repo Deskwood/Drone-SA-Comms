@@ -43,7 +43,13 @@ def _parse_simple_yaml(path: Path) -> Dict[str, str]:
 
 def _write_modelfile(modelfile_path: Path, export_dir: Path) -> None:
     modelfile_path.parent.mkdir(parents=True, exist_ok=True)
-    content = f"FROM {export_dir.as_posix()}\n"
+    export_modelfile = export_dir / "Modelfile"
+    if export_modelfile.exists():
+        content = export_modelfile.read_text(encoding="utf-8")
+        from_line = f"FROM {export_dir.as_posix()}"
+        content = content.replace("FROM .", from_line, 1)
+    else:
+        content = f"FROM {export_dir.as_posix()}\n"
     modelfile_path.write_text(content, encoding="utf-8")
 
 

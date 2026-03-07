@@ -1694,7 +1694,17 @@ class _Drone_Language_Model:
 
     def _ollama_max_output_tokens(self) -> Optional[int]:
         sim_cfg = CONFIG.get("simulation", {})
-        raw = _optional_config_value(sim_cfg, "ollama_max_output_tokens", None)
+        raw = None
+        model_name = str(self.model or "").strip().lower()
+        overrides = sim_cfg.get("ollama_max_output_tokens_by_model")
+        if isinstance(overrides, dict) and model_name:
+            for key, value in overrides.items():
+                candidate = str(key or "").strip().lower()
+                if candidate and candidate == model_name:
+                    raw = value
+                    break
+        if raw in (None, ""):
+            raw = _optional_config_value(sim_cfg, "ollama_max_output_tokens", None)
         if raw in (None, ""):
             return None
         try:
@@ -1923,22 +1933,41 @@ class _Drone_Language_Model:
             }
             return self._append_policy_message(messages, fallback_payload, prompt_char_len)
         elapsed = time.perf_counter() - request_started
-        content = response["message"]["content"]
+        if isinstance(response, dict):
+            response_payload = response
+        elif hasattr(response, "model_dump"):
+            response_payload = response.model_dump()
+        elif hasattr(response, "dict"):
+            response_payload = response.dict()
+        else:
+            try:
+                response_payload = dict(response)
+            except Exception:
+                response_payload = {}
+
+        message_payload = response_payload.get("message")
+        if not isinstance(message_payload, dict):
+            message_payload = {}
+        content = str(message_payload.get("content") or "")
+        thinking = str(message_payload.get("thinking") or "")
         _append_lm_trace_event(
             self.drone,
             "lm_response",
             {
                 "response_content": content,
-                "prompt_eval_count": response.get("prompt_eval_count"),
-                "eval_count": response.get("eval_count"),
-                "eval_duration": response.get("eval_duration"),
+                "thinking_present": bool(thinking.strip()),
+                "thinking_length": len(thinking),
+                "prompt_eval_count": response_payload.get("prompt_eval_count"),
+                "eval_count": response_payload.get("eval_count"),
+                "eval_duration": response_payload.get("eval_duration"),
+                "done_reason": response_payload.get("done_reason"),
                 "elapsed_s": elapsed,
             },
         )
         messages.append({"role": "assistant", "content": content})
-        prompt_tokens = response.get("prompt_eval_count")
-        completion_tokens = response.get("eval_count")
-        eval_duration = response.get("eval_duration")
+        prompt_tokens = response_payload.get("prompt_eval_count")
+        completion_tokens = response_payload.get("eval_count")
+        eval_duration = response_payload.get("eval_duration")
         duration_seconds = None
         if isinstance(eval_duration, (int, float)) and eval_duration > 0:
             duration_seconds = eval_duration / 1_000_000_000

@@ -5,7 +5,12 @@
   "enabled": true,
   "output": {
     "include_scoring": true,
-    "include_summary": true
+    "include_summary": true,
+    "include_opening_directive": true,
+    "include_waypoint_context": true,
+    "include_sector_context": true,
+    "include_coordination_suggestion": true,
+    "include_intel_ledger": true
   },
   "prompt": {
     "debug_dump_path": "Code/corasat/debug_model_inputs.jsonl"

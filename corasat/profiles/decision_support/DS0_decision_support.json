@@ -5,7 +5,12 @@
   "enabled": false,
   "output": {
     "include_scoring": false,
-    "include_summary": false
+    "include_summary": false,
+    "include_opening_directive": false,
+    "include_waypoint_context": false,
+    "include_sector_context": false,
+    "include_coordination_suggestion": false,
+    "include_intel_ledger": false
   },
   "scoring": {
     "move": {

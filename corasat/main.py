@@ -80,6 +80,16 @@ ACTION_POLICY_DEFAULTS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+DECISION_SUPPORT_OUTPUT_DEFAULTS: Dict[str, bool] = {
+    "include_scoring": True,
+    "include_summary": True,
+    "include_opening_directive": True,
+    "include_waypoint_context": True,
+    "include_sector_context": True,
+    "include_coordination_suggestion": True,
+    "include_intel_ledger": True,
+}
+
 LAB_RESULTS_FIELDS = [
     "timestamp",
     "lab_id",
@@ -454,6 +464,26 @@ def _strip_profile_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
         for key, value in payload.items()
         if key not in {"id", "name", "description", "sha256_10"}
     }
+
+
+def _normalize_decision_support_output_cfg(runtime_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure runtime configs always carry the complete DS prompt-output schema."""
+    ds_cfg = runtime_cfg.get("decision_support")
+    if not isinstance(ds_cfg, dict):
+        ds_cfg = {}
+        runtime_cfg["decision_support"] = ds_cfg
+
+    raw_output = ds_cfg.get("output")
+    if not isinstance(raw_output, dict):
+        raw_output = {}
+
+    normalized_output: Dict[str, bool] = {}
+    for key, default in DECISION_SUPPORT_OUTPUT_DEFAULTS.items():
+        value = raw_output.get(key, default)
+        normalized_output[key] = value if isinstance(value, bool) else default
+
+    ds_cfg["output"] = normalized_output
+    return ds_cfg
 
 
 def _profile_path(config_dir: Path, kind: str, profile_id: str) -> Path:
@@ -1016,7 +1046,7 @@ def _build_lab_runtime_config(
 ) -> Tuple[Dict[str, Any], Dict[str, str]]:
     runtime_cfg = _runtime_config_base(master_config)
     sim_cfg = runtime_cfg.setdefault("simulation", {})
-    ds_cfg = runtime_cfg.setdefault("decision_support", {})
+    ds_cfg = _normalize_decision_support_output_cfg(runtime_cfg)
 
     lab_id = str(lab_entry.get("id") or lab_entry.get("lab_id") or "").strip()
     rules_id = str(lab_entry.get("rules_id") or "").strip().upper()
@@ -1040,7 +1070,7 @@ def _build_lab_runtime_config(
     if ds_id:
         ds_payload = _load_profile_json(config_dir, "decision_support", ds_id)
         runtime_cfg["decision_support"] = _deep_merge(ds_cfg, _strip_profile_metadata(ds_payload))
-        ds_cfg = runtime_cfg.setdefault("decision_support", {})
+        ds_cfg = _normalize_decision_support_output_cfg(runtime_cfg)
 
     if model_id:
         model_payload = _load_profile_json(config_dir, "model", model_id)
@@ -1101,6 +1131,9 @@ def _build_lab_runtime_config(
         if isinstance(merged, dict):
             runtime_cfg = merged
             sim_cfg = runtime_cfg.setdefault("simulation", {})
+            ds_cfg = _normalize_decision_support_output_cfg(runtime_cfg)
+
+    _normalize_decision_support_output_cfg(runtime_cfg)
 
     sim_cfg["lab_id"] = lab_id
     sim_cfg["rules_id"] = rules_id

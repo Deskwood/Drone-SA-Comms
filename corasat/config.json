@@ -146,7 +146,8 @@
       "figures_generated_dir": "figures/generated",
       "data_dir": "review/generated_data",
       "reproducibility": {
-        "reference_results_csv": ""
+        "reference_results_csv": "",
+        "report_json": "../mt_full_rerun_smoke_run2/reproducibility_report.json"
       }
     },
     "labs": [

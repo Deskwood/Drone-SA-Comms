@@ -284,6 +284,71 @@ def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _ensure_csv_header(path: Path, fieldnames: Sequence[str]) -> None:
+    if path.exists() and path.stat().st_size > 0:
+        return
+    _write_csv(path, fieldnames, [])
+
+
+def _path_mtime_iso(path: Path) -> str:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat()
+    except Exception:
+        return datetime.now().astimezone().isoformat()
+
+
+def _load_seed_reports(seeds_dir: Path) -> List[Dict[str, Any]]:
+    if not seeds_dir.exists():
+        return []
+    reports_by_seed: Dict[int, Dict[str, Any]] = {}
+    for seed_report_path in sorted(seeds_dir.glob("seed_*.json")):
+        try:
+            payload = _read_json(seed_report_path)
+        except Exception:
+            continue
+        try:
+            seed = int(payload.get("seed"))
+        except Exception:
+            continue
+        payload["seed"] = seed
+        payload["seed_report_path"] = str(seed_report_path)
+        reports_by_seed[seed] = payload
+    return [reports_by_seed[seed] for seed in sorted(reports_by_seed)]
+
+
+def _lab_row_from_report(lab_report: Dict[str, Any], report_path: Path) -> Dict[str, Any]:
+    metrics = lab_report.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    return {
+        "timestamp": _path_mtime_iso(report_path),
+        "lab_id": lab_report.get("lab_id", ""),
+        "label": lab_report.get("label", ""),
+        "seed_count_planned": lab_report.get("seed_count_planned", 0),
+        "seed_count_recorded": metrics.get("seed_count_recorded", 0),
+        "seed_count_completed": metrics.get("seed_count_completed", 0),
+        "seed_count_non_ok": metrics.get("seed_count_non_ok", 0),
+        "seed_count_failed": metrics.get("seed_count_failed", 0),
+        "seed_count_aborted": metrics.get("seed_count_aborted", 0),
+        "seed_range": lab_report.get("seed_range", ""),
+        "mean_norm_score": metrics.get("mean_norm_score", ""),
+        "std_norm_score": metrics.get("std_norm_score", ""),
+        "total_prompt_tokens": metrics.get("total_prompt_tokens", 0),
+        "total_completion_tokens": metrics.get("total_completion_tokens", 0),
+        "total_lm_tokens": metrics.get("total_lm_tokens", 0),
+        "total_lm_inference_time_s": metrics.get("total_lm_inference_time_s", 0.0),
+        "total_lm_parse_failures": metrics.get("total_lm_parse_failures", 0),
+        "total_lm_request_failures": metrics.get("total_lm_request_failures", 0),
+        "total_lm_request_timeouts": metrics.get("total_lm_request_timeouts", 0),
+        "total_runtime_s": metrics.get("total_runtime_s", 0.0),
+        "mean_runtime_s": metrics.get("mean_runtime_s", ""),
+        "runtime_config": lab_report.get("runtime_config", ""),
+        "lab_log": lab_report.get("lab_log", ""),
+        "lab_simulation_log": lab_report.get("lab_simulation_log", ""),
+        "notes": lab_report.get("notes", ""),
+    }
+
+
 def _append_text_log(path: Path, message: str, include_timestamps: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if include_timestamps:
@@ -1879,6 +1944,8 @@ def _run_campaign(
     skip_lora: bool = False,
     output_dir_override: Optional[Path] = None,
     export_mt: bool = True,
+    fresh_output_override: Optional[bool] = None,
+    resume_existing_override: Optional[bool] = None,
 ) -> int:
     campaign_cfg = master_config.get("campaign", {})
     if not isinstance(campaign_cfg, dict):
@@ -1900,9 +1967,20 @@ def _run_campaign(
             str(campaign_cfg.get("output_dir") or ""),
             f"campaign_runs/{campaign_name_base}",
         )
-    fresh_output = bool(campaign_cfg.get("fresh_output", True))
+    fresh_output = (
+        bool(fresh_output_override)
+        if fresh_output_override is not None
+        else bool(campaign_cfg.get("fresh_output", True))
+    )
+    resume_existing = (
+        bool(resume_existing_override)
+        if resume_existing_override is not None
+        else bool(campaign_cfg.get("resume_existing", False))
+    )
     stop_on_error = bool(campaign_cfg.get("stop_on_error", True))
     stop_on_watchdog_abort = bool(campaign_cfg.get("stop_on_watchdog_abort", False))
+    if fresh_output and resume_existing:
+        raise ValueError("campaign.resume_existing requires campaign.fresh_output=false.")
 
     global_logging_cfg = master_config.get("logging", {}) if isinstance(master_config.get("logging"), dict) else {}
     campaign_logging_cfg = campaign_cfg.get("logging", {}) if isinstance(campaign_cfg.get("logging"), dict) else {}
@@ -1915,6 +1993,7 @@ def _run_campaign(
     _set_shared_logger_timestamp_mode(include_timestamps)
     repro_cfg = _reproducibility_cfg(campaign_cfg)
     runtime_logs_root = (output_dir / "runtime_logs").resolve()
+    resuming_existing_output = bool(resume_existing and output_dir.exists())
 
     if fresh_output and output_dir.exists():
         _remove_tree(output_dir)
@@ -1927,7 +2006,10 @@ def _run_campaign(
     runtime_dir = output_dir / "runtime_configs"
     labs_root = output_dir / "labs"
     lm_error_summary_csv = runtime_logs_root / "lm_error_summary.csv"
-    _write_csv(lm_error_summary_csv, LM_CONVERSATION_OVERVIEW_FIELDS, [])
+    if resuming_existing_output:
+        _ensure_csv_header(lm_error_summary_csv, LM_CONVERSATION_OVERVIEW_FIELDS)
+    else:
+        _write_csv(lm_error_summary_csv, LM_CONVERSATION_OVERVIEW_FIELDS, [])
 
     os.environ["CORASAT_RESULTS_CSV"] = str(results_path)
     os.environ["CORASAT_LOG_DIR"] = str(runtime_logs_root / "shared_logs")
@@ -2009,6 +2091,8 @@ def _run_campaign(
         "lab_results_csv": str(lab_results_path),
         "lm_error_summary_csv": str(lm_error_summary_csv),
         "include_timestamps": include_timestamps,
+        "resume_existing": resume_existing,
+        "resumed_from_existing_output": resuming_existing_output,
         "seed_limit": int(seed_limit) if seed_limit is not None else None,
         "skip_optuna": bool(skip_optuna),
         "skip_lora": bool(skip_lora),
@@ -2019,7 +2103,7 @@ def _run_campaign(
     _append_text_log(
         campaign_log_path,
         f"Campaign '{campaign_name}' started (mode={run_mode}, seed_limit={seed_limit}, "
-        f"skip_optuna={skip_optuna}, skip_lora={skip_lora}).",
+        f"skip_optuna={skip_optuna}, skip_lora={skip_lora}, resume_existing={resume_existing}).",
         include_timestamps,
     )
     _append_text_log(campaign_log_path, f"Output dir: {output_dir}", include_timestamps)
@@ -2029,14 +2113,21 @@ def _run_campaign(
         f"LM error summary CSV: {lm_error_summary_csv}",
         include_timestamps,
     )
+    if resuming_existing_output:
+        _append_text_log(campaign_log_path, "Resume mode: preserving existing campaign output.", include_timestamps)
 
     lab_rows: List[Dict[str, Any]] = []
     lab_rows_by_id: Dict[str, Dict[str, Any]] = {}
     lab_reports_by_id: Dict[str, Dict[str, Any]] = {}
     completed_lab_logfiles: Dict[str, str] = {}
-    error_entries: List[Dict[str, Any]] = []
     error_summary_json_path = output_dir / "error_summary.json"
     error_summary_csv_path = output_dir / "error_summary.csv"
+    error_entries: List[Dict[str, Any]] = []
+    if resuming_existing_output:
+        existing_error_summary = _read_json_if_exists(error_summary_json_path)
+        existing_error_entries = existing_error_summary.get("entries")
+        if isinstance(existing_error_entries, list):
+            error_entries = [dict(item) for item in existing_error_entries if isinstance(item, dict)]
 
     def _persist_error_summary() -> Dict[str, Any]:
         payload = {
@@ -2091,6 +2182,27 @@ def _run_campaign(
         lab_report_path = lab_dir / "lab_report.json"
         lab_simulation_log_path = lab_runtime_logs_dir / f"{lab_log_stem}.sim.log"
         reference_lab_id = str(lab_cfg.get("reference_lab") or "").strip()
+
+        if resuming_existing_output and lab_report_path.exists():
+            existing_lab_report = _read_json_if_exists(lab_report_path)
+            if existing_lab_report:
+                restored_row = _lab_row_from_report(existing_lab_report, lab_report_path)
+                restored_label = str(existing_lab_report.get("label") or lab_label).strip() or lab_label
+                restored_sim_log = str(existing_lab_report.get("lab_simulation_log") or "")
+                lab_rows.append(restored_row)
+                lab_rows_by_id[lab_id] = dict(restored_row)
+                manifest["labs"].append(existing_lab_report)
+                lab_reports_by_id[lab_id] = dict(existing_lab_report)
+                completed_lab_logfiles[lab_id] = restored_sim_log
+                completed_lab_logfiles[restored_label] = restored_sim_log
+                if restored_label != lab_label:
+                    completed_lab_logfiles[lab_label] = restored_sim_log
+                _append_text_log(
+                    campaign_log_path,
+                    f"[{lab_id}] resume skip | existing lab_report.json found.",
+                    include_timestamps,
+                )
+                continue
 
         _append_text_log(
             campaign_log_path,
@@ -2351,10 +2463,53 @@ def _run_campaign(
                 _append_text_log(lab_log_path, "Lab completed (preparation only).", include_timestamps)
                 continue
 
-            seed_reports: List[Dict[str, Any]] = []
+            existing_seed_reports = _load_seed_reports(seeds_dir) if resuming_existing_output else []
+            existing_seed_reports_by_seed: Dict[int, Dict[str, Any]] = {}
+            for seed_payload in existing_seed_reports:
+                try:
+                    existing_seed = int(seed_payload.get("seed"))
+                except Exception:
+                    continue
+                if existing_seed not in lab_seeds:
+                    continue
+                existing_seed_reports_by_seed[existing_seed] = seed_payload
+
+            seed_reports: List[Dict[str, Any]] = [
+                existing_seed_reports_by_seed[seed]
+                for seed in lab_seeds
+                if seed in existing_seed_reports_by_seed
+            ]
+            if existing_seed_reports_by_seed:
+                _append_text_log(
+                    campaign_log_path,
+                    f"[{lab_id}] resuming with {len(existing_seed_reports_by_seed)}/{len(lab_seeds)} existing seed reports.",
+                    include_timestamps,
+                )
+                _append_text_log(
+                    lab_log_path,
+                    f"Resume detected: reusing {len(existing_seed_reports_by_seed)} existing seed reports.",
+                    include_timestamps,
+                )
+                for seed_payload in seed_reports:
+                    overview_row = _lm_overview_row_from_seed(
+                        campaign_name=campaign_name,
+                        lab_id=lab_id,
+                        label=lab_label,
+                        runtime_config_path=runtime_config_path,
+                        seed_payload=seed_payload,
+                    )
+                    _upsert_csv_row(
+                        lm_error_summary_csv,
+                        fieldnames=LM_CONVERSATION_OVERVIEW_FIELDS,
+                        row=overview_row,
+                        key_fields=("campaign", "lab_id", "seed"),
+                    )
+
             total_games = max(1, len(lab_seeds))
 
             for game_index, seed in enumerate(lab_seeds, start=1):
+                if int(seed) in existing_seed_reports_by_seed:
+                    continue
                 seed_log_name = f"{lab_id}_seed_{int(seed):04d}.log"
                 _append_text_log(lab_log_path, f"Seed {seed} started.", include_timestamps)
                 seed_log_path = seed_logs_dir / seed_log_name
@@ -2665,7 +2820,13 @@ def _run_campaign(
     return 0
 
 
-def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> int:
+def _run_configured_modes(
+    master_config: Dict[str, Any],
+    config_path: Path,
+    *,
+    fresh_output_override: Optional[bool] = None,
+    resume_existing_override: Optional[bool] = None,
+) -> int:
     campaign_cfg = master_config.get("campaign")
     if not isinstance(campaign_cfg, dict):
         raise ValueError("config must define a 'campaign' object.")
@@ -2768,6 +2929,8 @@ def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> i
                     skip_lora=smoke_skip_lora,
                     output_dir_override=smoke_run1_output,
                     export_mt=smoke_export_mt,
+                    fresh_output_override=fresh_output_override,
+                    resume_existing_override=resume_existing_override,
                 )
                 run1_success = True
             except Exception as exc:
@@ -2799,6 +2962,8 @@ def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> i
                         skip_lora=smoke_skip_lora,
                         output_dir_override=smoke_run2_output,
                         export_mt=smoke_export_mt,
+                        fresh_output_override=fresh_output_override,
+                        resume_existing_override=resume_existing_override,
                     )
                     run2_success = True
                 except Exception as exc:
@@ -2876,11 +3041,19 @@ def _run_configured_modes(master_config: Dict[str, Any], config_path: Path) -> i
                 skip_lora=smoke_skip_lora,
                 output_dir_override=smoke_output_dir,
                 export_mt=smoke_export_mt,
+                fresh_output_override=fresh_output_override,
+                resume_existing_override=resume_existing_override,
             )
 
     if campaign_run:
         _log("Starting full campaign run.")
-        _run_campaign(master_config, config_path, run_mode="campaign")
+        _run_campaign(
+            master_config,
+            config_path,
+            run_mode="campaign",
+            fresh_output_override=fresh_output_override,
+            resume_existing_override=resume_existing_override,
+        )
 
     return 0
 
@@ -2935,6 +3108,17 @@ def main() -> int:
         default=core.CONFIG_PATH,
         help="Campaign config path (default: config.json).",
     )
+    output_mode_group = parser.add_mutually_exclusive_group()
+    output_mode_group.add_argument(
+        "--resume-existing",
+        action="store_true",
+        help="Preserve the configured output directory and continue from existing campaign artifacts.",
+    )
+    output_mode_group.add_argument(
+        "--clean-rerun",
+        action="store_true",
+        help="Force a clean slate rerun by deleting the configured output directory before starting.",
+    )
     args = parser.parse_args()
 
     config_path = _resolve_config_path(str(args.config))
@@ -2942,11 +3126,26 @@ def main() -> int:
         raise SystemExit(f"Config not found: {config_path}")
 
     master_config = _read_json(config_path)
+    fresh_output_override: Optional[bool] = None
+    resume_existing_override: Optional[bool] = None
+    if args.resume_existing:
+        fresh_output_override = False
+        resume_existing_override = True
+    elif args.clean_rerun:
+        fresh_output_override = True
+        resume_existing_override = False
 
     try:
         if not _has_campaign_labs(master_config):
             raise SystemExit("Single-runtime mode was removed. Provide config.campaign.labs in the config file.")
-        return int(_run_configured_modes(master_config, config_path))
+        return int(
+            _run_configured_modes(
+                master_config,
+                config_path,
+                fresh_output_override=fresh_output_override,
+                resume_existing_override=resume_existing_override,
+            )
+        )
     except KeyboardInterrupt:
         _log("Interrupted by user.")
         return 130

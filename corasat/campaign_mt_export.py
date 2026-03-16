@@ -62,6 +62,34 @@ RULES_NAME_OVERRIDES: Dict[str, Tuple[str, str]] = {
     "R4": ("Minimal task rules", "Environment mechanics and task framing without the higher-level mission strategy directives used in the full rules."),
 }
 
+LAB_RESULTS_FIELDS: Sequence[str] = (
+    "timestamp",
+    "lab_id",
+    "label",
+    "seed_count_planned",
+    "seed_count_recorded",
+    "seed_count_completed",
+    "seed_count_non_ok",
+    "seed_count_failed",
+    "seed_count_aborted",
+    "seed_range",
+    "mean_norm_score",
+    "std_norm_score",
+    "total_prompt_tokens",
+    "total_completion_tokens",
+    "total_lm_tokens",
+    "total_lm_inference_time_s",
+    "total_lm_parse_failures",
+    "total_lm_request_failures",
+    "total_lm_request_timeouts",
+    "total_runtime_s",
+    "mean_runtime_s",
+    "runtime_config",
+    "lab_log",
+    "lab_simulation_log",
+    "notes",
+)
+
 
 def _resolve_path(base_dir: Path, raw_value: str, fallback: str) -> Path:
     token = str(raw_value or "").strip()
@@ -227,6 +255,159 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _write_csv_rows(path: Path, fieldnames: Sequence[str], rows: Sequence[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(fieldnames))
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({name: row.get(name, "") for name in fieldnames})
+
+
+def _write_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _path_mtime_iso(path: Path) -> str:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat()
+    except Exception:
+        return ""
+
+
+def _lab_row_from_report_payload(lab_report: Dict[str, Any], report_path: Path) -> Dict[str, Any]:
+    metrics = lab_report.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    return {
+        "timestamp": _path_mtime_iso(report_path),
+        "lab_id": lab_report.get("lab_id", ""),
+        "label": lab_report.get("label", ""),
+        "seed_count_planned": lab_report.get("seed_count_planned", 0),
+        "seed_count_recorded": metrics.get("seed_count_recorded", 0),
+        "seed_count_completed": metrics.get("seed_count_completed", 0),
+        "seed_count_non_ok": metrics.get("seed_count_non_ok", 0),
+        "seed_count_failed": metrics.get("seed_count_failed", 0),
+        "seed_count_aborted": metrics.get("seed_count_aborted", 0),
+        "seed_range": lab_report.get("seed_range", ""),
+        "mean_norm_score": metrics.get("mean_norm_score", ""),
+        "std_norm_score": metrics.get("std_norm_score", ""),
+        "total_prompt_tokens": metrics.get("total_prompt_tokens", 0),
+        "total_completion_tokens": metrics.get("total_completion_tokens", 0),
+        "total_lm_tokens": metrics.get("total_lm_tokens", 0),
+        "total_lm_inference_time_s": metrics.get("total_lm_inference_time_s", 0.0),
+        "total_lm_parse_failures": metrics.get("total_lm_parse_failures", 0),
+        "total_lm_request_failures": metrics.get("total_lm_request_failures", 0),
+        "total_lm_request_timeouts": metrics.get("total_lm_request_timeouts", 0),
+        "total_runtime_s": metrics.get("total_runtime_s", 0.0),
+        "mean_runtime_s": metrics.get("mean_runtime_s", ""),
+        "runtime_config": lab_report.get("runtime_config", ""),
+        "lab_log": lab_report.get("lab_log", ""),
+        "lab_simulation_log": lab_report.get("lab_simulation_log", ""),
+        "notes": lab_report.get("notes", ""),
+    }
+
+
+def _read_lab_rows_with_fallback(output_dir: Path, lab_results_path: Path) -> List[Dict[str, str]]:
+    lab_rows = _read_csv_rows(lab_results_path)
+    if lab_rows:
+        return lab_rows
+
+    labs_dir = output_dir / "labs"
+    if not labs_dir.exists():
+        return []
+
+    fallback_rows: List[Dict[str, Any]] = []
+    for report_path in sorted(labs_dir.glob("*/lab_report.json"), key=lambda path: _id_sort_key(path.parent.name)):
+        try:
+            payload = _read_json(report_path)
+        except Exception:
+            continue
+        lab_id = str(payload.get("lab_id") or "").strip()
+        if not lab_id:
+            continue
+        fallback_rows.append(_lab_row_from_report_payload(payload, report_path))
+
+    if fallback_rows:
+        _write_csv_rows(lab_results_path, LAB_RESULTS_FIELDS, fallback_rows)
+        return _read_csv_rows(lab_results_path)
+    return []
+
+
+def _lab_row_is_complete(row: Dict[str, str]) -> bool:
+    planned = _int_from_row(row, "seed_count_planned")
+    completed = _int_from_row(row, "seed_count_completed")
+    return bool(planned and completed is not None and completed >= planned)
+
+
+def _reportable_results_rows(
+    labs: Sequence[Dict[str, Any]],
+    lab_rows: Sequence[Dict[str, str]],
+    results_rows: Sequence[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    complete_ids = {
+        str(row.get("lab_id") or "").strip()
+        for row in lab_rows
+        if _lab_row_is_complete(row)
+    }
+    filtered: List[Dict[str, str]] = []
+    rows_by_lab: Dict[str, List[Dict[str, str]]] = {}
+    for row in results_rows:
+        lab_id = str(row.get("lab_id") or "").strip()
+        if not lab_id or lab_id not in complete_ids:
+            continue
+        cloned = dict(row)
+        filtered.append(cloned)
+        rows_by_lab.setdefault(lab_id, []).append(cloned)
+
+    for lab in labs:
+        lab_id = str(lab.get("id") or lab.get("lab_id") or "").strip()
+        reference_lab_id = str(lab.get("reference_lab") or "").strip()
+        if not lab_id or not reference_lab_id or lab_id not in complete_ids or lab_id in rows_by_lab:
+            continue
+        source_rows = rows_by_lab.get(reference_lab_id, [])
+        for source_row in source_rows:
+            cloned = dict(source_row)
+            cloned["lab_id"] = lab_id
+            filtered.append(cloned)
+        if source_rows:
+            rows_by_lab[lab_id] = [dict(row) for row in filtered if str(row.get("lab_id") or "").strip() == lab_id]
+
+    return filtered
+
+
+def _build_interim_manifest(
+    campaign_name: str,
+    results_path: Path,
+    lab_results_path: Path,
+    lab_rows: Sequence[Dict[str, str]],
+) -> Dict[str, Any]:
+    return {
+        "campaign": campaign_name,
+        "status": "in_progress_snapshot",
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "results_csv": str(results_path),
+        "lab_results_csv": str(lab_results_path),
+        "totals": {
+            "labs_with_reports": len(lab_rows),
+            "seed_count_recorded": sum(int(row.get("seed_count_recorded") or 0) for row in lab_rows),
+            "seed_count_completed": sum(int(row.get("seed_count_completed") or 0) for row in lab_rows),
+            "seed_count_non_ok": sum(int(row.get("seed_count_non_ok") or 0) for row in lab_rows),
+            "seed_count_failed": sum(int(row.get("seed_count_failed") or 0) for row in lab_rows),
+            "seed_count_aborted": sum(int(row.get("seed_count_aborted") or 0) for row in lab_rows),
+            "total_prompt_tokens": sum(int(row.get("total_prompt_tokens") or 0) for row in lab_rows),
+            "total_completion_tokens": sum(int(row.get("total_completion_tokens") or 0) for row in lab_rows),
+            "total_lm_tokens": sum(int(row.get("total_lm_tokens") or 0) for row in lab_rows),
+            "total_lm_inference_time_s": round(
+                sum(float(row.get("total_lm_inference_time_s") or 0.0) for row in lab_rows),
+                6,
+            ),
+            "total_runtime_s": round(sum(float(row.get("total_runtime_s") or 0.0) for row in lab_rows), 6),
+        },
+    }
+
+
 def _float_from_row(row: Dict[str, str], field: str) -> Optional[float]:
     value = row.get(field)
     if value in (None, ""):
@@ -260,13 +441,13 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
 
     lines: List[str] = []
     lines.append("% Auto-generated by campaign_mt_export.py")
+    lines.append("\\begin{landscape}")
     lines.append("\\begingroup")
     lines.append("\\small")
     lines.append("\\setlength{\\tabcolsep}{3pt}")
     lines.append("\\setlength{\\LTpre}{6pt}")
     lines.append("\\setlength{\\LTpost}{6pt}")
     lines.append("\\begin{longtable}{p{0.08\\linewidth} p{0.16\\linewidth} p{0.22\\linewidth} p{0.45\\linewidth}}")
-    lines.append("\\caption{Configuration-item identifiers used in this campaign.}\\label{tab:config-item-ids}\\\\")
     lines.append("\\hline")
     lines.append("ID & Category & Name & Description \\\\")
     lines.append("\\hline")
@@ -295,17 +476,23 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
             )
 
     lines.append("\\hline")
+    lines.append("\\caption{Configuration-item identifiers used in this campaign.}\\label{tab:config-item-ids}\\\\")
     lines.append("\\end{longtable}")
     lines.append("\\endgroup")
+    lines.append("\\end{landscape}")
     lines.append("")
 
+    lines.append("\\begin{landscape}")
     lines.append("\\begingroup")
     lines.append("\\small")
     lines.append("\\setlength{\\tabcolsep}{2pt}")
     lines.append("\\setlength{\\LTpre}{6pt}")
     lines.append("\\setlength{\\LTpost}{6pt}")
-    lines.append("\\begin{longtable}{l l l l l l l l l l p{0.30\\linewidth}}")
-    lines.append("\\caption{Lab-to-configuration mapping for campaign execution.}\\label{tab:lab-configs}\\\\")
+    lines.append(
+        "\\begin{longtable}{p{0.07\\linewidth} p{0.07\\linewidth} p{0.04\\linewidth} "
+        "p{0.04\\linewidth} p{0.05\\linewidth} p{0.05\\linewidth} p{0.05\\linewidth} "
+        "p{0.05\\linewidth} p{0.05\\linewidth} p{0.10\\linewidth} p{0.33\\linewidth}}"
+    )
     lines.append("\\hline")
     lines.append("Lab & Parent & R & P & DS & M & FT & A & C & Changed item & Hypothesis / role \\\\")
     lines.append("\\hline")
@@ -335,8 +522,10 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
         lines.append(" & ".join(row) + " \\\\")
 
     lines.append("\\hline")
+    lines.append("\\caption{Lab-to-configuration mapping for campaign execution.}\\label{tab:lab-configs}\\\\")
     lines.append("\\end{longtable}")
     lines.append("\\endgroup")
+    lines.append("\\end{landscape}")
     lines.append("")
     return "\n".join(lines)
 
@@ -354,7 +543,7 @@ def _build_lab_results_tex(labs: Sequence[Dict[str, Any]], lab_rows: Sequence[Di
     lines.append("\\resizebox{\\linewidth}{!}{%")
     lines.append("\\begin{tabular}{l p{0.37\\linewidth} c c c c}")
     lines.append("\\hline")
-    lines.append("Lab & Configuration & Mean $\\pm$ Std (norm score) & Seeds & Runtime (s/seed) & LM tokens \\\\")
+    lines.append("Lab & Configuration & Normalized score & Seeds & Runtime (s/seed) & LM tokens \\\\")
     lines.append("\\hline")
 
     for lab in runtime_labs:
@@ -419,18 +608,17 @@ def _build_aux_metrics_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequenc
 
     lines: List[str] = []
     lines.append("% Auto-generated by campaign_mt_export.py")
-    lines.append("\\begin{table}[t]")
-    lines.append("\\centering")
+    lines.append("\\begin{landscape}")
     lines.append("\\begingroup")
+    lines.append("\\centering")
     lines.append("\\small")
-    lines.append("\\setlength{\\tabcolsep}{4pt}")
-    lines.append("\\resizebox{\\linewidth}{!}{%")
+    lines.append("\\renewcommand{\\arraystretch}{1.0}")
+    lines.append("\\setlength{\\tabcolsep}{5pt}")
     lines.append("\\begin{tabular}{l c c c c c c}")
     lines.append("\\hline")
     lines.append(
-        "Lab & Coverage ($\\mu \\pm \\sigma$) & Broadcast rate ($\\mu \\pm \\sigma$) & "
-        "Rendezvous ($\\mu \\pm \\sigma$) & Wait rate ($\\mu \\pm \\sigma$) & "
-        "Correct-edge rate ($\\mu \\pm \\sigma$) & Avg turn duration (s) \\\\"
+        "Lab & Coverage & Broadcast rate & Rendezvous success & Wait rate & "
+        "Correct-edge rate & Turn duration (s) \\\\"
     )
     lines.append("\\hline")
     for lab in runtime_labs:
@@ -452,11 +640,12 @@ def _build_aux_metrics_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequenc
         )
     lines.append("\\hline")
     lines.append("\\end{tabular}")
-    lines.append("}")
-    lines.append("\\caption{Auxiliary mission metrics aggregated over campaign seed runs.}")
+    lines.append("\\par\\medskip")
+    lines.append("\\captionsetup{hypcap=false}")
+    lines.append("\\captionof{table}{Auxiliary mission metrics aggregated over campaign seed runs.}")
     lines.append("\\label{tab:aux-metrics}")
     lines.append("\\endgroup")
-    lines.append("\\end{table}")
+    lines.append("\\end{landscape}")
     lines.append("")
     return "\n".join(lines)
 
@@ -495,7 +684,7 @@ def _build_pairwise_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequence[D
 
     lines: List[str] = []
     lines.append("% Auto-generated by campaign_mt_export.py")
-    lines.append("\\begin{table}[t]")
+    lines.append("\\begin{table}[H]")
     lines.append("\\centering")
     lines.append("\\begin{tabular}{l c c c c}")
     lines.append("\\hline")
@@ -510,14 +699,15 @@ def _build_pairwise_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequence[D
         if diffs:
             mean_diff = statistics.mean(diffs)
             ci_low, ci_high = _bootstrap_ci(diffs)
+            identical = all(abs(diff) <= 1e-12 for diff in diffs)
             if len(diffs) > 1:
                 sd = statistics.stdev(diffs)
                 cohen = 0.0 if sd <= 0 else mean_diff / sd
             else:
                 cohen = 0.0
-            test_name = "bootstrap only"
+            test_name = "identical outcomes" if identical else "bootstrap only"
             p_value = None
-            if stats is not None and np is not None and len(diffs) >= 3:
+            if not identical and stats is not None and np is not None and len(diffs) >= 3:
                 arr = np.array(diffs, dtype=float)
                 try:
                     _, shapiro_p = stats.shapiro(arr)
@@ -535,6 +725,8 @@ def _build_pairwise_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequence[D
                         test_name = "wilcoxon"
                     except Exception:
                         pass
+            if p_value is not None and not math.isfinite(float(p_value)):
+                p_value = None
             p_text = test_name if p_value is None else f"{test_name} ({p_value:.3g})"
             ci_text = "n/a" if ci_low is None or ci_high is None else f"[{ci_low:+.5f}, {ci_high:+.5f}]"
             lines.append(
@@ -564,7 +756,7 @@ def _equal_with_tolerance(a: Any, b: Any, tol: float = 1e-9) -> bool:
 def _build_reproducibility_tex(results_rows: Sequence[Dict[str, str]], reference_rows: Sequence[Dict[str, str]]) -> str:
     lines: List[str] = []
     lines.append("% Auto-generated by campaign_mt_export.py")
-    lines.append("\\begin{table}[t]")
+    lines.append("\\begin{table}[H]")
     lines.append("\\centering")
     lines.append("\\begin{tabular}{l c c}")
     lines.append("\\hline")
@@ -732,9 +924,12 @@ def export_campaign_artifacts(
         seed_spec = sim_cfg.get("seed_list")
 
     result_rows = _read_csv_rows(results_path)
-    lab_rows = _read_csv_rows(lab_results_path)
+    lab_rows = _read_lab_rows_with_fallback(output_dir, lab_results_path)
+    reportable_result_rows = _reportable_results_rows(labs, lab_rows, result_rows)
 
     campaign_name = str(campaign_cfg.get("name") or campaign_cfg.get("campaign_name") or "campaign").strip() or "campaign"
+    if not manifest_path.exists() and lab_rows:
+        _write_json(manifest_path, _build_interim_manifest(campaign_name, results_path, lab_results_path, lab_rows))
     copy_dir = data_dir / campaign_name
     copy_dir.mkdir(parents=True, exist_ok=True)
     copied_results = copy_dir / "results.csv"
@@ -766,11 +961,11 @@ def export_campaign_artifacts(
     outputs["lab_results_table"] = str(lab_table_path)
 
     aux_path = tex_generated / "aux_metrics_table.tex"
-    _write_text(aux_path, _build_aux_metrics_tex(labs, result_rows))
+    _write_text(aux_path, _build_aux_metrics_tex(labs, reportable_result_rows))
     outputs["aux_metrics_table"] = str(aux_path)
 
     pairwise_path = tex_generated / "pairwise_table.tex"
-    _write_text(pairwise_path, _build_pairwise_tex(labs, result_rows))
+    _write_text(pairwise_path, _build_pairwise_tex(labs, reportable_result_rows))
     outputs["pairwise_table"] = str(pairwise_path)
 
     repro_cfg = mt_cfg.get("reproducibility", {}) if isinstance(mt_cfg.get("reproducibility"), dict) else {}
@@ -803,16 +998,16 @@ def export_campaign_artifacts(
     )
     outputs["campaign_overview"] = str(overview_path)
 
-    score_fig = _plot_box(labs, result_rows, "norm_score", "Normalized score", f"{campaign_name}: normalized score", fig_generated / "lab_score_distributions.png")
+    score_fig = _plot_box(labs, reportable_result_rows, "norm_score", "Normalized score", f"{campaign_name}: normalized score", fig_generated / "lab_score_distributions.png")
     if score_fig:
         outputs["figure_score_distributions"] = str(score_fig)
-    bcast_fig = _plot_box(labs, result_rows, "broadcast_rate", "Broadcast rate", f"{campaign_name}: broadcast rate", fig_generated / "lab_broadcast_rate.png")
+    bcast_fig = _plot_box(labs, reportable_result_rows, "broadcast_rate", "Broadcast rate", f"{campaign_name}: broadcast rate", fig_generated / "lab_broadcast_rate.png")
     if bcast_fig:
         outputs["figure_broadcast_rate"] = str(bcast_fig)
-    wait_fig = _plot_box(labs, result_rows, "wait_rate", "Wait rate", f"{campaign_name}: wait rate", fig_generated / "lab_wait_rate.png")
+    wait_fig = _plot_box(labs, reportable_result_rows, "wait_rate", "Wait rate", f"{campaign_name}: wait rate", fig_generated / "lab_wait_rate.png")
     if wait_fig:
         outputs["figure_wait_rate"] = str(wait_fig)
-    turn_fig = _plot_box(labs, result_rows, "avg_turn_duration_s", "Average turn duration (s)", f"{campaign_name}: turn duration", fig_generated / "lab_turn_duration.png", log_scale=True)
+    turn_fig = _plot_box(labs, reportable_result_rows, "avg_turn_duration_s", "Average turn duration (s)", f"{campaign_name}: turn duration", fig_generated / "lab_turn_duration.png", log_scale=True)
     if turn_fig:
         outputs["figure_turn_duration"] = str(turn_fig)
 

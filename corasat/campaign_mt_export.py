@@ -871,33 +871,158 @@ def _plot_box(
     title: str,
     output: Path,
     log_scale: bool = False,
+    broken_y_axis: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None,
 ) -> Optional[Path]:
     if plt is None:
         return None
     labels, values = _metric_series_by_lab(labs, rows, field)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig = plt.figure(figsize=(11, 5))
-    axis = fig.add_subplot(1, 1, 1)
-    if labels and values:
-        axis.boxplot(values, tick_labels=labels, showfliers=True)
-    else:
-        axis.text(
-            0.5,
-            0.5,
-            "No campaign data available yet.",
-            transform=axis.transAxes,
-            ha="center",
-            va="center",
+    if broken_y_axis and labels and values:
+        fig, (axis_top, axis_bottom) = plt.subplots(
+            2,
+            1,
+            figsize=(11, 5.8),
+            sharex=True,
+            gridspec_kw={"height_ratios": [1, 3], "hspace": 0.05},
         )
-        axis.set_xticks([])
-        axis.set_yticks([])
-    axis.set_title(title)
-    axis.set_xlabel("Lab")
-    axis.set_ylabel(ylabel)
-    if log_scale and labels and values:
-        axis.set_yscale("log")
-    axis.grid(True, axis="y", alpha=0.2)
-    fig.tight_layout()
+        positions = list(range(1, len(labels) + 1))
+        boxplot_kwargs = {
+            "tick_labels": labels,
+            "showfliers": True,
+            "patch_artist": True,
+            "medianprops": {"color": "#8c2d04", "linewidth": 1.1},
+            "whiskerprops": {"color": "#666666", "linewidth": 0.9},
+            "capprops": {"color": "#666666", "linewidth": 0.9},
+            "boxprops": {"facecolor": "#9ecae1", "edgecolor": "#4a4a4a", "linewidth": 0.9},
+        }
+        axis_top.boxplot(values, positions=positions, **boxplot_kwargs)
+        axis_bottom.boxplot(values, positions=positions, **boxplot_kwargs)
+        axis_top.set_ylim(*broken_y_axis[0])
+        axis_bottom.set_ylim(*broken_y_axis[1])
+        axis_top.set_title(title)
+        axis_bottom.set_xlabel("Lab")
+        fig.supylabel(ylabel)
+        for axis in (axis_top, axis_bottom):
+            axis.grid(True, axis="y", alpha=0.2)
+        axis_top.spines["bottom"].set_visible(False)
+        axis_bottom.spines["top"].set_visible(False)
+        axis_top.tick_params(labeltop=False, bottom=False)
+        axis_bottom.tick_params(top=False)
+        diagonal = 0.008
+        kwargs = {"transform": axis_top.transAxes, "color": "k", "clip_on": False, "linewidth": 1.0}
+        axis_top.plot((-diagonal, +diagonal), (-diagonal, +diagonal), **kwargs)
+        axis_top.plot((1 - diagonal, 1 + diagonal), (-diagonal, +diagonal), **kwargs)
+        kwargs["transform"] = axis_bottom.transAxes
+        axis_bottom.plot((-diagonal, +diagonal), (1 - diagonal, 1 + diagonal), **kwargs)
+        axis_bottom.plot((1 - diagonal, 1 + diagonal), (1 - diagonal, 1 + diagonal), **kwargs)
+        for label in axis_bottom.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha("right")
+    else:
+        fig = plt.figure(figsize=(11, 5))
+        axis = fig.add_subplot(1, 1, 1)
+        if labels and values:
+            axis.boxplot(values, tick_labels=labels, showfliers=True)
+        else:
+            axis.text(
+                0.5,
+                0.5,
+                "No campaign data available yet.",
+                transform=axis.transAxes,
+                ha="center",
+                va="center",
+            )
+            axis.set_xticks([])
+            axis.set_yticks([])
+        axis.set_title(title)
+        axis.set_xlabel("Lab")
+        axis.set_ylabel(ylabel)
+        if log_scale and labels and values:
+            axis.set_yscale("log")
+        axis.grid(True, axis="y", alpha=0.2)
+    if broken_y_axis and labels and values:
+        fig.subplots_adjust(left=0.08, right=0.98, top=0.90, bottom=0.18, hspace=0.05)
+    else:
+        fig.tight_layout()
+    fig.savefig(output, dpi=220)
+    plt.close(fig)
+    return output
+
+
+def _plot_turn_duration_groups(
+    labs: Sequence[Dict[str, Any]],
+    rows: Sequence[Dict[str, str]],
+    output: Path,
+) -> Optional[Path]:
+    if plt is None:
+        return None
+    labels, values = _metric_series_by_lab(labs, rows, "avg_turn_duration_s")
+    if not labels or not values:
+        return _plot_box(
+            labs,
+            rows,
+            "avg_turn_duration_s",
+            "Average turn duration (s)",
+            "Turn duration",
+            output,
+        )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    group_specs = [
+        ("L0.0-L0.3", {"L0.0", "L0.1", "L0.2", "L0.3"}),
+        ("L0.4-L2.1", {"L0.4", "L0.45", "L0.5", "L0.6", "L0.7", "L0.8", "L1.0", "L1.1", "L1.2", "L1.3", "L1.4", "L2.0", "L2.1"}),
+        ("L2.2 onward", None),
+    ]
+
+    label_to_values = {label: bucket for label, bucket in zip(labels, values)}
+    assigned: set[str] = set()
+    grouped_panels: List[Tuple[str, List[str], List[List[float]]]] = []
+    for title, members in group_specs:
+        if members is None:
+            group_labels = [label for label in labels if label not in assigned]
+        else:
+            group_labels = [label for label in labels if label in members]
+            assigned.update(group_labels)
+        group_values = [label_to_values[label] for label in group_labels]
+        grouped_panels.append((title, group_labels, group_values))
+
+    width_ratios = [max(1, len(panel_labels)) for _, panel_labels, _ in grouped_panels]
+    total_slots = sum(width_ratios)
+    fig_width = max(15.5, 0.78 * total_slots)
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(fig_width, 5.3),
+        sharey=False,
+        gridspec_kw={"width_ratios": width_ratios},
+    )
+    boxplot_kwargs = {
+        "showfliers": True,
+        "patch_artist": True,
+        "medianprops": {"color": "#8c2d04", "linewidth": 1.1},
+        "whiskerprops": {"color": "#666666", "linewidth": 0.9},
+        "capprops": {"color": "#666666", "linewidth": 0.9},
+        "boxprops": {"facecolor": "#9ecae1", "edgecolor": "#4a4a4a", "linewidth": 0.9},
+    }
+
+    for axis, (panel_title, panel_labels, panel_values) in zip(axes, grouped_panels):
+        if panel_labels and panel_values:
+            axis.boxplot(panel_values, tick_labels=panel_labels, **boxplot_kwargs)
+            for tick in axis.get_xticklabels():
+                tick.set_rotation(45)
+                tick.set_ha("right")
+        else:
+            axis.text(0.5, 0.5, "No data", transform=axis.transAxes, ha="center", va="center")
+            axis.set_xticks([])
+            axis.set_yticks([])
+        axis.set_title(panel_title)
+        axis.set_xlabel("Lab")
+        axis.grid(True, axis="y", alpha=0.2)
+
+    axes[0].set_ylabel("Average turn duration (s)", labelpad=8)
+    fig.suptitle("Turn duration by campaign segment")
+    fig.subplots_adjust(left=0.06, right=0.995, top=0.86, bottom=0.26, wspace=0.16)
     fig.savefig(output, dpi=220)
     plt.close(fig)
     return output
@@ -1073,7 +1198,11 @@ def export_campaign_artifacts(
     wait_fig = _plot_box(labs, reportable_result_rows, "wait_rate", "Wait rate", f"{campaign_name}: wait rate", fig_generated / "lab_wait_rate.png")
     if wait_fig:
         outputs["figure_wait_rate"] = str(wait_fig)
-    turn_fig = _plot_box(labs, reportable_result_rows, "avg_turn_duration_s", "Average turn duration (s)", f"{campaign_name}: turn duration", fig_generated / "lab_turn_duration.png", log_scale=True)
+    turn_fig = _plot_turn_duration_groups(
+        labs,
+        reportable_result_rows,
+        fig_generated / "lab_turn_duration.png",
+    )
     if turn_fig:
         outputs["figure_turn_duration"] = str(turn_fig)
 

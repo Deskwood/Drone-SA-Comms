@@ -1,13 +1,13 @@
 {
-  "l13_smoke_train": {
-    "file_name": "l13_smoke_train.jsonl",
+  "l13_train": {
+    "file_name": "l13_train.jsonl",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages"
     }
   },
-  "l13_smoke_val": {
-    "file_name": "l13_smoke_val.jsonl",
+  "l13_val": {
+    "file_name": "l13_val.jsonl",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages"

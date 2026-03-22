@@ -877,7 +877,7 @@ def _build_reproducibility_tex(
     lines.append("\\hline")
     lines.append("\\end{tabular}")
     if isinstance(report_field_stats, dict) and report_field_stats:
-        lines.append("\\caption{Field-wise reproducibility results from the available double-smoke rerun comparison}")
+        lines.append("\\caption{Field-wise exact-match rates for the eight shared-seed fields in the available double-smoke rerun comparison}")
     else:
         lines.append("\\caption{Reproducibility comparison against reference campaign data}")
     lines.append("\\label{tab:repro-summary}")

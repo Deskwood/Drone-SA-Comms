@@ -488,7 +488,7 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
             )
 
     lines.append("\\hline")
-    lines.append("\\caption{Configuration-item identifiers used in this campaign.}\\label{tab:config-item-ids}\\\\")
+    lines.append("\\caption{Configuration-item identifiers used in this campaign}\\label{tab:config-item-ids}\\\\")
     lines.append("\\end{longtable}")
     lines.append("\\endgroup")
     lines.append("\\end{landscape}")
@@ -534,7 +534,7 @@ def _build_lab_matrix_tex(corasat_root: Path, labs: Sequence[Dict[str, Any]]) ->
         lines.append(" & ".join(row) + " \\\\")
 
     lines.append("\\hline")
-    lines.append("\\caption{Lab-to-configuration mapping for campaign execution.}\\label{tab:lab-configs}\\\\")
+    lines.append("\\caption{Lab-to-configuration mapping for campaign execution}\\label{tab:lab-configs}\\\\")
     lines.append("\\end{longtable}")
     lines.append("\\endgroup")
     lines.append("\\end{landscape}")
@@ -596,7 +596,7 @@ def _build_lab_results_tex(labs: Sequence[Dict[str, Any]], lab_rows: Sequence[Di
     lines.append("\\hline")
     lines.append("\\end{tabular}")
     lines.append("}")
-    lines.append("\\caption{Per-lab aggregated normalized score and runtime statistics for the campaign.}")
+    lines.append("\\caption{Per-lab aggregated normalized score and runtime statistics for the campaign}")
     lines.append("\\label{tab:lab-results}")
     lines.append("\\endgroup")
     lines.append("\\end{table}")
@@ -669,11 +669,7 @@ def _build_aux_metrics_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequenc
     lines.append("\\end{tabular}")
     lines.append("\\par\\smallskip")
     lines.append("\\captionsetup{hypcap=false,skip=4pt}")
-    lines.append(
-        "\\captionof{table}{Auxiliary mission metrics aggregated over campaign seed runs. "
-        "The rendezvous rate reports the fraction of seeds in which all drones were at the scheduled "
-        "rendezvous target on the penultimate round; it does not directly verify a successful information merge.}"
-    )
+    lines.append("\\captionof{table}{Auxiliary mission metrics aggregated over campaign seed runs}")
     lines.append("\\label{tab:aux-metrics}")
     lines.append("\\end{minipage}")
     lines.append("\\endgroup")
@@ -770,7 +766,7 @@ def _build_pairwise_tex(labs: Sequence[Dict[str, Any]], results_rows: Sequence[D
 
     lines.append("\\hline")
     lines.append("\\end{tabular}")
-    lines.append("\\caption{Runtime-evaluated parent-child paired differences in normalized score across lab runs.}")
+    lines.append("\\caption{Runtime-evaluated parent-child paired differences in normalized score across lab runs}")
     lines.append("\\label{tab:pairwise-diffs}")
     lines.append("\\end{table}")
     lines.append("")
@@ -868,9 +864,9 @@ def _build_reproducibility_tex(
     lines.append("\\hline")
     lines.append("\\end{tabular}")
     if isinstance(report_field_stats, dict) and report_field_stats:
-        lines.append("\\caption{Field-wise reproducibility results from the available double-smoke rerun comparison.}")
+        lines.append("\\caption{Field-wise reproducibility results from the available double-smoke rerun comparison}")
     else:
-        lines.append("\\caption{Reproducibility comparison against reference campaign data.}")
+        lines.append("\\caption{Reproducibility comparison against reference campaign data}")
     lines.append("\\label{tab:repro-summary}")
     lines.append("\\end{table}")
     lines.append("")
@@ -1086,7 +1082,7 @@ def _build_campaign_overview_tex(campaign_name: str, manifest_path: Path, result
     lines.append(f"Lab-level results & \\path{{{_latex_escape(_short(lab_results_path))}}} \\\\")
     lines.append("\\hline")
     lines.append("\\end{tabular}")
-    lines.append("\\caption{Campaign metadata and output file traceability.}")
+    lines.append("\\caption{Campaign metadata and output file traceability}")
     lines.append("\\label{tab:campaign-overview}")
     lines.append("\\end{table}")
     lines.append("")

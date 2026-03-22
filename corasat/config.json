@@ -262,9 +262,9 @@
         }
       },
       {
-        "id": "L0.45",
+        "id": "L0.5",
         "enabled": true,
-        "label": "L0.45 [R4,P0,DS1,M1,FT0,A3,C0]",
+        "label": "L0.5 [R4,P0,DS1,M1,FT0,A3,C0]",
         "parent_lab": "L0.4",
         "changed_item": "R",
         "notes": "Adds minimal task rules without high-level mission strategy while leaving action selection guided by decision support.",
@@ -284,10 +284,10 @@
         }
       },
       {
-        "id": "L0.5",
+        "id": "L0.6",
         "enabled": true,
-        "label": "L0.5 [R2,P0,DS1,M1,FT0,A3,C0]",
-        "parent_lab": "L0.45",
+        "label": "L0.6 [R2,P0,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.5",
         "changed_item": "R",
         "notes": "Adds full mission rules on top of the minimal-task-rules control while keeping prompt requests minimal.",
         "rules_id": "R2",
@@ -306,10 +306,10 @@
         }
       },
       {
-        "id": "L0.6",
+        "id": "L0.7",
         "enabled": true,
-        "label": "L0.6 [R2,P2,DS1,M1,FT0,A3,C0]",
-        "parent_lab": "L0.5",
+        "label": "L0.7 [R2,P2,DS1,M1,FT0,A3,C0]",
+        "parent_lab": "L0.6",
         "changed_item": "P",
         "notes": "Adds full prompt template to full-rule LM+DS baseline.",
         "rules_id": "R2",
@@ -328,12 +328,12 @@
         }
       },
       {
-        "id": "L0.7",
+        "id": "L0.8",
         "enabled": true,
-        "label": "L0.7 [R2,P2,DS1,M1,FT0,A3,C1]",
-        "parent_lab": "L0.6",
+        "label": "L0.8 [R2,P2,DS1,M1,FT0,A3,C1]",
+        "parent_lab": "L0.7",
         "changed_item": "C",
-        "notes": "Same as L0.6, but free communication is available only when co-located.",
+        "notes": "Same as L0.7, but free communication is available only when co-located.",
         "rules_id": "R2",
         "prompt_id": "P2",
         "drone_support_id": "DS1",
@@ -350,12 +350,12 @@
         }
       },
       {
-        "id": "L0.8",
+        "id": "L0.9",
         "enabled": true,
-        "label": "L0.8 [R2,P2,DS1,M1,FT0,A3,C2]",
-        "parent_lab": "L0.7",
+        "label": "L0.9 [R2,P2,DS1,M1,FT0,A3,C2]",
+        "parent_lab": "L0.8",
         "changed_item": "C",
-        "notes": "Same as L0.6, but free communication is available at any distance.",
+        "notes": "Same as L0.7, but free communication is available at any distance.",
         "rules_id": "R2",
         "prompt_id": "P2",
         "drone_support_id": "DS1",
@@ -375,7 +375,7 @@
         "id": "L1.0",
         "enabled": true,
         "label": "L1.0 [R2,P2,DS1,M1,FT0,A3,C0]",
-        "parent_lab": "L0.6",
+        "parent_lab": "L0.7",
         "changed_item": "anchor",
         "notes": "Reference anchor for the prompt/rule-clarity family; reuses the constrained LM+DS full-context baseline without rerunning.",
         "hypothesis": "Reference anchor for H1. No new runtime hypothesis is tested here; subsequent L1 child labs isolate prompt and rule changes against the constrained LM+DS baseline.",
@@ -393,7 +393,7 @@
           "enabled": false,
           "commands": []
         },
-        "reference_lab": "L0.6"
+        "reference_lab": "L0.7"
       },
       {
         "id": "L1.1",
@@ -587,34 +587,10 @@
         }
       },
       {
-        "id": "L2.4",
+        "id": "L3.0",
         "enabled": true,
-        "label": "L2.4 [R3,P3,DS3,M2,FT0,A3,C0]",
+        "label": "L3.0 [R3,P4,DS3,M2,FT0,A3,C0]",
         "parent_lab": "L2.3",
-        "changed_item": "anchor",
-        "notes": "Reference anchor for later branches; reuses the tuned control stack from L2.3 without rerunning Optuna.",
-        "hypothesis": "Reference anchor for H2-H4. No new runtime hypothesis is tested here; subsequent branches isolate prompt, DS, and adaptation changes against the tuned non-adapted stack.",
-        "rules_id": "R3",
-        "prompt_id": "P3",
-        "drone_support_id": "DS3",
-        "model_id": "M2",
-        "fine_tuning_id": "FT0",
-        "action_policy_id": "A3",
-        "communication_id": "C0",
-        "optuna": {
-          "enabled": false
-        },
-        "lora": {
-          "enabled": false,
-          "commands": []
-        },
-        "reference_lab": "L2.3"
-      },
-      {
-        "id": "L2.5",
-        "enabled": true,
-        "label": "L2.5 [R3,P4,DS3,M2,FT0,A3,C0]",
-        "parent_lab": "L2.4",
         "changed_item": "P",
         "notes": "Switches only to the neutral strategic-memory prompt while preserving the tuned full DS anchor.",
         "hypothesis": "Removing explicit prompt wording that favors decision support should not collapse performance if the structured DS context, rather than the wording itself, is the main driver.",
@@ -634,10 +610,10 @@
         }
       },
       {
-        "id": "L2.6",
+        "id": "L3.1",
         "enabled": true,
-        "label": "L2.6 [R3,P4,DS6,M2,FT0,A3,C0]",
-        "parent_lab": "L2.5",
+        "label": "L3.1 [R3,P4,DS6,M2,FT0,A3,C0]",
+        "parent_lab": "L3.0",
         "changed_item": "DS",
         "notes": "Summary-only DS ablation: exposes only a compact tuned DS recommendation instead of the full score table.",
         "hypothesis": "Replacing the full DS score table with only the compact DS summary will preserve most performance if a top-choice recommendation is sufficient.",
@@ -657,10 +633,10 @@
         }
       },
       {
-        "id": "L2.7",
+        "id": "L3.2",
         "enabled": true,
-        "label": "L2.7 [R3,P4,DS5,M2,FT0,A3,C0]",
-        "parent_lab": "L2.6",
+        "label": "L3.2 [R3,P4,DS5,M2,FT0,A3,C0]",
+        "parent_lab": "L3.1",
         "changed_item": "DS",
         "notes": "Mission-context-only ablation: removes DS action recommendations while keeping waypoint and sector context.",
         "hypothesis": "Removing direct DS action recommendations while preserving mission context will reduce score if the LM depends on explicit recommended actions rather than only context cues.",
@@ -680,10 +656,10 @@
         }
       },
       {
-        "id": "L2.8",
+        "id": "L3.3",
         "enabled": true,
-        "label": "L2.8 [R3,P4,DS4,M2,FT0,A3,C0]",
-        "parent_lab": "L2.7",
+        "label": "L3.3 [R3,P4,DS4,M2,FT0,A3,C0]",
+        "parent_lab": "L3.2",
         "changed_item": "DS",
         "notes": "Raw-situation ablation: removes DS-derived prompt context so the LM sees only local observations, broadcasts, rules, and its own memory.",
         "hypothesis": "Removing waypoint, sector, and coordination cues from the prompt will further reduce score if the base LM cannot maintain task structure from raw observations alone.",
@@ -703,10 +679,10 @@
         }
       },
       {
-        "id": "L2.9",
+        "id": "L3.4",
         "enabled": true,
-        "label": "L2.9 [R3,P4,DS4,M2,FT0,A2,C0]",
-        "parent_lab": "L2.8",
+        "label": "L3.4 [R3,P4,DS4,M2,FT0,A2,C0]",
+        "parent_lab": "L3.3",
         "changed_item": "A",
         "notes": "Pure-LM endpoint: disables residual decision-support usage entirely under the raw-situation prompt condition.",
         "hypothesis": "Disabling DS entirely will produce the lowest score in this ablation branch if the unadapted LM depends strongly on structured decision support.",
@@ -726,19 +702,18 @@
         }
       },
       {
-        "id": "L3.0",
+        "id": "L4.0",
         "enabled": true,
-        "label": "L3.0 [R3,P3,DS3,M2,FT0,A3,C0]",
-        "parent_lab": "L2.4",
-        "changed_item": "prep",
-        "notes": "Preparation-only LoRA stage: builds the dataset and executes the training/export pipeline, but does not run seed evaluation.",
-        "hypothesis": "Preparation stage for H4. No runtime hypothesis is tested in this lab; it only produces the training artifacts required for L3.1.",
-        "evaluate_runtime": false,
+        "label": "L4.0 [R3,P3,DS3,M2,FT1,A3,C0]",
+        "parent_lab": "L2.3",
+        "changed_item": "FT",
+        "notes": "Builds the LoRA artifacts and evaluates the FT1 runtime override (corasat-l13-lora, trained from Llama-3.1-8B-Instruct on L2.3 logs) against the tuned non-adapted anchor with prompt, DS, and communication settings held fixed.",
+        "hypothesis": "Under the same prompt, decision-support, and communication settings, the FT1 adapted runtime override may improve mean normalized mission score relative to the tuned non-adapted anchor; this comparison should be interpreted as an adapted-deployment comparison rather than a same-base-model adapter test.",
         "rules_id": "R3",
         "prompt_id": "P3",
         "drone_support_id": "DS3",
         "model_id": "M2",
-        "fine_tuning_id": "FT0",
+        "fine_tuning_id": "FT1",
         "action_policy_id": "A3",
         "communication_id": "C0",
         "optuna": {
@@ -751,7 +726,7 @@
               "python",
               "build_lora_dataset.py",
               "--log",
-              "{lab_logfile:L2.4}",
+              "{lab_logfile:L2.3}",
               "--rules",
               "profiles/rules/R3_rules.txt",
               "--out-dir",
@@ -791,7 +766,7 @@
               "python",
               "build_lora_dataset.py",
               "--log",
-              "{lab_logfile:L2.4}",
+              "{lab_logfile:L2.3}",
               "--rules",
               "profiles/rules/R3_rules.txt",
               "--out-dir",
@@ -826,29 +801,6 @@
               "lora/Modelfile.l13"
             ]
           ]
-        }
-      },
-      {
-        "id": "L3.1",
-        "enabled": true,
-        "label": "L3.1 [R3,P3,DS3,M2,FT1,A3,C0]",
-        "parent_lab": "L2.4",
-        "changed_item": "FT",
-        "notes": "Evaluates the FT1 LoRA-adapted runtime override (corasat-l13-lora, trained from Llama-3.1-8B-Instruct on L2.4 logs) against the tuned non-adapted anchor with prompt, DS, and communication settings held fixed.",
-        "hypothesis": "Under the same prompt, decision-support, and communication settings, the FT1 adapted runtime override may improve mean normalized mission score relative to the tuned non-adapted anchor; this comparison should be interpreted as an adapted-deployment comparison rather than a same-base-model adapter test.",
-        "rules_id": "R3",
-        "prompt_id": "P3",
-        "drone_support_id": "DS3",
-        "model_id": "M2",
-        "fine_tuning_id": "FT1",
-        "action_policy_id": "A3",
-        "communication_id": "C0",
-        "optuna": {
-          "enabled": false
-        },
-        "lora": {
-          "enabled": false,
-          "commands": []
         }
       }
     ],

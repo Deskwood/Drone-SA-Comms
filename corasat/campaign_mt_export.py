@@ -905,7 +905,6 @@ def _plot_box(
         axis_bottom.boxplot(values, positions=positions, **boxplot_kwargs)
         axis_top.set_ylim(*broken_y_axis[0])
         axis_bottom.set_ylim(*broken_y_axis[1])
-        axis_top.set_title(title)
         axis_bottom.set_xlabel("Lab")
         fig.supylabel(ylabel)
         for axis in (axis_top, axis_bottom):
@@ -940,7 +939,6 @@ def _plot_box(
             )
             axis.set_xticks([])
             axis.set_yticks([])
-        axis.set_title(title)
         axis.set_xlabel("Lab")
         axis.set_ylabel(ylabel)
         if log_scale and labels and values:
@@ -1027,8 +1025,7 @@ def _plot_turn_duration_groups(
         axis.grid(True, axis="y", alpha=0.2)
 
     axes[0].set_ylabel("Average turn duration (s)", labelpad=8)
-    fig.suptitle("Turn duration by campaign segment")
-    fig.subplots_adjust(left=0.06, right=0.995, top=0.86, bottom=0.26, wspace=0.16)
+    fig.subplots_adjust(left=0.06, right=0.995, top=0.96, bottom=0.26, wspace=0.16)
     fig.savefig(output, dpi=220)
     plt.close(fig)
     return output

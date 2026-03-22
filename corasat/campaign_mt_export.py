@@ -1078,6 +1078,10 @@ def _build_campaign_overview_tex(campaign_name: str, manifest_path: Path, result
 
     lines: List[str] = []
     runtime_lab_count = sum(1 for lab in labs if _lab_evaluate_runtime(lab))
+    reference_lab_count = sum(1 for lab in labs if str(lab.get("reference_lab") or "").strip())
+    directly_evaluated_lab_count = sum(
+        1 for lab in labs if _lab_evaluate_runtime(lab) and not str(lab.get("reference_lab") or "").strip()
+    )
     stage_only_count = sum(1 for lab in labs if not _lab_evaluate_runtime(lab))
     manifest = _read_json(manifest_path) if manifest_path.exists() else {}
     started_utc = _format_iso_utc(manifest.get("started_at"))
@@ -1094,7 +1098,9 @@ def _build_campaign_overview_tex(campaign_name: str, manifest_path: Path, result
     lines.append(f"Campaign & {_latex_escape(campaign_name)} \\\\")
     lines.append(f"Run interval (UTC) & {_latex_escape(run_interval_utc)} \\\\")
     lines.append(f"Lab count & {_latex_escape(len(list(labs)))} \\\\")
-    lines.append(f"Runtime-evaluated labs & {_latex_escape(runtime_lab_count)} \\\\")
+    lines.append(f"Directly evaluated labs & {_latex_escape(directly_evaluated_lab_count)} \\\\")
+    lines.append(f"Reused reference-anchor labs & {_latex_escape(reference_lab_count)} \\\\")
+    lines.append(f"Runtime-result entries & {_latex_escape(runtime_lab_count)} \\\\")
     lines.append(f"Preparation-only labs & {_latex_escape(stage_only_count)} \\\\")
     lines.append(f"Seed spec & {_latex_escape(json.dumps(seed_spec))} \\\\")
     lines.append(f"Campaign report & \\path{{{_latex_escape(_short(manifest_path))}}} \\\\")
